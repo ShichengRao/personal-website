@@ -1,0 +1,24 @@
+baseURL = "https://shichengrao.com/"
+languageCode = "en-us"
+title = "Shicheng Rao"
+theme = "ananke"
+
+[params]
+author = "Shicheng Rao"
+description = "Product Reliability Engineer"
+
+[menu]
+[[menu.main]]
+name = "Home"
+url = "/"
+weight = 1
+
+[[menu.main]]
+name = "Resume"
+url = "/resume/"
+weight = 2
+
+[[menu.main]]
+name = "Socials"
+url = "/socials/"
+weight = 3
