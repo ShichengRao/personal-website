@@ -4,8 +4,7 @@ title: "Socials"
 
 # Find me online
 
-- [LinkedIn](https://linkedin.com/in/yourname)
-- [GitHub](https://github.com/yourusername)
-- [Substack](https://yourname.substack.com)
-- [YouTube](https://youtube.com/@yourchannel)
-- [Facebook](https://facebook.com/yourname)
+- [LinkedIn](https://www.linkedin.com/in/shicheng-samson-rao/)
+- [GitHub](https://github.com/ShichengRao)
+- [YouTube](https://www.youtube.com/@ShichengRao)
+- [Facebook](https://www.facebook.com/samson.rao.585/)

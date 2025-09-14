@@ -5,4 +5,4 @@ title: "Resume"
 # Resume
 
 Download my resume here:  
-[📄 Resume (PDF)](/files/resume.pdf)
+[ShichengRaoResume2025.pdf](/files/ShichengRaoResume2025.pdf)
