@@ -22,3 +22,8 @@ weight = 2
 name = "Socials"
 url = "/socials/"
 weight = 3
+
+[[menu.main]]
+name = "Church Page Prototype"
+url = "/church/"
+weight = 4
