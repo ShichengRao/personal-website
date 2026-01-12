@@ -27,3 +27,8 @@ weight = 3
 name = "Church Page Prototype"
 url = "/church/"
 weight = 4
+
+[[menu.main]]
+name = "Hangul Romanization Practice"
+url = "/hangul/"
+weight = 5
