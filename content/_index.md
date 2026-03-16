@@ -4,7 +4,7 @@ title: "Home"
 
 # Shicheng Rao
 
-Product Reliability Engineer at Palantir
+Product Reliability Engineer
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)
 
