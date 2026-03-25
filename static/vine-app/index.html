@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Vine — Math Practice</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -239,6 +240,14 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════
+// ── SUPABASE CLIENT
+// ═══════════════════════════════════════════════════════════════════════
+const _sb = supabase.createClient(
+  'https://rtltgyxwsvwcgaadabnq.supabase.co',
+  'sb_publishable_TeUDUb7VH0gGl5tSQDY1CQ_FuFVxN13'
+);
+
+// ═══════════════════════════════════════════════════════════════════════
 // ── STORAGE MODULE
 // ═══════════════════════════════════════════════════════════════════════
 const Store = (() => {
@@ -250,6 +259,7 @@ const Store = (() => {
     const raw = localStorage.getItem(USER_KEY);
     if (raw) return JSON.parse(raw);
     return {
+      user_id: crypto.randomUUID(),  // anonymous, stable per browser
       skill_mastery: {},       // skill_tag -> 0..1
       current_skill: null,     // null means needs diagnostic
       mistake_profile: {
@@ -278,6 +288,11 @@ const Store = (() => {
     const attempts = loadAttempts();
     attempts.push(attempt);
     localStorage.setItem(HIST_KEY, JSON.stringify(attempts));
+    // fire-and-forget to Supabase; localStorage is source of truth for the UI
+    const user_id = (JSON.parse(localStorage.getItem(USER_KEY)) || {}).user_id;
+    _sb.from('attempts').insert({ ...attempt, user_id }).then(({ error }) => {
+      if (error) console.warn('Supabase attempt insert:', error.message);
+    });
   }
 
   function loadSessions() {
@@ -289,6 +304,10 @@ const Store = (() => {
     const sessions = loadSessions();
     sessions.push(session);
     localStorage.setItem(SESS_KEY, JSON.stringify(sessions));
+    const user_id = (JSON.parse(localStorage.getItem(USER_KEY)) || {}).user_id;
+    _sb.from('sessions').insert({ ...session, user_id }).then(({ error }) => {
+      if (error) console.warn('Supabase session insert:', error.message);
+    });
   }
 
   function resetAll() {
