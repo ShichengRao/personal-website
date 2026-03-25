@@ -32,3 +32,8 @@ weight = 4
 name = "Hangul Romanization Practice"
 url = "/hangul/"
 weight = 5
+
+[[menu.main]]
+name = "Vine — Math Practice"
+url = "/vine/"
+weight = 6
