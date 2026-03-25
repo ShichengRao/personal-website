@@ -1,0 +1,714 @@
+{{ define "head" }}
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+#vine-app *, #vine-app *::before, #vine-app *::after { box-sizing: border-box; }
+
+#vine-app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1a1a1a;
+  --bg: #f8f7f4;
+  --card: #ffffff;
+  --border: #e5e3de;
+  --text: #1a1a1a;
+  --muted: #6b6b6b;
+  --accent: #2d7d46;
+  --accent-light: #e8f5ed;
+  --danger: #c0392b;
+  --danger-light: #fdf0ef;
+  --warn: #d4880a;
+  --radius: 8px;
+  --shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+#vine-app h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+#vine-app h2 { font-size: 1.15rem; font-weight: 600; margin: 0; }
+#vine-app h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+#vine-app p  { margin: 0; }
+#vine-app ul { margin: 0; padding: 0; }
+
+#vine-app .card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+
+#vine-app .btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 20px; border-radius: var(--radius); border: none;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  line-height: 1;
+}
+#vine-app .btn:active { transform: scale(0.97); }
+#vine-app .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+#vine-app .btn-primary { background: var(--accent); color: #fff; }
+#vine-app .btn-primary:hover:not(:disabled) { opacity: 0.9; }
+#vine-app .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+#vine-app .btn-secondary:hover:not(:disabled) { background: var(--bg); }
+#vine-app .btn-danger { background: var(--danger); color: #fff; }
+
+#vine-app .pill {
+  display: inline-block; padding: 2px 10px; border-radius: 20px;
+  font-size: 0.78rem; font-weight: 600;
+}
+#vine-app .pill-green { background: var(--accent-light); color: var(--accent); }
+#vine-app .pill-gray  { background: var(--border); color: var(--muted); }
+
+#vine-app .progress-bar {
+  height: 8px; border-radius: 4px; background: var(--border); overflow: hidden;
+}
+#vine-app .progress-bar-fill {
+  height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.4s ease;
+}
+#vine-app .progress-bar-fill.warn   { background: var(--warn); }
+#vine-app .progress-bar-fill.danger { background: var(--danger); }
+
+#vine-app .screen { display: none; }
+#vine-app .screen.active { display: block; }
+
+#vine-app #screen-home header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+#vine-app .tagline { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+#vine-app .home-actions { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+#vine-app .home-actions .btn { width: 100%; padding: 14px 20px; font-size: 1rem; }
+#vine-app .session-option { display: flex; gap: 12px; }
+#vine-app .session-option .btn { flex: 1; }
+
+#vine-app .timer-bar {
+  height: 4px; border-radius: 2px; background: var(--border); margin-bottom: 20px; overflow: hidden;
+}
+#vine-app .timer-fill { height: 100%; background: var(--accent); transition: width 1s linear; }
+#vine-app .problem-meta { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+#vine-app .problem-display {
+  text-align: center; padding: 28px 20px; margin-bottom: 20px;
+  font-size: 2.8rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.3;
+}
+#vine-app .problem-display .op { color: var(--muted); font-weight: 400; }
+#vine-app .problem-display .line { display: block; }
+#vine-app .answer-row { display: flex; gap: 10px; margin-bottom: 16px; }
+#vine-app #answer-input {
+  flex: 1; padding: 12px 16px; font-size: 1.4rem; font-weight: 700;
+  border: 2px solid var(--border); border-radius: var(--radius);
+  outline: none; text-align: center; background: var(--bg);
+  transition: border-color 0.15s;
+}
+#vine-app #answer-input:focus   { border-color: var(--accent); background: #fff; }
+#vine-app #answer-input.correct { border-color: var(--accent); background: var(--accent-light); }
+#vine-app #answer-input.incorrect { border-color: var(--danger); background: var(--danger-light); }
+
+#vine-app .feedback-msg {
+  min-height: 28px; text-align: center; font-size: 0.95rem; font-weight: 500; margin-bottom: 8px;
+}
+#vine-app .feedback-msg.correct   { color: var(--accent); }
+#vine-app .feedback-msg.incorrect { color: var(--danger); }
+#vine-app .session-stats { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.85rem; }
+
+#vine-app .diag-tier-list { list-style: none; margin: 16px 0; }
+#vine-app .diag-tier-list li { padding: 6px 0; font-size: 0.9rem; color: var(--muted); }
+#vine-app .diag-tier-list li::before { content: "→ "; color: var(--accent); font-weight: 700; }
+
+#vine-app .result-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 16px 0; }
+#vine-app .result-stat { background: var(--bg); border-radius: var(--radius); padding: 12px; text-align: center; }
+#vine-app .result-stat .val { font-size: 1.6rem; font-weight: 700; }
+#vine-app .result-stat .lbl { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+#vine-app .skill-row { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+#vine-app .skill-row:last-child { border-bottom: none; }
+#vine-app .skill-header { display: flex; justify-content: space-between; align-items: center; }
+#vine-app .skill-name { font-size: 0.9rem; }
+#vine-app .skill-pct  { font-size: 0.85rem; font-weight: 700; color: var(--accent); }
+#vine-app .mistake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+#vine-app .mistake-item { background: var(--bg); border-radius: 6px; padding: 10px 12px; }
+#vine-app .mistake-item .count { font-size: 1.3rem; font-weight: 700; color: var(--danger); }
+#vine-app .mistake-item .type  { font-size: 0.78rem; color: var(--muted); }
+
+#vine-app .gap-8  { gap: 8px; }
+#vine-app .mt-4   { margin-top: 4px; }
+#vine-app .mt-8   { margin-top: 8px; }
+#vine-app .mt-12  { margin-top: 12px; }
+#vine-app .mt-16  { margin-top: 16px; }
+#vine-app .mt-24  { margin-top: 24px; }
+#vine-app .flex   { display: flex; }
+#vine-app .items-center    { align-items: center; }
+#vine-app .justify-between { justify-content: space-between; }
+#vine-app .text-muted { color: var(--muted); }
+#vine-app .text-sm    { font-size: 0.85rem; }
+#vine-app .font-bold  { font-weight: 700; }
+#vine-app .w-full     { width: 100%; }
+#vine-app .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+</style>
+{{ end }}
+
+{{ define "main" }}
+<div id="vine-app">
+
+  <!-- HOME -->
+  <div id="screen-home" class="screen active">
+    <div class="card">
+      <header>
+        <h1>Vine</h1>
+        <span class="text-muted text-sm">Arithmetic Practice</span>
+      </header>
+      <p class="tagline">Build math fluency through targeted, adaptive practice.</p>
+      <div class="home-actions" id="home-actions"></div>
+      <div id="home-progress-preview"></div>
+    </div>
+  </div>
+
+  <!-- DIAGNOSTIC INTRO -->
+  <div id="screen-diag-intro" class="screen">
+    <div class="card">
+      <h2>Diagnostic Assessment</h2>
+      <p class="mt-8 text-muted text-sm">~2 minutes &nbsp;·&nbsp; Finds your starting point</p>
+      <p class="mt-12" style="font-size:0.9rem">
+        You'll work through a short set of problems at increasing difficulty. We stop when you miss more than 20% in a tier.
+      </p>
+      <ul class="diag-tier-list mt-12">
+        <li>1-digit addition &amp; subtraction</li>
+        <li>2-digit (no carry/borrow)</li>
+        <li>2-digit (with carry/borrow)</li>
+        <li>3-digit problems</li>
+      </ul>
+      <div class="flex gap-8 mt-24">
+        <button class="btn btn-secondary w-full" onclick="App.goHome()">Back</button>
+        <button class="btn btn-primary w-full" onclick="App.startDiagnostic()">Begin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROBLEM -->
+  <div id="screen-problem" class="screen">
+    <div class="card">
+      <div class="timer-bar"><div id="timer-fill" class="timer-fill" style="width:100%"></div></div>
+      <div class="problem-meta" id="problem-meta"></div>
+      <div class="problem-display" id="problem-display"></div>
+      <div class="answer-row">
+        <label for="answer-input" class="sr-only">Your answer</label>
+        <input id="answer-input" type="number" placeholder="?" inputmode="numeric" autocomplete="off" aria-label="Your answer" />
+        <button class="btn btn-primary" onclick="App.submitAnswer()" aria-label="Submit answer" type="button">→</button>
+      </div>
+      <div class="feedback-msg" id="feedback-msg"></div>
+      <div class="session-stats" id="session-stats"></div>
+    </div>
+  </div>
+
+  <!-- SESSION RESULTS -->
+  <div id="screen-results" class="screen">
+    <div class="card">
+      <h2 id="results-title">Session Complete</h2>
+      <div class="result-summary mt-16" id="result-summary"></div>
+      <div id="skill-progress-delta" class="mt-12"></div>
+      <div class="flex gap-8 mt-24">
+        <button class="btn btn-secondary w-full" onclick="App.goHome()">Home</button>
+        <button class="btn btn-primary w-full" onclick="App.startPractice(App.lastSessionType)">Again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div id="screen-progress" class="screen">
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <h2>Your Progress</h2>
+        <button class="btn btn-secondary text-sm" onclick="App.goHome()">← Back</button>
+      </div>
+      <div id="progress-content" class="mt-16"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const _sb = supabase.createClient(
+  'https://rtltgyxwsvwcgaadabnq.supabase.co',
+  'sb_publishable_TeUDUb7VH0gGl5tSQDY1CQ_FuFVxN13'
+);
+
+const Store = (() => {
+  const USER_KEY = 'vine_user_state';
+  const HIST_KEY = 'vine_attempts';
+  const SESS_KEY = 'vine_sessions';
+
+  function loadUserState() {
+    const raw = localStorage.getItem(USER_KEY);
+    if (raw) {
+      try { return JSON.parse(raw); }
+      catch(e) { console.warn('vine: corrupted user state, resetting'); localStorage.removeItem(USER_KEY); }
+    }
+    return {
+      user_id: crypto.randomUUID(),
+      skill_mastery: {},
+      current_skill: null,
+      mistake_profile: { carry_error: 0, borrow_error: 0, arithmetic_fact_error: 0, sign_error: 0 },
+      diagnostic_done: false,
+      total_problems: 0,
+      total_correct: 0,
+      created_at: new Date().toISOString()
+    };
+  }
+
+  function saveUserState(state) { localStorage.setItem(USER_KEY, JSON.stringify(state)); }
+  function loadAttempts() { const r = localStorage.getItem(HIST_KEY); return r ? JSON.parse(r) : []; }
+
+  function saveAttempt(attempt) {
+    const a = loadAttempts(); a.push(attempt);
+    localStorage.setItem(HIST_KEY, JSON.stringify(a));
+    const user_id = (JSON.parse(localStorage.getItem(USER_KEY)) || {}).user_id;
+    _sb.from('attempts').insert({ ...attempt, user_id }).then(({ error }) => {
+      if (error) console.warn('Supabase attempt:', error.message);
+    });
+  }
+
+  function loadSessions() { const r = localStorage.getItem(SESS_KEY); return r ? JSON.parse(r) : []; }
+
+  function saveSession(session) {
+    const s = loadSessions(); s.push(session);
+    localStorage.setItem(SESS_KEY, JSON.stringify(s));
+    const user_id = (JSON.parse(localStorage.getItem(USER_KEY)) || {}).user_id;
+    _sb.from('sessions').insert({ ...session, user_id }).then(({ error }) => {
+      if (error) console.warn('Supabase session:', error.message);
+    });
+  }
+
+  function resetAll() {
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(HIST_KEY);
+    localStorage.removeItem(SESS_KEY);
+  }
+
+  return { loadUserState, saveUserState, loadAttempts, saveAttempt, loadSessions, saveSession, resetAll };
+})();
+
+const SKILLS = [
+  { tag: '1_digit_addition',               label: '1-digit addition',                  operation: 'addition',    digits: 1, carries: 0, borrows: 0, difficulty: 0.05 },
+  { tag: '1_digit_subtraction',            label: '1-digit subtraction',               operation: 'subtraction', digits: 1, carries: 0, borrows: 0, difficulty: 0.08 },
+  { tag: '2_digit_addition_no_carry',      label: '2-digit addition (no carry)',        operation: 'addition',    digits: 2, carries: 0, borrows: 0, difficulty: 0.18 },
+  { tag: '2_digit_subtraction_no_borrow',  label: '2-digit subtraction (no borrow)',   operation: 'subtraction', digits: 2, carries: 0, borrows: 0, difficulty: 0.22 },
+  { tag: '2_digit_addition_with_carry',    label: '2-digit addition (with carry)',      operation: 'addition',    digits: 2, carries: 1, borrows: 0, difficulty: 0.38 },
+  { tag: '2_digit_subtraction_with_borrow',label: '2-digit subtraction (with borrow)', operation: 'subtraction', digits: 2, carries: 0, borrows: 1, difficulty: 0.45 },
+  { tag: '3_digit_addition',               label: '3-digit addition',                  operation: 'addition',    digits: 3, carries: 1, borrows: 0, difficulty: 0.62 },
+  { tag: '3_digit_subtraction',            label: '3-digit subtraction',               operation: 'subtraction', digits: 3, carries: 0, borrows: 1, difficulty: 0.68 },
+  { tag: '3_digit_mixed',                  label: '3-digit mixed',                     operation: 'mixed',       digits: 3, carries: 1, borrows: 1, difficulty: 0.82 },
+];
+
+function getSkillByTag(tag) { return SKILLS.find(s => s.tag === tag); }
+function getSkillIndex(tag) { return SKILLS.findIndex(s => s.tag === tag); }
+function getNextSkill(tag) { const i = getSkillIndex(tag); return i >= 0 && i < SKILLS.length - 1 ? SKILLS[i + 1] : null; }
+
+const Generator = (() => {
+  function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+  function countCarries(a, b) {
+    let carry = 0, count = 0;
+    while (a > 0 || b > 0) {
+      const sum = (a % 10) + (b % 10) + carry;
+      carry = sum >= 10 ? 1 : 0;
+      if (carry) count++;
+      a = Math.floor(a / 10); b = Math.floor(b / 10);
+    }
+    return count;
+  }
+
+  function countBorrows(a, b) {
+    let borrow = 0, count = 0, aa = a, bb = b;
+    while (aa > 0 || bb > 0) {
+      const diff = (aa % 10) - (bb % 10) - borrow;
+      if (diff < 0) { count++; borrow = 1; } else { borrow = 0; }
+      aa = Math.floor(aa / 10); bb = Math.floor(bb / 10);
+    }
+    return count;
+  }
+
+  function generateProblem(skill, recentOperands = []) {
+    const { tag, operation, digits, carries: tc, borrows: tb } = skill;
+    const op = operation === 'mixed' ? (Math.random() < 0.5 ? 'addition' : 'subtraction') : operation;
+    let a, b, answer, numCarries = 0, numBorrows = 0, attempts = 0, valid = false;
+
+    do {
+      attempts++;
+      if (op === 'addition') {
+        if (digits === 1) { a = rand(1,9); b = rand(1,9); }
+        else if (digits === 2) {
+          if (tc === 0) { const u1=rand(0,4),u2=rand(0,9-u1),t1=rand(1,4),t2=rand(1,9-t1); a=t1*10+u1; b=t2*10+u2; }
+          else { const u1=rand(2,9),u2=rand(10-u1,9),t1=rand(1,8),t2=rand(1,9-t1+(u1+u2>=10?1:0)); a=t1*10+u1; b=Math.min(99,t2*10+u2); }
+        } else { a=rand(100,699); b=Math.max(100,rand(100,899-a)); }
+        answer = a + b; numCarries = countCarries(a,b); numBorrows = 0;
+      } else {
+        if (digits === 1) { a=rand(2,9); b=rand(1,a); }
+        else if (digits === 2) {
+          if (tb === 0) { const u1=rand(1,9),u2=rand(0,u1),t1=rand(2,9),t2=rand(1,t1); a=t1*10+u1; b=t2*10+u2; }
+          else { const u2=rand(2,9),u1=rand(0,u2-1),t1=rand(2,9),t2=rand(1,t1); a=t1*10+u1; b=t2*10+u2; if(a<b){const tmp=a;a=b;b=tmp;} if(a===b)a+=10; }
+        } else { a=rand(200,999); b=rand(100,a-1); }
+        answer = a - b; numCarries = 0; numBorrows = countBorrows(a,b);
+      }
+      if (answer <= 0) continue;
+      if (digits >= 2 && answer < 10) continue;
+      if (digits >= 3 && op === 'addition' && tc > 0 && numCarries < 1) continue;
+      if (digits >= 3 && op === 'subtraction' && tb > 0 && numBorrows < 1) continue;
+      valid = true;
+      if (recentOperands.includes(`${a},${b}`)) continue;
+      break;
+    } while (attempts < 30);
+
+    if (!valid) {
+      console.warn('vine: generateProblem fallback for skill', tag);
+      if (op === 'addition') { a = digits===1?4:digits===2?47:314; b = digits===1?3:26; }
+      else                   { a = digits===1?7:digits===2?53:421; b = digits===1?3:21; }
+      answer = op==='addition' ? a+b : a-b;
+      numCarries = countCarries(a,b); numBorrows = countBorrows(a,b);
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      operation: op, operands: [a,b], answer,
+      properties: { num_digits: digits, num_carries: numCarries, num_borrows: numBorrows },
+      skill_tag: tag,
+      difficulty_score: Math.min(1, (op==='addition'?0.02:0.05) + 0.08*digits + 0.12*numCarries + 0.14*numBorrows)
+    };
+  }
+
+  return { generateProblem };
+})();
+
+function classifyMistake(problem, userAnswer) {
+  const { operation, operands:[a,b], answer } = problem;
+  const diff = Math.abs(userAnswer - answer);
+  if (operation === 'addition') {
+    if (diff===10||diff===100||diff===1000) return 'carry_error';
+    if (diff<=2) return 'arithmetic_fact_error';
+    if (userAnswer===Math.abs(a-b)) return 'sign_error';
+    return 'carry_error';
+  } else {
+    if (diff===10||diff===100) return 'borrow_error';
+    if (diff<=2) return 'arithmetic_fact_error';
+    if (userAnswer===a+b) return 'sign_error';
+    return 'borrow_error';
+  }
+}
+
+const MASTERY_INCREMENT = 0.07, MASTERY_PENALTY = 0.12, MASTERY_THRESHOLD = 0.85, MIN_ATTEMPTS = 8;
+
+function updateMastery(state, tag, isCorrect) {
+  const cur = state.skill_mastery[tag] ?? 0;
+  state.skill_mastery[tag] = Math.max(0, Math.min(1, isCorrect ? cur + MASTERY_INCREMENT : cur - MASTERY_PENALTY));
+}
+
+function shouldAdvanceSkill(state, tag) {
+  if ((state.skill_mastery[tag] ?? 0) < MASTERY_THRESHOLD) return false;
+  return Store.loadAttempts().filter(a => a.skill_tag === tag).length >= MIN_ATTEMPTS;
+}
+
+function selectNextProblem(state, mistakeQueue, recentOperands) {
+  const r = Math.random();
+  let skill;
+  if (r < 0.20) { const n=getNextSkill(state.current_skill); skill=n||getSkillByTag(state.current_skill); }
+  else if (r < 0.40 && mistakeQueue.length > 0) { const item=mistakeQueue[Math.floor(Math.random()*mistakeQueue.length)]; skill=getSkillByTag(item.skill_tag)||getSkillByTag(state.current_skill); }
+  else { skill=getSkillByTag(state.current_skill); }
+  return Generator.generateProblem(skill || SKILLS[0], recentOperands);
+}
+
+function showScreen(id) {
+  document.querySelectorAll('#vine-app .screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function masteryClass(v) { return v >= 0.75 ? '' : v >= 0.4 ? 'warn' : 'danger'; }
+
+const App = (() => {
+  let state=null, currentProblem=null, sessionType=null, sessionStart=null, sessionDuration=0;
+  let sessionProblems=[], mistakeQueue=[], recentOperands=[];
+  let timerInterval=null, feedbackTimeout=null, endSessionTimeout=null, awaitingNext=false;
+  let problemStartedAt=null;
+  let diagSkillIndex=0, diagTierProblems=[], diagTierCorrect=0;
+  const diagTierTotal=3;
+  let _lastSessionType=null;
+
+  function init() {
+    state = Store.loadUserState();
+    renderHome();
+    document.getElementById('answer-input').addEventListener('keydown', e => { if(e.key==='Enter') submitAnswer(); });
+  }
+
+  function renderHome() {
+    const actions = document.getElementById('home-actions');
+    const preview = document.getElementById('home-progress-preview');
+    if (!state.diagnostic_done) {
+      actions.innerHTML = `
+        <button class="btn btn-primary" onclick="App.showDiagIntro()">Start Diagnostic</button>
+        <p class="text-muted text-sm" style="text-align:center">Takes ~2 min &nbsp;·&nbsp; Sets your starting level</p>`;
+      preview.innerHTML = '';
+    } else {
+      const skill = getSkillByTag(state.current_skill);
+      const mastery = state.skill_mastery[state.current_skill] ?? 0;
+      actions.innerHTML = `
+        <div style="background:var(--accent-light);border-radius:var(--radius);padding:12px 16px;margin-bottom:4px">
+          <div class="flex justify-between items-center">
+            <span class="text-sm font-bold">Current: ${skill ? skill.label : esc(state.current_skill)}</span>
+            <span class="pill pill-green">${Math.round(mastery*100)}%</span>
+          </div>
+          <div class="progress-bar mt-8"><div class="progress-bar-fill" style="width:${mastery*100}%"></div></div>
+        </div>
+        <div class="session-option">
+          <button class="btn btn-primary" onclick="App.startPractice('practice_5')">5 min</button>
+          <button class="btn btn-primary" onclick="App.startPractice('practice_10')">10 min</button>
+        </div>
+        <button class="btn btn-secondary" onclick="App.showProgress()">View Progress</button>`;
+      const topSkills = SKILLS.filter(s => (state.skill_mastery[s.tag]??0) > 0).slice(-4);
+      if (topSkills.length) {
+        preview.innerHTML = `
+          <div class="mt-24">
+            <h3 class="text-muted text-sm" style="text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">Skills Overview</h3>
+            ${topSkills.map(s => {
+              const pct = Math.round((state.skill_mastery[s.tag]??0)*100);
+              return `<div class="skill-row">
+                <div class="skill-header"><span class="skill-name">${s.label}</span><span class="skill-pct">${pct}%</span></div>
+                <div class="progress-bar mt-4"><div class="progress-bar-fill ${masteryClass(state.skill_mastery[s.tag]??0)}" style="width:${pct}%"></div></div>
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="flex justify-between mt-16 text-muted text-sm">
+            <span>${state.total_problems} problems total</span>
+            <span>${state.total_problems ? Math.round(state.total_correct/state.total_problems*100) : 0}% accuracy</span>
+            <button class="btn btn-danger text-sm" style="padding:4px 10px;font-size:0.78rem" onclick="App.confirmReset()">Reset</button>
+          </div>`;
+      }
+    }
+    showScreen('screen-home');
+  }
+
+  function goHome() { clearTimer(); state=Store.loadUserState(); renderHome(); }
+  function showDiagIntro() { showScreen('screen-diag-intro'); }
+
+  function startDiagnostic() {
+    sessionType='diagnostic'; _lastSessionType='diagnostic';
+    diagSkillIndex=0; diagTierProblems=[]; diagTierCorrect=0;
+    sessionProblems=[]; sessionStart=Date.now(); sessionDuration=15*60*1000;
+    mistakeQueue=[]; recentOperands=[];
+    loadNextProblem();
+  }
+
+  function loadNextProblem() {
+    awaitingNext=false;
+    const input=document.getElementById('answer-input');
+    input.value=''; input.className='';
+    document.getElementById('feedback-msg').textContent='';
+    document.getElementById('feedback-msg').className='feedback-msg';
+    currentProblem = sessionType==='diagnostic'
+      ? Generator.generateProblem(SKILLS[diagSkillIndex], recentOperands)
+      : selectNextProblem(state, mistakeQueue, recentOperands);
+    recentOperands.push(`${currentProblem.operands[0]},${currentProblem.operands[1]}`);
+    if (recentOperands.length > 20) recentOperands.shift();
+    problemStartedAt = Date.now();
+    renderProblem(); updateSessionStats(); startTimer(); input.focus();
+  }
+
+  function renderProblem() {
+    const { operation, operands:[a,b], skill_tag } = currentProblem;
+    const opSym = operation==='addition' ? '+' : '−';
+    document.getElementById('problem-display').innerHTML =
+      `<span class="line">${a}</span><span class="line"><span class="op">${opSym}</span> ${b}</span>`;
+    const skill=getSkillByTag(skill_tag), mastery=state.skill_mastery[skill_tag];
+    let meta=`<span class="pill pill-gray">${skill?skill.label:esc(skill_tag)}</span>`;
+    if (mastery!==undefined) meta+=`<span class="pill pill-green">${Math.round(mastery*100)}%</span>`;
+    if (sessionType==='diagnostic') meta+=`<span class="pill pill-gray" style="margin-left:auto">Diagnostic: Tier ${diagSkillIndex+1}/${SKILLS.length}</span>`;
+    document.getElementById('problem-meta').innerHTML=meta;
+    document.querySelector('#vine-app .timer-bar').style.visibility =
+      sessionType==='diagnostic' ? 'hidden' : 'visible';
+    showScreen('screen-problem');
+  }
+
+  function startTimer() {
+    clearTimer();
+    if (sessionType==='diagnostic') return;
+    const remaining=Math.max(0,sessionDuration-(Date.now()-sessionStart));
+    const fill=document.getElementById('timer-fill');
+    fill.style.transition='none'; fill.style.width=(remaining/sessionDuration*100)+'%';
+    requestAnimationFrame(()=>{ fill.style.transition=`width ${remaining/1000}s linear`; fill.style.width='0%'; });
+    timerInterval=setInterval(()=>{
+      if (Date.now()-sessionStart>=sessionDuration) {
+        clearTimer();
+        if (!awaitingNext) endSession(); else { endSessionTimeout=setTimeout(endSession,1200); }
+      }
+    },500);
+  }
+
+  function clearTimer() {
+    if (timerInterval)     { clearInterval(timerInterval);    timerInterval=null; }
+    if (feedbackTimeout)   { clearTimeout(feedbackTimeout);   feedbackTimeout=null; }
+    if (endSessionTimeout) { clearTimeout(endSessionTimeout); endSessionTimeout=null; }
+  }
+
+  function updateSessionStats() {
+    const correct=sessionProblems.filter(p=>p.is_correct).length, total=sessionProblems.length;
+    let timeLeft='';
+    if (sessionType!=='diagnostic') {
+      const rem=Math.max(0,Math.round((sessionDuration-(Date.now()-sessionStart))/1000));
+      timeLeft=`${Math.floor(rem/60)}:${(rem%60).toString().padStart(2,'0')} left`;
+    }
+    document.getElementById('session-stats').innerHTML=
+      `<span>${total>0?`${correct}/${total} correct`:'Answer to begin'}</span><span>${timeLeft}</span>`;
+  }
+
+  function submitAnswer() {
+    if (awaitingNext) return;
+    const input=document.getElementById('answer-input');
+    const raw=input.value.trim();
+    if (!raw) return;
+    const userAnswer=parseInt(raw,10);
+    if (isNaN(userAnswer)) return;
+
+    const isCorrect=userAnswer===currentProblem.answer;
+    const mistakeType=isCorrect?null:classifyMistake(currentProblem,userAnswer);
+    const attempt={ problem_id:currentProblem.id, user_answer:userAnswer, correct_answer:currentProblem.answer,
+      is_correct:isCorrect, time_taken_ms:problemStartedAt?Date.now()-problemStartedAt:0, timestamp:new Date().toISOString(),
+      skill_tag:currentProblem.skill_tag, mistake_type:mistakeType, session_id:sessionStart.toString(), session_type:sessionType };
+    Store.saveAttempt(attempt);
+    sessionProblems.push(attempt);
+    state.total_problems++;
+    if (isCorrect) state.total_correct++;
+    updateMastery(state,currentProblem.skill_tag,isCorrect);
+    if (!isCorrect) {
+      state.mistake_profile[mistakeType]=(state.mistake_profile[mistakeType]||0)+1;
+      mistakeQueue.push({skill_tag:currentProblem.skill_tag,mistake_type:mistakeType});
+      if (mistakeQueue.length>10) mistakeQueue.shift();
+    }
+    Store.saveUserState(state);
+
+    const fbEl=document.getElementById('feedback-msg');
+    input.className=isCorrect?'correct':'incorrect';
+    fbEl.textContent=isCorrect?'✓ Correct!':`✗ Answer: ${currentProblem.answer}`;
+    fbEl.className=`feedback-msg ${isCorrect?'correct':'incorrect'}`;
+    awaitingNext=true;
+    updateSessionStats();
+
+    if (sessionType==='diagnostic') {
+      diagTierProblems.push(isCorrect);
+      if (isCorrect) diagTierCorrect++;
+      if (diagTierProblems.length>=diagTierTotal) {
+        feedbackTimeout=setTimeout(()=>{
+          if (diagTierCorrect/diagTierProblems.length>=0.8) {
+            state.skill_mastery[SKILLS[diagSkillIndex].tag]=Math.min(1,diagTierCorrect/diagTierProblems.length);
+            diagSkillIndex++;
+            if (diagSkillIndex>=SKILLS.length) finishDiagnostic(SKILLS.length-1);
+            else { diagTierProblems=[]; diagTierCorrect=0; loadNextProblem(); }
+          } else { finishDiagnostic(Math.max(0,diagSkillIndex-1)); }
+        },1000);
+      } else { feedbackTimeout=setTimeout(loadNextProblem,900); }
+    } else {
+      feedbackTimeout=setTimeout(
+        Date.now()-sessionStart>=sessionDuration ? endSession : loadNextProblem,
+        900
+      );
+    }
+  }
+
+  function finishDiagnostic(idx) {
+    const skill=SKILLS[Math.max(0,idx)];
+    state.current_skill=skill.tag;
+    if (!state.skill_mastery[skill.tag]) state.skill_mastery[skill.tag]=0.3;
+    state.diagnostic_done=true;
+    Store.saveUserState(state);
+    endSession();
+  }
+
+  function startPractice(type) {
+    sessionType=type; _lastSessionType=type;
+    sessionProblems=[]; sessionStart=Date.now();
+    sessionDuration=(type==='practice_5'?5:10)*60*1000;
+    mistakeQueue=[]; recentOperands=[];
+    if (shouldAdvanceSkill(state,state.current_skill)) {
+      const next=getNextSkill(state.current_skill);
+      if (next) { state.current_skill=next.tag; if(!state.skill_mastery[next.tag]) state.skill_mastery[next.tag]=0.1; Store.saveUserState(state); }
+    }
+    loadNextProblem();
+  }
+
+  function endSession() {
+    clearTimer();
+    const correct=sessionProblems.filter(p=>p.is_correct).length, total=sessionProblems.length;
+    const acc=total?Math.round(correct/total*100):0;
+    Store.saveSession({ session_id:sessionStart.toString(), session_type:sessionType,
+      started_at:new Date(sessionStart).toISOString(), ended_at:new Date().toISOString(),
+      total_problems:total, correct, accuracy:acc });
+    document.getElementById('results-title').textContent=sessionType==='diagnostic'?'Diagnostic Complete!':'Session Complete';
+    document.getElementById('result-summary').innerHTML=`
+      <div class="result-stat"><div class="val">${total}</div><div class="lbl">Problems</div></div>
+      <div class="result-stat"><div class="val">${acc}%</div><div class="lbl">Accuracy</div></div>
+      <div class="result-stat"><div class="val">${correct}</div><div class="lbl">Correct</div></div>`;
+    const skill=getSkillByTag(state.current_skill), mastery=state.skill_mastery[state.current_skill]??0;
+    document.getElementById('skill-progress-delta').innerHTML=skill?`
+      <div style="background:var(--accent-light);border-radius:var(--radius);padding:12px 16px">
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-bold">Current Skill: ${skill.label}</span>
+          <span class="pill pill-green">${Math.round(mastery*100)}% mastery</span>
+        </div>
+        <div class="progress-bar mt-8"><div class="progress-bar-fill" style="width:${mastery*100}%"></div></div>
+        ${sessionType==='diagnostic'?'<p class="text-sm text-muted mt-8">Placement complete. Start practicing when ready.</p>':''}
+      </div>`:'';
+    const againBtn = document.querySelector('#screen-results .btn-primary');
+    if (sessionType==='diagnostic') {
+      againBtn.textContent='Start Practice'; againBtn.onclick=()=>App.startPractice('practice_5');
+    } else {
+      againBtn.textContent='Again'; againBtn.onclick=()=>App.startPractice(_lastSessionType);
+    }
+    state=Store.loadUserState();
+    showScreen('screen-results');
+  }
+
+  function showProgress() {
+    state=Store.loadUserState();
+    const attempts=Store.loadAttempts();
+    const active=SKILLS.filter(s=>(state.skill_mastery[s.tag]??0)>0||attempts.some(a=>a.skill_tag===s.tag));
+    let html='';
+    if (!active.length) { html='<p class="text-muted text-sm">No data yet — complete a diagnostic to get started.</p>'; }
+    else {
+      html='<div>';
+      for (const s of SKILLS) {
+        const m=state.skill_mastery[s.tag]??0;
+        if (!m && !attempts.some(a=>a.skill_tag===s.tag)) continue;
+        const pct=Math.round(m*100), sa=attempts.filter(a=>a.skill_tag===s.tag);
+        html+=`<div class="skill-row">
+          <div class="skill-header">
+            <span class="skill-name">${s.label}${s.tag===state.current_skill?' <span class="pill pill-green" style="margin-left:6px">current</span>':''}</span>
+            <span class="skill-pct">${pct}%</span>
+          </div>
+          <div class="progress-bar mt-4"><div class="progress-bar-fill ${masteryClass(m)}" style="width:${pct}%"></div></div>
+          ${sa.length?`<span class="text-sm text-muted mt-4">${sa.filter(a=>a.is_correct).length}/${sa.length} correct</span>`:''}
+        </div>`;
+      }
+      html+='</div>';
+      const mp=state.mistake_profile, total=Object.values(mp).reduce((a,b)=>a+b,0);
+      if (total>0) html+=`
+        <h3 class="mt-24" style="margin-bottom:10px">Mistake Profile</h3>
+        <div class="mistake-grid">${Object.entries(mp).map(([k,v])=>`
+          <div class="mistake-item"><div class="count">${v}</div><div class="type">${k.replace(/_/g,' ')}</div></div>`).join('')}
+        </div>`;
+      html+=`<div class="flex justify-between mt-24 text-muted text-sm">
+        <span>${state.total_problems} total problems</span>
+        <span>${state.total_problems?Math.round(state.total_correct/state.total_problems*100):0}% overall accuracy</span>
+      </div>`;
+    }
+    document.getElementById('progress-content').innerHTML=html;
+    showScreen('screen-progress');
+  }
+
+  function confirmReset() {
+    if (confirm('Reset all progress? This cannot be undone.')) { Store.resetAll(); state=Store.loadUserState(); renderHome(); }
+  }
+
+  return { init, goHome, showDiagIntro, startDiagnostic, startPractice, submitAnswer, showProgress, confirmReset,
+    get lastSessionType() { return _lastSessionType; } };
+})();
+
+document.addEventListener('DOMContentLoaded', () => App.init());
+</script>
+{{ end }}
