@@ -1,5 +1,4 @@
 {
-  "dependencies": {
-    "@supabase/supabase-js": "^2.100.0"
-  }
+  "name": "personal-website",
+  "private": true
 }
