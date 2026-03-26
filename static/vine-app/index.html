@@ -14,11 +14,7 @@
     --warn: #d4880a; --radius: 8px; --shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg); color: var(--text); min-height: 100vh;
-  }
-
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
   #app { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
 
   h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
@@ -123,6 +119,31 @@
   .count-row { display: flex; gap: 8px; margin-top: 8px; }
   .count-row .btn { flex: 1; }
 
+  /* Tabs */
+  .tab-bar { display: flex; border-bottom: 2px solid var(--border); }
+  .tab-btn {
+    padding: 8px 14px; font-size: 0.85rem; font-weight: 600; border: none; background: none;
+    cursor: pointer; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Leaderboard */
+  .lb-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 0.88rem; }
+  .lb-table th { text-align: left; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 2px solid var(--border); }
+  .lb-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); }
+  .lb-table tr:last-child td { border-bottom: none; }
+  .lb-table .lb-me td { background: var(--accent-light); }
+  .lb-rank { width: 28px; color: var(--muted); font-weight: 700; }
+
+  /* History */
+  .history-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .history-row:last-child { border-bottom: none; }
+  .history-type { font-size: 0.88rem; font-weight: 600; }
+  .history-meta { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+  .history-score { text-align: right; }
+  .history-score .val { font-size: 1.1rem; font-weight: 700; }
+  .history-score .lbl { font-size: 0.72rem; color: var(--muted); }
+
   /* Utils */
   .gap-8  { gap: 8px; }
   .mt-4   { margin-top: 4px; }
@@ -150,6 +171,7 @@
       <p class="tagline">Build math fluency through targeted, adaptive practice.</p>
       <div class="home-actions" id="home-actions" role="group" aria-label="Session options"></div>
       <div id="home-progress-preview"></div>
+      <div id="home-name-bar"></div>
     </div>
   </div>
 
@@ -233,6 +255,29 @@
     </div>
   </div>
 
+  <!-- LEADERBOARD -->
+  <div id="screen-leaderboard" class="screen">
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <h2>Leaderboard</h2>
+        <button class="btn btn-secondary text-sm" onclick="App.goHome()">← Back</button>
+      </div>
+      <div class="tab-bar mt-16" id="lb-tabs"></div>
+      <div id="lb-results" class="mt-12"></div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="screen-history" class="screen">
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <h2>Session History</h2>
+        <button class="btn btn-secondary text-sm" onclick="App.goHome()">← Back</button>
+      </div>
+      <div id="history-content" class="mt-16"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -248,6 +293,7 @@ const Store = (() => {
   function defaultState() {
     return {
       user_id: crypto.randomUUID(),
+      display_name: '',
       skill_mastery: {}, current_skill: null,
       mistake_profile: { carry_error:0, borrow_error:0, arithmetic_fact_error:0, sign_error:0 },
       diagnostic_done: false, total_problems: 0, total_correct: 0,
@@ -267,8 +313,9 @@ const Store = (() => {
   function saveAttempt(attempt) {
     const a=loadAttempts(); a.push(attempt);
     localStorage.setItem(HIST_KEY, JSON.stringify(a));
-    const uid=(JSON.parse(localStorage.getItem(USER_KEY))||{}).user_id;
-    _sb.from('attempts').insert({...attempt, user_id:uid}).then(({error})=>{ if(error) console.warn('sb attempt:',error.message); });
+    const us=JSON.parse(localStorage.getItem(USER_KEY)||'{}');
+    _sb.from('attempts').insert({...attempt, user_id:us.user_id, display_name:us.display_name||null})
+      .then(({error})=>{ if(error) console.warn('sb attempt:',error.message); });
   }
 
   function loadSessions() { const r=localStorage.getItem(SESS_KEY); return r ? JSON.parse(r) : []; }
@@ -277,7 +324,8 @@ const Store = (() => {
     const s=loadSessions(); s.push(session);
     localStorage.setItem(SESS_KEY, JSON.stringify(s));
     const uid=(JSON.parse(localStorage.getItem(USER_KEY))||{}).user_id;
-    _sb.from('sessions').insert({...session, user_id:uid}).then(({error})=>{ if(error) console.warn('sb session:',error.message); });
+    _sb.from('sessions').insert({...session, user_id:uid})
+      .then(({error})=>{ if(error) console.warn('sb session:',error.message); });
   }
 
   function resetAll() { [USER_KEY,HIST_KEY,SESS_KEY].forEach(k=>localStorage.removeItem(k)); }
@@ -287,7 +335,6 @@ const Store = (() => {
 
 // ── SKILLS ────────────────────────────────────────────────────────────
 const SKILLS = [
-  // Addition & Subtraction
   { tag:'1_digit_addition',               label:'1-digit addition',                 operation:'addition',       digits:1, carries:0, borrows:0, difficulty:0.05 },
   { tag:'1_digit_subtraction',            label:'1-digit subtraction',              operation:'subtraction',    digits:1, carries:0, borrows:0, difficulty:0.08 },
   { tag:'2_digit_addition_no_carry',      label:'2-digit addition (no carry)',       operation:'addition',       digits:2, carries:0, borrows:0, difficulty:0.18 },
@@ -297,11 +344,10 @@ const SKILLS = [
   { tag:'3_digit_addition',               label:'3-digit addition',                 operation:'addition',       digits:3, carries:1, borrows:0, difficulty:0.62 },
   { tag:'3_digit_subtraction',            label:'3-digit subtraction',              operation:'subtraction',    digits:3, carries:0, borrows:1, difficulty:0.68 },
   { tag:'3_digit_mixed',                  label:'3-digit mixed +/−',                operation:'mixed',          digits:3, carries:1, borrows:1, difficulty:0.82 },
-  // Multiplication & Division
-  { tag:'multiplication_basic',           label:'Multiplication (×1–9)',            operation:'multiplication', digits:1, carries:0, borrows:0, difficulty:0.35 },
+  { tag:'multiplication_basic',           label:'Multiplication (×2–9)',            operation:'multiplication', digits:1, carries:0, borrows:0, difficulty:0.35 },
   { tag:'multiplication_tables',          label:'Times tables (×1–12)',             operation:'multiplication', digits:1, carries:0, borrows:0, difficulty:0.50 },
   { tag:'multiplication_2x1',             label:'2-digit × 1-digit',               operation:'multiplication', digits:2, carries:0, borrows:0, difficulty:0.62 },
-  { tag:'division_basic',                 label:'Division (÷1–9)',                  operation:'division',       digits:1, carries:0, borrows:0, difficulty:0.42 },
+  { tag:'division_basic',                 label:'Division (÷2–9)',                  operation:'division',       digits:1, carries:0, borrows:0, difficulty:0.42 },
   { tag:'division_2digit',                label:'2-digit ÷ 1-digit',               operation:'division',       digits:2, carries:0, borrows:0, difficulty:0.65 },
 ];
 
@@ -355,9 +401,15 @@ const Generator = (() => {
         answer=a*b; numCarries=0; numBorrows=0;
 
       } else { // division
-        const divisor=rand(2,9), quotient=digits===2?rand(11,25):rand(2,12);
-        b=divisor; a=divisor*quotient; answer=quotient;
-        numCarries=0; numBorrows=0;
+        b=rand(2,9);
+        if (digits===2) {
+          // dividend must be 2 digits (10–99)
+          const maxQ=Math.floor(99/b), minQ=Math.ceil(10/b);
+          answer=rand(Math.max(2,minQ), Math.min(maxQ,12));
+        } else {
+          answer=rand(2,9);
+        }
+        a=b*answer; numCarries=0; numBorrows=0;
       }
 
       if (answer<=0) continue;
@@ -406,7 +458,7 @@ function classifyMistake(problem, userAnswer) {
   } else if (operation==='multiplication') {
     if (userAnswer===a+b||userAnswer===a-b) return 'sign_error';
     return 'arithmetic_fact_error';
-  } else { // division
+  } else {
     if (userAnswer===a*b) return 'sign_error';
     return 'arithmetic_fact_error';
   }
@@ -447,6 +499,7 @@ function showScreen(id) {
 }
 function masteryClass(v) { return v>=0.75?'':v>=0.4?'warn':'danger'; }
 function isCountMode(type) { return type==='flat_10'||type==='flat_25'||type==='custom'; }
+function fmtTime(ms) { const s=Math.round(ms/1000); return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`; }
 
 // ── APP ───────────────────────────────────────────────────────────────
 const App = (() => {
@@ -457,15 +510,14 @@ const App = (() => {
   let diagSkillIndex=0, diagTierProblems=[], diagTierCorrect=0;
   const diagTierTotal=3;
   let _lastSessionType=null, sessionQuestionTarget=0, pinnedSkillTags=null, customQuestionCount=10;
+  let lbMode='practice_5';
 
-  // ── init ──
   function init() {
     state=Store.loadUserState();
     renderHome();
     document.getElementById('answer-input').addEventListener('keydown', e=>{ if(e.key==='Enter') submitAnswer(); });
   }
 
-  // ── home ──
   function renderHome() {
     const actions=document.getElementById('home-actions');
     const preview=document.getElementById('home-progress-preview');
@@ -495,7 +547,11 @@ const App = (() => {
           <button class="btn btn-primary" onclick="App.startPractice('flat_25')">25 Q</button>
         </div>
         <button class="btn btn-secondary" onclick="App.showSkillSelector()">Review specific skills →</button>
-        <button class="btn btn-secondary" onclick="App.showProgress()">View Progress</button>`;
+        <div class="session-option" style="margin-top:0">
+          <button class="btn btn-secondary" onclick="App.showProgress()">Progress</button>
+          <button class="btn btn-secondary" onclick="App.showHistory()">History</button>
+          <button class="btn btn-secondary" onclick="App.showLeaderboard()">Leaderboard</button>
+        </div>`;
       const topSkills=SKILLS.filter(s=>(state.skill_mastery[s.tag]??0)>0).slice(-4);
       if (topSkills.length) {
         preview.innerHTML=`
@@ -516,13 +572,27 @@ const App = (() => {
           </div>`;
       }
     }
+    const name=state.display_name||'';
+    document.getElementById('home-name-bar').innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <span class="text-sm text-muted">${name?`Playing as <strong>${esc(name)}</strong>`:'Playing anonymously'}</span>
+        <button class="btn btn-secondary" style="padding:4px 12px;font-size:0.78rem" onclick="App.promptName()" type="button">${name?'Change name':'Set name'}</button>
+      </div>`;
     showScreen('screen-home');
   }
 
-  function goHome()       { clearTimer(); state=Store.loadUserState(); renderHome(); }
-  function showDiagIntro(){ showScreen('screen-diag-intro'); }
+  function goHome()        { clearTimer(); state=Store.loadUserState(); renderHome(); }
+  function showDiagIntro() { showScreen('screen-diag-intro'); }
 
-  // ── skill selector ──
+  function promptName() {
+    const cur=state.display_name||'';
+    const n=prompt('Enter your display name (shown on leaderboard):', cur);
+    if (n===null) return;
+    state.display_name=n.trim().slice(0,30);
+    Store.saveUserState(state);
+    renderHome();
+  }
+
   function showSkillSelector() {
     const checked=pinnedSkillTags||SKILLS.map(s=>s.tag);
     document.getElementById('skill-checkboxes').innerHTML=SKILLS.map(s=>`
@@ -552,7 +622,6 @@ const App = (() => {
     startPractice('custom');
   }
 
-  // ── diagnostic ──
   function startDiagnostic() {
     sessionType='diagnostic'; _lastSessionType='diagnostic';
     diagSkillIndex=0; diagTierProblems=[]; diagTierCorrect=0;
@@ -562,7 +631,6 @@ const App = (() => {
     loadNextProblem();
   }
 
-  // ── problem loading ──
   function loadNextProblem() {
     awaitingNext=false;
     const input=document.getElementById('answer-input');
@@ -591,16 +659,13 @@ const App = (() => {
     showScreen('screen-problem');
   }
 
-  // ── timer ──
   function startTimer() {
     clearTimer();
     if (sessionType==='diagnostic') return;
     const fill=document.getElementById('timer-fill');
     if (isCountMode(sessionType)) {
-      // Progress bar fills up as questions are answered
       fill.style.width=(Math.min(1, sessionProblems.length/sessionQuestionTarget)*100)+'%';
     } else {
-      // Timed: tick down every 100ms for smooth animation
       timerInterval=setInterval(()=>{
         const elapsed=Date.now()-sessionStart;
         fill.style.width=Math.max(0,(1-elapsed/sessionDuration)*100)+'%';
@@ -635,7 +700,6 @@ const App = (() => {
       `<span>${total>0?`${correct}/${total} correct`:'Answer to begin'}</span><span>${right}</span>`;
   }
 
-  // ── answer submission ──
   function submitAnswer() {
     if (awaitingNext) return;
     const input=document.getElementById('answer-input');
@@ -702,7 +766,6 @@ const App = (() => {
     endSession();
   }
 
-  // ── practice ──
   function startPractice(type) {
     sessionType=type; _lastSessionType=type;
     sessionProblems=[]; sessionStart=Date.now();
@@ -717,14 +780,16 @@ const App = (() => {
     loadNextProblem();
   }
 
-  // ── end session ──
   function endSession() {
     clearTimer();
     const correct=sessionProblems.filter(p=>p.is_correct).length, total=sessionProblems.length;
     const acc=total?Math.round(correct/total*100):0;
-    Store.saveSession({session_id:sessionStart.toString(), session_type:sessionType,
+    Store.saveSession({
+      session_id:sessionStart.toString(), session_type:sessionType,
       started_at:new Date(sessionStart).toISOString(), ended_at:new Date().toISOString(),
-      total_problems:total, correct, accuracy:acc});
+      total_problems:total, correct, accuracy:acc,
+      display_name:state.display_name||null, current_skill:state.current_skill
+    });
     document.getElementById('results-title').textContent=sessionType==='diagnostic'?'Diagnostic Complete!':'Session Complete';
     document.getElementById('result-summary').innerHTML=`
       <div class="result-stat"><div class="val">${total}</div><div class="lbl">Problems</div></div>
@@ -752,7 +817,6 @@ const App = (() => {
     showScreen('screen-results');
   }
 
-  // ── progress ──
   function showProgress() {
     state=Store.loadUserState();
     const attempts=Store.loadAttempts();
@@ -798,12 +862,98 @@ const App = (() => {
     showScreen('screen-progress');
   }
 
+  function showHistory() {
+    const sessions=Store.loadSessions();
+    const el=document.getElementById('history-content');
+    if (!sessions.length) {
+      el.innerHTML='<p class="text-muted text-sm">No sessions yet.</p>';
+      showScreen('screen-history'); return;
+    }
+    const labels={practice_5:'5 min',practice_10:'10 min',flat_10:'10 Q',flat_25:'25 Q',custom:'Custom',diagnostic:'Diagnostic'};
+    el.innerHTML=[...sessions].reverse().slice(0,30).map(s=>{
+      const d=new Date(s.started_at);
+      const dateStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      const ms=s.ended_at&&s.started_at?new Date(s.ended_at)-new Date(s.started_at):0;
+      return `<div class="history-row">
+        <div>
+          <div class="history-type">${labels[s.session_type]||s.session_type}</div>
+          <div class="history-meta">${s.total_problems} problems · ${fmtTime(ms)} · ${dateStr}</div>
+        </div>
+        <div class="history-score">
+          <div class="val">${s.accuracy}%</div>
+          <div class="lbl">${s.correct}/${s.total_problems} correct</div>
+        </div>
+      </div>`;
+    }).join('');
+    showScreen('screen-history');
+  }
+
+  function showLeaderboard() {
+    lbMode='practice_5';
+    showScreen('screen-leaderboard');
+    _renderLbTabs();
+    _loadLeaderboard();
+  }
+
+  function _renderLbTabs() {
+    const tabs=[
+      {key:'practice_5',label:'5 min'},{key:'practice_10',label:'10 min'},
+      {key:'flat_10',label:'10 Q'},{key:'flat_25',label:'25 Q'},
+    ];
+    document.getElementById('lb-tabs').innerHTML=tabs.map(t=>
+      `<button class="tab-btn${lbMode===t.key?' active':''}" onclick="App.setLbMode('${t.key}')" type="button">${t.label}</button>`
+    ).join('');
+  }
+
+  function setLbMode(mode) {
+    lbMode=mode; _renderLbTabs(); _loadLeaderboard();
+  }
+
+  async function _loadLeaderboard() {
+    const el=document.getElementById('lb-results');
+    el.innerHTML='<p class="text-muted text-sm">Loading...</p>';
+    const isTimed=lbMode==='practice_5'||lbMode==='practice_10';
+    const {data,error}=await _sb
+      .from('sessions')
+      .select('display_name,correct,accuracy,total_problems,started_at,ended_at,user_id')
+      .eq('session_type',lbMode)
+      .order('correct',{ascending:false})
+      .limit(50);
+    if (error) { el.innerHTML=`<p class="text-muted text-sm">Could not load: ${esc(error.message)}</p>`; return; }
+    if (!data||!data.length) { el.innerHTML='<p class="text-muted text-sm">No sessions yet for this mode. Be the first!</p>'; return; }
+    let rows=data;
+    if (!isTimed) {
+      rows=data
+        .filter(s=>s.started_at&&s.ended_at)
+        .map(s=>({...s,_ms:new Date(s.ended_at)-new Date(s.started_at)}))
+        .sort((a,b)=>a._ms-b._ms);
+    }
+    const myId=state.user_id;
+    let html='<table class="lb-table"><thead><tr><th class="lb-rank">#</th><th>Player</th>';
+    html+=isTimed?'<th>Score</th><th>Accuracy</th>':'<th>Time</th><th>Result</th>';
+    html+='</tr></thead><tbody>';
+    rows.slice(0,20).forEach((s,i)=>{
+      const isMe=s.user_id===myId;
+      const name=esc(s.display_name||'Anonymous');
+      const badge=isMe?' <span class="pill pill-green" style="font-size:0.7rem;padding:1px 6px">you</span>':'';
+      if (isTimed) {
+        html+=`<tr${isMe?' class="lb-me"':''}><td class="lb-rank">${i+1}</td><td>${name}${badge}</td><td>${s.correct}</td><td>${s.accuracy}%</td></tr>`;
+      } else {
+        const t=fmtTime(s._ms||0);
+        html+=`<tr${isMe?' class="lb-me"':''}><td class="lb-rank">${i+1}</td><td>${name}${badge}</td><td>${t}</td><td>${s.correct}/${s.total_problems}</td></tr>`;
+      }
+    });
+    html+='</tbody></table>';
+    el.innerHTML=html;
+  }
+
   function confirmReset() {
     if (confirm('Reset all progress? This cannot be undone.')) { Store.resetAll(); state=Store.loadUserState(); renderHome(); }
   }
 
   return { init, goHome, showDiagIntro, startDiagnostic, startPractice,
     submitAnswer, showProgress, showSkillSelector, setCustomCount, startCustomSession,
+    showHistory, showLeaderboard, setLbMode, promptName,
     confirmReset, get lastSessionType() { return _lastSessionType; } };
 })();
 
