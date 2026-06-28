@@ -24,7 +24,7 @@ url = "/socials/"
 weight = 3
 
 [[menu.main]]
-name = "Church Page Prototype"
+name = "Church"
 url = "/church/"
 weight = 4
 
@@ -34,6 +34,15 @@ url = "/hangul/"
 weight = 5
 
 [[menu.main]]
-name = "Vine — Math Practice"
+name = "Vine"
 url = "/vine/"
 weight = 6
+
+[[menu.main]]
+name = "Livestream"
+url = "/livestream/"
+weight = 7
+
+[params.apps]
+vineAppURL = "https://vine-learning-app.vercel.app/vine-app"
+churchURL = "https://www.harvest-nyc.com/"

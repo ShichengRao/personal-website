@@ -1,7 +1,3 @@
 ---
-title: "Church Page Prototype"
+title: "Church"
 ---
-
-Below is a test of a YouTube embed.
-
-{{< youtube 0hTAqd7RVfA >}}
