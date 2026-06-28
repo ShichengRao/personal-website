@@ -1,104 +1,13 @@
 {{ define "head" }}
-<style>
-  .app-shell {
-    min-height: calc(100vh - 8rem);
-    display: grid;
-    place-items: center;
-    padding: 3rem 1rem;
-    background: #f7f3ea;
-  }
-
-  .app-panel {
-    width: min(720px, 100%);
-    background: #ffffff;
-    border: 1px solid #ded7c9;
-    border-radius: 8px;
-    padding: clamp(1.5rem, 4vw, 2.5rem);
-    color: #1d241b;
-    box-shadow: 0 12px 36px rgba(34, 40, 28, 0.1);
-  }
-
-  .app-kicker {
-    margin: 0 0 0.75rem;
-    color: #557047;
-    font-size: 0.8rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .app-panel h1 {
-    margin: 0;
-    font-size: clamp(2rem, 5vw, 3.25rem);
-    line-height: 1;
-    letter-spacing: 0;
-  }
-
-  .app-panel p {
-    max-width: 60ch;
-    margin: 1rem 0 0;
-    color: #495247;
-    font-size: 1rem;
-    line-height: 1.65;
-  }
-
-  .app-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-  }
-
-  .app-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    border: 1px solid #2f6f41;
-    background: #2f6f41;
-    color: #ffffff;
-    font-weight: 800;
-    text-decoration: none;
-  }
-
-  .app-button.secondary {
-    background: #ffffff;
-    color: #2f6f41;
-  }
-
-  .app-note {
-    margin-top: 1.25rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid #e5dfd2;
-    color: #687060;
-    font-size: 0.9rem;
-  }
-</style>
+{{ $vineURL := .Site.Params.apps.vineAppURL | default "https://vine-learning-app.vercel.app/vine-app" }}
+<meta http-equiv="refresh" content="0; url={{ $vineURL }}">
+<script>window.location.replace("{{ $vineURL }}");</script>
 {{ end }}
 
 {{ define "main" }}
-{{ $vineURL := .Site.Params.apps.vineAppURL }}
-<main class="app-shell">
-  <section class="app-panel" aria-labelledby="vine-title">
-    <p class="app-kicker">Direct app</p>
-    <h1 id="vine-title">Vine</h1>
-    <p>
-      Vine now lives in the sibling Next.js app, which has its own server-side auth, API routes, and SQLite storage.
-      Configure <code>params.apps.vineAppURL</code> once that app has a public deployment URL, then this page will open it directly.
-    </p>
-    <div class="app-actions">
-      {{ if $vineURL }}
-      <a class="app-button" href="{{ $vineURL }}" target="_blank" rel="noopener noreferrer">Open Vine</a>
-      {{ else }}
-      <a class="app-button" href="http://localhost:3000" target="_blank" rel="noopener noreferrer">Open local Vine</a>
-      {{ end }}
-      <a class="app-button secondary" href="https://github.com/julianahhong/vine-app" target="_blank" rel="noopener noreferrer">View app repo</a>
-    </div>
-    <div class="app-note">
-      From this workspace, start it with <code>cd ../vine-app</code> and <code>npm run dev</code>. The old in-page arithmetic artifact has been removed from this route.
-    </div>
-  </section>
+{{ $vineURL := .Site.Params.apps.vineAppURL | default "https://vine-learning-app.vercel.app/vine-app" }}
+<main class="pa4">
+  <p>Opening Vine...</p>
+  <p><a href="{{ $vineURL }}">Continue to Vine</a></p>
 </main>
 {{ end }}
