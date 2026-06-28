@@ -2,17 +2,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 const CHANNEL_ID = "UCgWXzSt9GyMkmYnzII75SGA";
 const FEED_URL = `https://www.youtube.com/feeds/videos.xml?channel_id=${CHANNEL_ID}`;
+const STREAMS_URL = "https://www.youtube.com/@harvestinthecity/streams";
 const TITLE_NEEDLE = "harvest sunday service";
 const OUT_FILE = new URL("../data/harvest_livestream.json", import.meta.url);
 const FALLBACK = {
-  videoId: "8QC1aqtN0ws",
-  title: "Harvest Sunday Service | 6/28/2026 |",
-  url: "https://www.youtube.com/watch?v=8QC1aqtN0ws",
-  channelUrl: "https://www.youtube.com/@harvestinthecity/streams",
+  videoId: "deB9CZdH_H0",
+  title: "Harvest Sunday Service | Father's Day Performance (2026)",
+  url: "https://www.youtube.com/watch?v=deB9CZdH_H0",
+  channelUrl: STREAMS_URL,
   matchedTitleWords: TITLE_NEEDLE,
   source: "fallback",
-  serviceDate: "2026-06-28",
-  updatedAt: "2026-06-21T22:06:10+00:00"
+  serviceDate: "",
+  updatedAt: "2026-06-21T21:50:12+00:00"
 };
 
 function textBetween(xml, tag) {
@@ -70,6 +71,14 @@ function sortKey(entry) {
   return entry.serviceDate || entry.publishedAt || entry.updatedAt || "";
 }
 
+function unique(items) {
+  return [...new Set(items)];
+}
+
+function parseStreamsPageOrder(html) {
+  return unique([...html.matchAll(/"videoId":"([^"]+)"/g)].map(([, videoId]) => videoId));
+}
+
 async function currentOrFallback() {
   try {
     return JSON.parse(await readFile(OUT_FILE, "utf8"));
@@ -84,7 +93,18 @@ async function main() {
     if (!response.ok) throw new Error(`YouTube feed returned ${response.status}`);
 
     const feed = await response.text();
-    const latest = parseEntries(feed).sort((a, b) => sortKey(b).localeCompare(sortKey(a)))[0];
+    const entries = parseEntries(feed);
+    const byVideoId = new Map(entries.map((entry) => [entry.videoId, entry]));
+
+    const streamsResponse = await fetch(STREAMS_URL);
+    const streamsPage = streamsResponse.ok ? await streamsResponse.text() : "";
+    const orderedVideoIds = parseStreamsPageOrder(streamsPage);
+
+    const latestFromPage = orderedVideoIds
+      .map((videoId) => byVideoId.get(videoId))
+      .find(Boolean);
+
+    const latest = latestFromPage || entries.sort((a, b) => sortKey(b).localeCompare(sortKey(a)))[0];
     if (!latest) throw new Error(`No video title contained "${TITLE_NEEDLE}"`);
 
     await mkdir(new URL("../data", import.meta.url), { recursive: true });

@@ -25,7 +25,7 @@ weight = 3
 
 [[menu.main]]
 name = "Church"
-url = "/church/"
+url = "https://www.harvest-nyc.com/"
 weight = 4
 
 [[menu.main]]
@@ -35,7 +35,7 @@ weight = 5
 
 [[menu.main]]
 name = "Vine"
-url = "/vine/"
+url = "https://vine-learning-app.vercel.app/vine-app"
 weight = 6
 
 [[menu.main]]
