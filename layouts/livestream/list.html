@@ -1,0 +1,98 @@
+{{ define "head" }}
+<style>
+  .stream-page {
+    min-height: calc(100vh - 6rem);
+    padding: clamp(1rem, 3vw, 2rem);
+    background: #101418;
+    color: #f7f7f4;
+  }
+
+  .stream-wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+
+  .stream-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .stream-head h1 {
+    margin: 0;
+    font-size: clamp(1.8rem, 5vw, 3rem);
+    letter-spacing: 0;
+  }
+
+  .stream-meta {
+    margin: 0.35rem 0 0;
+    color: #c9d0d6;
+    line-height: 1.5;
+  }
+
+  .stream-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 0.65rem 0.9rem;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #101418;
+    font-weight: 800;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .stream-video {
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    background: #000000;
+  }
+
+  .stream-video iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  @media (max-width: 760px) {
+    .stream-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+</style>
+{{ end }}
+
+{{ define "main" }}
+{{ $stream := .Site.Data.harvest_livestream }}
+{{ $videoID := $stream.videoId | default "8QC1aqtN0ws" }}
+{{ $title := $stream.title | default "Harvest Sunday Service" }}
+{{ $channelURL := $stream.channelUrl | default "https://www.youtube.com/@harvestinthecity/streams" }}
+<main class="stream-page">
+  <div class="stream-wrap">
+    <header class="stream-head">
+      <div>
+        <h1>Harvest Livestream</h1>
+        <p class="stream-meta">{{ $title }}</p>
+      </div>
+      <a class="stream-link" href="{{ $channelURL }}" target="_blank" rel="noopener noreferrer">Open channel</a>
+    </header>
+
+    <div class="stream-video">
+      <iframe
+        src="https://www.youtube.com/embed/{{ $videoID }}"
+        title="{{ $title }}"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen>
+      </iframe>
+    </div>
+  </div>
+</main>
+{{ end }}

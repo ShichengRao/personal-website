@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    
+    <title>Hangul Romanization Practice | Shicheng Rao</title>
+    <meta name="viewport" content="width=device-width,minimum-scale=1">
+    <meta name="description" content="Product Reliability Engineer">
+    <meta name="generator" content="Hugo 0.151.0">
+    
+    
+    
+      <meta name="robots" content="index, follow">
+    
+    <meta name="author" content="Shicheng Rao">
+    
+
+    
+<link rel="stylesheet" href="/ananke/css/main.min.efe4d852f731d5d1fbb87718387202a97aafd768cdcdaed0662bbe6982e91824.css" >
+
+
+
+
+    
+
+
+    
+      
+
+    
+
+    
+    
+      <link href="/hangul/index.xml" rel="alternate" type="application/rss+xml" title="Shicheng Rao" />
+      <link href="/hangul/index.xml" rel="feed" type="application/rss+xml" title="Shicheng Rao" />
+      
+    
+
+    
+      <link rel="canonical" href="https://shichengrao.com/hangul/">
+    
+
+    <meta property="og:url" content="https://shichengrao.com/hangul/">
+  <meta property="og:site_name" content="Shicheng Rao">
+  <meta property="og:title" content="Hangul Romanization Practice">
+  <meta property="og:description" content="Product Reliability Engineer">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="website">
+
+  <meta itemprop="name" content="Hangul Romanization Practice">
+  <meta itemprop="description" content="Product Reliability Engineer">
+  <meta itemprop="datePublished" content="2025-01-12T16:48:00-05:00">
+  <meta itemprop="dateModified" content="2025-01-12T16:48:00-05:00">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Hangul Romanization Practice">
+  <meta name="twitter:description" content="Product Reliability Engineer">
+
+      
+    
+	
+<style>
+  #hangul-app, #hangul-app * {
+    box-sizing: border-box;
+  }
+
+  #hangul-app {
+    min-height: calc(100vh - 6rem);
+    padding: clamp(1rem, 3vw, 2rem);
+    background: #f6f4ef;
+    color: #1f2421;
+    --ink: #1f2421;
+    --muted: #626d66;
+    --line: #d9d4c8;
+    --paper: #ffffff;
+    --green: #2f6f58;
+    --green-soft: #e1efe8;
+    --rose: #a64253;
+    --rose-soft: #f7e1e5;
+    --gold: #b98216;
+  }
+
+  #hangul-app button,
+  #hangul-app input {
+    font: inherit;
+  }
+
+  #hangul-app .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .hangul-wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+
+  .hangul-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 1rem;
+  }
+
+  .hangul-top h1 {
+    margin: 0;
+    font-size: clamp(2rem, 6vw, 4rem);
+    line-height: 1;
+    letter-spacing: 0;
+  }
+
+  .hangul-sub {
+    margin: 0.5rem 0 0;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .hangul-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(88px, 1fr));
+    gap: 0.5rem;
+    min-width: min(360px, 100%);
+  }
+
+  .hangul-stat {
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+  }
+
+  .hangul-stat strong {
+    display: block;
+    font-size: 1.4rem;
+    line-height: 1;
+  }
+
+  .hangul-stat span {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .hangul-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+    gap: 1rem;
+  }
+
+  .hangul-panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    box-shadow: 0 12px 28px rgba(31, 36, 33, 0.08);
+  }
+
+  .hangul-practice {
+    padding: clamp(1rem, 3vw, 2rem);
+  }
+
+  .mode-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .mode-row button,
+  .tool-row button,
+  .answer-row button,
+  .history-actions button {
+    min-height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--ink);
+    padding: 0.65rem 0.85rem;
+    cursor: pointer;
+    font-weight: 800;
+  }
+
+  .mode-row button.active,
+  .answer-row button.primary {
+    border-color: var(--green);
+    background: var(--green);
+    color: #ffffff;
+  }
+
+  .prompt-card {
+    display: grid;
+    place-items: center;
+    min-height: 220px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ffffff, #f8fbf2);
+    text-align: center;
+  }
+
+  .prompt-korean {
+    display: block;
+    font-size: clamp(3.5rem, 13vw, 7rem);
+    line-height: 1.05;
+    word-break: keep-all;
+  }
+
+  .prompt-kind {
+    display: block;
+    margin-top: 0.75rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .answer-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .answer-row input {
+    min-width: 0;
+    min-height: 48px;
+    border: 2px solid var(--line);
+    border-radius: 8px;
+    padding: 0 0.9rem;
+    font-size: 1.05rem;
+  }
+
+  .answer-row input:focus {
+    border-color: var(--green);
+    outline: none;
+  }
+
+  .feedback {
+    min-height: 3.25rem;
+    margin-top: 0.9rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .feedback.correct {
+    color: var(--green);
+  }
+
+  .feedback.incorrect {
+    color: var(--rose);
+  }
+
+  .tool-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .tool-row button.recording {
+    border-color: var(--rose);
+    background: var(--rose);
+    color: #ffffff;
+  }
+
+  .recording-player {
+    display: none;
+    width: 100%;
+    margin-top: 0.75rem;
+  }
+
+  .recording-player.ready {
+    display: block;
+  }
+
+  .side-panel {
+    padding: 1rem;
+  }
+
+  .side-panel h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    letter-spacing: 0;
+  }
+
+  .phrase-list,
+  .history-list {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.85rem;
+  }
+
+  .phrase-item,
+  .history-item {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: #fbfaf7;
+  }
+
+  .phrase-item strong,
+  .history-item strong {
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+
+  .phrase-item span,
+  .history-item span {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .history-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .history-actions button.danger {
+    border-color: var(--rose);
+    color: var(--rose);
+  }
+
+  @media (max-width: 860px) {
+    .hangul-top,
+    .hangul-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .answer-row {
+      grid-template-columns: 1fr;
+    }
+
+    .answer-row button {
+      width: 100%;
+    }
+  }
+</style>
+
+  </head><body class="ma0 avenir bg-near-white production">
+
+    
+
+  <header>
+    <div class="pb3-m pb6-l bg-black">
+      <nav class="pv3 ph3 ph4-ns" role="navigation">
+  <div class="flex-l center items-center justify-between">
+    <a href="/" class="f3 fw2 hover-white white-90 dib no-underline">
+      
+        Shicheng Rao
+      
+    </a>
+    <div class="flex-l items-center">
+      
+
+      
+        <ul class="pl0 mr3">
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/" title="Home page">
+              Home
+            </a>
+          </li>
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/resume/" title="Resume page">
+              Resume
+            </a>
+          </li>
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/socials/" title="Socials page">
+              Socials
+            </a>
+          </li>
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/church/" title="Church page">
+              Church
+            </a>
+          </li>
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/hangul/" title="Hangul Romanization Practice page">
+              Hangul Romanization Practice
+            </a>
+          </li>
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/vine/" title="Vine page">
+              Vine
+            </a>
+          </li>
+          
+          <li class="list f5 f4-ns fw4 dib pr3">
+            <a class="hover-white white-90 no-underline" href="/livestream/" title="Livestream page">
+              Livestream
+            </a>
+          </li>
+          
+        </ul>
+      
+      <div class="ananke-socials"></div>
+
+    </div>
+  </div>
+</nav>
+
+      <div class="tc-l pv3 ph3 ph4-ns">
+        <h1 class="f2 f-subheadline-l fw2 light-silver mb0 lh-title">
+          Hangul Romanization Practice
+        </h1>
+        
+      </div>
+    </div>
+  </header>
+
+
+    <main class="pb7" role="main">
+      
+<main id="hangul-app">
+  <div class="hangul-wrap">
+    <header class="hangul-top">
+      <div>
+        <h1>Hangul Practice</h1>
+        <p class="hangul-sub">Practice romanization for random Korean syllables and everyday phrases, then listen and record your own pronunciation.</p>
+      </div>
+      <div class="hangul-stats" aria-label="Practice statistics">
+        <div class="hangul-stat"><strong id="stat-accuracy">0%</strong><span>Accuracy</span></div>
+        <div class="hangul-stat"><strong id="stat-total">0</strong><span>Attempts</span></div>
+        <div class="hangul-stat"><strong id="stat-streak">0</strong><span>Streak</span></div>
+      </div>
+    </header>
+
+    <section class="hangul-grid">
+      <div class="hangul-panel hangul-practice">
+        <div class="mode-row" role="group" aria-label="Practice mode">
+          <button type="button" id="mode-character" class="active">Characters</button>
+          <button type="button" id="mode-phrase">Common phrases</button>
+        </div>
+
+        <div class="prompt-card" aria-live="polite">
+          <div>
+            <span id="prompt-korean" class="prompt-korean">가</span>
+            <span id="prompt-kind" class="prompt-kind">Random syllable</span>
+          </div>
+        </div>
+
+        <form id="answer-form" class="answer-row">
+          <label class="sr-only" for="answer-input">Romanization answer</label>
+          <input id="answer-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type romanization" />
+          <button type="submit" class="primary">Check</button>
+          <button type="button" id="next-button">Next</button>
+        </form>
+
+        <div id="feedback" class="feedback">Use Revised Romanization. Spacing and punctuation are optional.</div>
+
+        <div class="tool-row" role="group" aria-label="Audio tools">
+          <button type="button" id="speak-button">Pronounce</button>
+          <button type="button" id="record-button">Record</button>
+        </div>
+        <audio id="recording-player" class="recording-player" controls></audio>
+      </div>
+
+      <aside class="hangul-panel side-panel">
+        <h2>Phrase Set</h2>
+        <div id="phrase-list" class="phrase-list"></div>
+
+        <h2 style="margin-top:1.25rem">Recent Results</h2>
+        <div id="history-list" class="history-list"></div>
+        <div class="history-actions">
+          <button type="button" id="export-button">Export</button>
+          <button type="button" id="reset-button" class="danger">Reset</button>
+        </div>
+      </aside>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  const STORAGE_KEY = "hangul_practice_results_v1";
+  const romanInitial = ["g","kk","n","d","tt","r","m","b","pp","s","ss","","j","jj","ch","k","t","p","h"];
+  const romanVowel = ["a","ae","ya","yae","eo","e","yeo","ye","o","wa","wae","oe","yo","u","wo","we","wi","yu","eu","ui","i"];
+  const romanFinal = ["","k","k","ks","n","nj","nh","t","l","lk","lm","lb","ls","lt","lp","lh","m","p","ps","t","t","ng","t","t","k","t","p","t"];
+  const initialCount = 19;
+  const vowelCount = 21;
+  const finalCount = 28;
+
+  const phrases = [
+    { ko: "안녕하세요", rom: "annyeonghaseyo", note: "Hello" },
+    { ko: "감사합니다", rom: "gamsahamnida", note: "Thank you" },
+    { ko: "죄송합니다", rom: "joesonghamnida", note: "I am sorry" },
+    { ko: "괜찮아요", rom: "gwaenchanayo", note: "It is okay" },
+    { ko: "이름이 뭐예요", rom: "ireumi mwoyeyo", note: "What is your name?" },
+    { ko: "저는 학생이에요", rom: "jeoneun haksaengieyo", note: "I am a student" },
+    { ko: "화장실이 어디예요", rom: "hwajangsiri eodiyeyo", note: "Where is the restroom?" },
+    { ko: "얼마예요", rom: "eolmayeyo", note: "How much is it?" },
+    { ko: "다시 말해 주세요", rom: "dasi malhae juseyo", note: "Please say it again" },
+    { ko: "천천히 말해 주세요", rom: "cheoncheonhi malhae juseyo", note: "Please speak slowly" },
+    { ko: "잘 지냈어요", rom: "jal jinaesseoyo", note: "Have you been well?" },
+    { ko: "만나서 반가워요", rom: "mannaseo bangawoyo", note: "Nice to meet you" }
+  ];
+
+  const state = {
+    mode: "character",
+    prompt: null,
+    results: loadResults(),
+    mediaRecorder: null,
+    chunks: []
+  };
+
+  const els = {
+    modeCharacter: document.getElementById("mode-character"),
+    modePhrase: document.getElementById("mode-phrase"),
+    promptKorean: document.getElementById("prompt-korean"),
+    promptKind: document.getElementById("prompt-kind"),
+    form: document.getElementById("answer-form"),
+    input: document.getElementById("answer-input"),
+    next: document.getElementById("next-button"),
+    feedback: document.getElementById("feedback"),
+    speak: document.getElementById("speak-button"),
+    record: document.getElementById("record-button"),
+    player: document.getElementById("recording-player"),
+    phraseList: document.getElementById("phrase-list"),
+    historyList: document.getElementById("history-list"),
+    accuracy: document.getElementById("stat-accuracy"),
+    total: document.getElementById("stat-total"),
+    streak: document.getElementById("stat-streak"),
+    export: document.getElementById("export-button"),
+    reset: document.getElementById("reset-button")
+  };
+
+  function normalize(value) {
+    return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
+  }
+
+  function romanizeSyllable(syllable) {
+    const code = syllable.charCodeAt(0) - 0xac00;
+    if (code < 0 || code > 11171) return "";
+    const initial = Math.floor(code / (vowelCount * finalCount));
+    const vowel = Math.floor((code % (vowelCount * finalCount)) / finalCount);
+    const final = code % finalCount;
+    return `${romanInitial[initial]}${romanVowel[vowel]}${romanFinal[final]}`;
+  }
+
+  function randomSyllable() {
+    const initial = Math.floor(Math.random() * initialCount);
+    const vowel = Math.floor(Math.random() * vowelCount);
+    const final = Math.random() < 0.7 ? 0 : Math.floor(Math.random() * finalCount);
+    const syllable = String.fromCharCode(0xac00 + ((initial * vowelCount + vowel) * finalCount) + final);
+    return { ko: syllable, rom: romanizeSyllable(syllable), note: "Random syllable" };
+  }
+
+  function choosePrompt() {
+    state.prompt = state.mode === "phrase"
+      ? phrases[Math.floor(Math.random() * phrases.length)]
+      : randomSyllable();
+
+    els.promptKorean.textContent = state.prompt.ko;
+    els.promptKind.textContent = state.mode === "phrase" ? state.prompt.note : "Random syllable";
+    els.input.value = "";
+    els.input.focus();
+    els.feedback.className = "feedback";
+    els.feedback.textContent = "Use Revised Romanization. Spacing and punctuation are optional.";
+    els.player.classList.remove("ready");
+    els.player.removeAttribute("src");
+  }
+
+  function checkAnswer(event) {
+    event.preventDefault();
+    const answer = els.input.value.trim();
+    if (!answer) return;
+
+    const correct = normalize(answer) === normalize(state.prompt.rom);
+    const result = {
+      mode: state.mode,
+      korean: state.prompt.ko,
+      expected: state.prompt.rom,
+      answer,
+      correct,
+      at: new Date().toISOString()
+    };
+    state.results.push(result);
+    saveResults();
+    renderStats();
+    renderHistory();
+
+    els.feedback.className = `feedback ${correct ? "correct" : "incorrect"}`;
+    els.feedback.innerHTML = correct
+      ? `Correct. <strong>${escapeHtml(state.prompt.rom)}</strong>`
+      : `Expected <strong>${escapeHtml(state.prompt.rom)}</strong>`;
+  }
+
+  function speakPrompt() {
+    if (!("speechSynthesis" in window)) {
+      els.feedback.className = "feedback incorrect";
+      els.feedback.textContent = "Speech synthesis is not available in this browser.";
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(state.prompt.ko);
+    utterance.lang = "ko-KR";
+    utterance.rate = 0.82;
+    const voice = speechSynthesis.getVoices().find((item) => item.lang && item.lang.toLowerCase().startsWith("ko"));
+    if (voice) utterance.voice = voice;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+  }
+
+  async function toggleRecording() {
+    if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
+      state.mediaRecorder.stop();
+      return;
+    }
+
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      els.feedback.className = "feedback incorrect";
+      els.feedback.textContent = "Recording is not available in this browser.";
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      state.chunks = [];
+      state.mediaRecorder = new MediaRecorder(stream);
+      state.mediaRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) state.chunks.push(event.data);
+      });
+      state.mediaRecorder.addEventListener("stop", () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(state.chunks, { type: "audio/webm" });
+        els.player.src = URL.createObjectURL(blob);
+        els.player.classList.add("ready");
+        els.record.classList.remove("recording");
+        els.record.textContent = "Record";
+      });
+      state.mediaRecorder.start();
+      els.record.classList.add("recording");
+      els.record.textContent = "Stop";
+    } catch (error) {
+      els.feedback.className = "feedback incorrect";
+      els.feedback.textContent = "Microphone permission was not granted.";
+    }
+  }
+
+  function renderPhrases() {
+    els.phraseList.innerHTML = phrases.slice(0, 6).map((phrase) => {
+      return `<div class="phrase-item"><strong>${escapeHtml(phrase.ko)}</strong><span>${escapeHtml(phrase.rom)} - ${escapeHtml(phrase.note)}</span></div>`;
+    }).join("");
+  }
+
+  function renderStats() {
+    const total = state.results.length;
+    const correct = state.results.filter((item) => item.correct).length;
+    const streak = [...state.results].reverse().findIndex((item) => !item.correct);
+    els.total.textContent = String(total);
+    els.accuracy.textContent = total ? `${Math.round((correct / total) * 100)}%` : "0%";
+    els.streak.textContent = String(streak === -1 ? total : streak);
+  }
+
+  function renderHistory() {
+    const recent = state.results.slice(-6).reverse();
+    els.historyList.innerHTML = recent.length
+      ? recent.map((item) => `<div class="history-item"><strong>${item.correct ? "Correct" : "Review"}: ${escapeHtml(item.korean)}</strong><span>${escapeHtml(item.answer)} -> ${escapeHtml(item.expected)}</span></div>`).join("")
+      : `<div class="history-item"><span>No attempts yet.</span></div>`;
+  }
+
+  function loadResults() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    } catch {
+      return [];
+    }
+  }
+
+  function saveResults() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.results.slice(-500)));
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    els.modeCharacter.classList.toggle("active", mode === "character");
+    els.modePhrase.classList.toggle("active", mode === "phrase");
+    choosePrompt();
+  }
+
+  function exportResults() {
+    const blob = new Blob([JSON.stringify(state.results, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "hangul-practice-results.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function resetResults() {
+    state.results = [];
+    saveResults();
+    renderStats();
+    renderHistory();
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  els.modeCharacter.addEventListener("click", () => setMode("character"));
+  els.modePhrase.addEventListener("click", () => setMode("phrase"));
+  els.form.addEventListener("submit", checkAnswer);
+  els.next.addEventListener("click", choosePrompt);
+  els.speak.addEventListener("click", speakPrompt);
+  els.record.addEventListener("click", toggleRecording);
+  els.export.addEventListener("click", exportResults);
+  els.reset.addEventListener("click", resetResults);
+
+  renderPhrases();
+  renderStats();
+  renderHistory();
+  choosePrompt();
+})();
+</script>
+
+    </main>
+    <footer class="bg-black bottom-0 w-100 pa3" role="contentinfo">
+  <div class="flex justify-between">
+  <a class="f4 fw4 hover-white white-70 dn dib-ns pv2 ph3 no-underline" href="https://shichengrao.com/" >
+    &copy;  Shicheng Rao 2026 
+  </a>
+    <div><div class="ananke-socials"></div>
+</div>
+  </div>
+</footer>
+
+  </body>
+</html>

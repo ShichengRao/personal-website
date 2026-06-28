@@ -1,6 +1,6 @@
 [build]
 publish = "public"
-command = "hugo"
+command = "node scripts/fetch-harvest-livestream.mjs && hugo"
 
 [build.environment]
 HUGO_VERSION = "0.150.0"
