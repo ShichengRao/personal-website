@@ -322,7 +322,7 @@
         <form id="answer-form" class="answer-row">
           <label class="sr-only" for="answer-input">Romanization answer</label>
           <input id="answer-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type romanization" />
-          <button type="submit" class="primary">Check</button>
+          <button type="submit" id="check-button" class="primary">Check</button>
           <button type="button" id="next-button">Next</button>
         </form>
 
@@ -378,6 +378,7 @@
   const state = {
     mode: "character",
     prompt: null,
+    answered: false,
     results: loadResults(),
     mediaRecorder: null,
     chunks: []
@@ -390,6 +391,7 @@
     promptKind: document.getElementById("prompt-kind"),
     form: document.getElementById("answer-form"),
     input: document.getElementById("answer-input"),
+    check: document.getElementById("check-button"),
     next: document.getElementById("next-button"),
     feedback: document.getElementById("feedback"),
     speak: document.getElementById("speak-button"),
@@ -434,6 +436,8 @@
     els.promptKind.textContent = state.mode === "phrase" ? state.prompt.note : "Random syllable";
     els.input.value = "";
     els.input.focus();
+    state.answered = false;
+    els.check.textContent = "Check";
     els.feedback.className = "feedback";
     els.feedback.textContent = "Use Revised Romanization. Spacing and punctuation are optional.";
     els.player.classList.remove("ready");
@@ -442,6 +446,11 @@
 
   function checkAnswer(event) {
     event.preventDefault();
+    if (state.answered) {
+      choosePrompt();
+      return;
+    }
+
     const answer = els.input.value.trim();
     if (!answer) return;
 
@@ -463,6 +472,18 @@
     els.feedback.innerHTML = correct
       ? `Correct. <strong>${escapeHtml(state.prompt.rom)}</strong>`
       : `Expected <strong>${escapeHtml(state.prompt.rom)}</strong>`;
+    state.answered = true;
+    els.check.textContent = "Next";
+  }
+
+  function handleAnswerKeydown(event) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (state.answered) {
+      choosePrompt();
+      return;
+    }
+    checkAnswer(event);
   }
 
   function speakPrompt() {
@@ -586,6 +607,7 @@
   els.modeCharacter.addEventListener("click", () => setMode("character"));
   els.modePhrase.addEventListener("click", () => setMode("phrase"));
   els.form.addEventListener("submit", checkAnswer);
+  els.input.addEventListener("keydown", handleAnswerKeydown);
   els.next.addEventListener("click", choosePrompt);
   els.speak.addEventListener("click", speakPrompt);
   els.record.addEventListener("click", toggleRecording);
