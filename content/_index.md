@@ -1,11 +1,7 @@
 ---
-title: "Home"
+description: "Product Reliability Engineer"
 ---
-
-# Shicheng Rao
-
-Product Reliability Engineer
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)
 
-Welcome to my site! You’ll find my [Resume](/resume) and [Socials](/socials).
+Welcome to my site! You'll find my [Resume](/resume) and [Socials](/socials).
