@@ -1,5 +1,0 @@
----
-title: "Vine"
-date: 2026-03-25T00:00:00-05:00
-draft: false
----

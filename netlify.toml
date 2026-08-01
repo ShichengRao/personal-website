@@ -1,7 +1,30 @@
 [build]
 publish = "public"
-command = "node scripts/fetch-harvest-livestream.mjs && hugo"
+command = "hugo"
 
 [build.environment]
 HUGO_VERSION = "0.150.0"
 HUGO_ENABLEGITINFO = "true"
+
+# These paths used to be on-site stub pages that bounced visitors
+# elsewhere; real 301s keep old inbound links working.
+[[redirects]]
+from = "/church/*"
+to = "https://www.harvest-nyc.com/"
+status = 301
+
+[[redirects]]
+from = "/vine/*"
+to = "https://vine-learning-app.vercel.app/vine-app"
+status = 301
+
+[[redirects]]
+from = "/deskbooks/*"
+to = "https://deskbooks-demo.vercel.app"
+status = 301
+
+# The livestream now lives on harvest-nyc.com itself.
+[[redirects]]
+from = "/livestream/*"
+to = "https://www.harvest-nyc.com/"
+status = 301
