@@ -1,0 +1,14 @@
+{{ define "head" }}
+{{ $demoURL := .Site.Params.apps.deskbooksDemoURL | default "https://deskbooks-demo.vercel.app" }}
+<meta http-equiv="refresh" content="0; url={{ $demoURL }}">
+<script>window.location.replace("{{ $demoURL }}");</script>
+{{ end }}
+
+{{ define "main" }}
+{{ $demoURL := .Site.Params.apps.deskbooksDemoURL | default "https://deskbooks-demo.vercel.app" }}
+<main class="pa4">
+  <p>Opening the DeskBooks demo...</p>
+  <p><a href="{{ $demoURL }}">Continue to the DeskBooks demo</a></p>
+  <p class="f6 gray">A read-only tour of a local-first personal finance app, loaded with synthetic data.</p>
+</main>
+{{ end }}
