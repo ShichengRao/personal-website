@@ -33,7 +33,7 @@ url = "https://www.harvest-nyc.com/"
 weight = 4
 
 [[menu.main]]
-name = "Hangul Romanization Practice"
+name = "Hangul"
 url = "/hangul/"
 weight = 5
 

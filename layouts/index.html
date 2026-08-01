@@ -1,0 +1,21 @@
+{{ define "main" }}
+  <article class="cf ph3 ph5-l pv3 pv4-l f4 tc-l center measure-wide lh-copy nested-links mid-gray">
+    {{ .Content }}
+  </article>
+
+  {{ with .Params.projects }}
+  <section class="ph3 ph4-ns pb5 center mw8">
+    <h2 class="f3 fw6 tc mid-gray">Projects</h2>
+    <div class="flex flex-wrap justify-center nl2 nr2">
+      {{ range . }}
+      <div class="w-100 w-third-ns pa2 flex">
+        <a href="{{ .url }}" class="link db w-100 pa3 br3 ba b--black-10 bg-white dim near-black">
+          <h3 class="f4 fw6 mt0 mb2">{{ .name }}</h3>
+          <p class="f6 mid-gray lh-copy mv0">{{ .blurb }}</p>
+        </a>
+      </div>
+      {{ end }}
+    </div>
+  </section>
+  {{ end }}
+{{ end }}
