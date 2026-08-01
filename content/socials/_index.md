@@ -1,8 +1,7 @@
 ---
 title: "Socials"
+description: "Where to find Shicheng Rao online: LinkedIn, GitHub, YouTube, and Facebook."
 ---
-
-# Find me online
 
 - [LinkedIn](https://www.linkedin.com/in/shicheng-samson-rao/)
 - [GitHub](https://github.com/ShichengRao)
