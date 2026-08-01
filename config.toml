@@ -39,16 +39,6 @@ url = "https://vine-learning-app.vercel.app/vine-app"
 weight = 6
 
 [[menu.main]]
-name = "Livestream"
-url = "/livestream/"
-weight = 7
-
-[[menu.main]]
 name = "DeskBooks Demo"
-url = "/deskbooks/"
-weight = 8
-
-[params.apps]
-vineAppURL = "https://vine-learning-app.vercel.app/vine-app"
-churchURL = "https://www.harvest-nyc.com/"
-deskbooksDemoURL = "https://deskbooks-demo.vercel.app"
+url = "https://deskbooks-demo.vercel.app"
+weight = 7
