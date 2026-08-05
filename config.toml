@@ -46,3 +46,8 @@ weight = 6
 name = "DeskBooks Demo"
 url = "https://deskbooks-demo.vercel.app"
 weight = 7
+
+[[menu.main]]
+name = "Blunder Drill"
+url = "/blunder-drill/"
+weight = 8
