@@ -10,6 +10,12 @@ projects:
   - name: "DeskBooks"
     url: "https://deskbooks-demo.vercel.app"
     blurb: "A read-only demo of a local-first personal finance app, loaded with synthetic data."
+  - name: "Blunder Drill"
+    url: "/blunder-drill/"
+    blurb: "Play a move in 2,939 positions from my own games and find out whether you repeated my blunder or held the position."
+  - name: "The Long Game"
+    url: "/long-game/"
+    blurb: "A bullet hell, a racing game and a platformer rebuilt so that patience and position win. The fast way still exists in each."
 ---
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)
