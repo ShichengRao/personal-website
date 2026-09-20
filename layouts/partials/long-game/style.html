@@ -1,0 +1,70 @@
+<style>
+/* Shared chrome for the Long Game arcade pages. Every selector is scoped to
+   .lg-app so the dark palette and generic class names never leak into the
+   theme. Each game adds a few of its own rules below this partial. */
+.lg-app{
+ --bg:#0e1017;--surface:#161a24;--plane:#1f2432;--ring:#2c3242;
+ --text:#e8eaf0;--muted:#8f97a8;--soft:#c2c8d6;
+ --accent:#5b8dd9;--good:#3fa860;--bad:#d1495b;--warn:#d9a23a;--cool:#7ad7f0;
+ box-sizing:border-box;margin:0 auto;max-width:1180px;padding:16px 20px 40px;
+ background:var(--bg);color:var(--text);border-radius:12px;
+ font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.lg-app *{box-sizing:border-box}
+.lg-app .lg-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+@media(max-width:900px){.lg-app .lg-cols{grid-template-columns:1fr}}
+.lg-app .lg-stage{position:relative;outline:none;border-radius:10px;overflow:hidden;
+ border:1px solid var(--ring);background:#000;margin:0 auto}
+.lg-app .lg-stage:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.lg-app canvas{display:block;width:100%;height:auto;touch-action:none}
+.lg-app .lg-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+ background:rgba(10,12,18,.82);backdrop-filter:blur(2px);padding:20px;text-align:center}
+.lg-app .lg-overlay.is-open{display:flex}
+.lg-app .lg-overlay > div{max-width:440px}
+.lg-app .lg-overlay h2{margin:0 0 8px;font-size:24px;letter-spacing:-.01em}
+.lg-app .lg-overlay p{margin:0 0 12px;color:var(--soft);font-size:14px;line-height:1.5}
+.lg-app .lg-overlay .lg-fine{font-size:12px;color:var(--muted)}
+.lg-app button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--ring);
+ background:var(--plane);color:var(--text);cursor:pointer}
+.lg-app button:hover{border-color:var(--muted)}
+.lg-app button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.lg-app button:disabled{opacity:.45;cursor:default}
+.lg-app select{font:inherit;padding:5px 8px;border-radius:7px;border:1px solid var(--ring);
+ background:var(--plane);color:var(--text)}
+.lg-app .lg-panel{background:var(--surface);border:1px solid var(--ring);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.lg-app .lg-k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px}
+.lg-app .lg-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.lg-app .lg-bar{height:9px;border-radius:5px;background:var(--plane);overflow:hidden;margin:2px 0 10px;position:relative}
+.lg-app .lg-bar-fill{display:block;height:100%;background:var(--accent);transition:width .08s linear}
+.lg-app .lg-bar-fill.good{background:var(--good)}
+.lg-app .lg-bar-fill.bad{background:var(--bad)}
+.lg-app .lg-bar-fill.warn{background:var(--warn)}
+.lg-app .lg-bar-fill.cool{background:var(--cool)}
+.lg-app .lg-bar .lg-tick{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.35)}
+.lg-app .lg-stat{display:flex;justify-content:space-between;font-size:13px;color:var(--soft);padding:2px 0}
+.lg-app .lg-stat b{color:var(--text);font-variant-numeric:tabular-nums}
+.lg-app .lg-mono{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.lg-app .lg-keys{font-size:13px;color:var(--soft);line-height:1.7}
+.lg-app .lg-keys kbd{display:inline-block;min-width:22px;padding:0 6px;border-radius:5px;border:1px solid var(--ring);
+ border-bottom-width:2px;background:var(--plane);font:12px/20px ui-monospace,Menlo,monospace;color:var(--text);text-align:center}
+.lg-app .lg-keys div{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.lg-app .lg-keys .lg-keys-what{color:var(--muted);flex:1;min-width:120px}
+.lg-app .lg-style{margin:12px 0 4px;text-align:left}
+.lg-app .lg-style-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--soft)}
+.lg-app .lg-style-bar{position:relative;height:10px;border-radius:5px;margin-top:4px;
+ background:linear-gradient(90deg,var(--accent),var(--plane) 50%,var(--warn))}
+.lg-app .lg-style-bar i{position:absolute;top:-4px;width:6px;height:18px;margin-left:-3px;border-radius:3px;background:#fff;
+ box-shadow:0 0 0 2px var(--bg)}
+.lg-app .lg-style-note{font-size:12px;color:var(--muted);margin-top:6px}
+.lg-app .lg-results{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;text-align:left;font-size:13px;margin:10px 0}
+.lg-app .lg-results b{color:var(--text);font-variant-numeric:tabular-nums}
+.lg-app .lg-results span{color:var(--muted)}
+.lg-app .lg-tag{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;
+ background:var(--plane);border:1px solid var(--ring);color:var(--soft)}
+.lg-app .lg-note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+.lg-app .lg-mobile{display:none;font-size:13px;color:var(--warn);margin:0 0 10px}
+@media(hover:none) and (pointer:coarse){.lg-app .lg-mobile{display:block}}
+.lg-app a{color:var(--accent)}
+.lg-app .lg-side-list{font-size:13px;line-height:1.6;color:var(--soft)}
+.lg-app .lg-side-list li{margin-bottom:6px}
+.lg-app .lg-side-list ul{padding-left:18px;margin:4px 0}
+</style>

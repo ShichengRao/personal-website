@@ -1,0 +1,66 @@
+{{ define "head" }}
+{{ partial "long-game/style.html" . }}
+<style>
+#bulwark-app .lg-stage{max-width:560px}
+#bulwark-app .bw-bars{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;font-size:12px;color:var(--soft)}
+#bulwark-app .bw-bars .lg-bar{margin:0}
+#bulwark-app .bw-live{display:flex;gap:12px;font-size:13px;color:var(--soft);flex-wrap:wrap;margin-top:8px}
+#bulwark-app .bw-live b{color:var(--text)}
+</style>
+{{ end }}
+
+{{ define "main" }}
+<!-- ananke's masthead already shows .Title and .Description above. -->
+<article class="ph3 ph4-ns pv3">
+  <div style="max-width:42rem;margin:0 auto">
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
+
+<div id="bulwark-app" class="lg-app">
+  <p class="lg-mobile">Bulwark needs a keyboard and a mouse; it doesn't have touch controls yet.</p>
+  <div class="lg-cols">
+    <div class="lg-stage" id="bw-stage" aria-label="Bulwark game">
+      <canvas id="bw-canvas" width="640" height="720"></canvas>
+      <div class="lg-overlay" id="bw-overlay"></div>
+    </div>
+    <div>
+      <div class="lg-panel">
+        <div class="lg-k">Ship</div>
+        <div class="bw-bars">
+          <span>Hull</span><div class="lg-bar"><i class="lg-bar-fill good" id="bw-hull"></i></div>
+          <span>Shield</span><div class="lg-bar"><i class="lg-bar-fill" id="bw-shield"></i></div>
+          <span>Charge</span><div class="lg-bar"><i class="lg-bar-fill warn" id="bw-charge"></i><span class="lg-tick" style="left:30%"></span><span class="lg-tick" style="left:45%"></span></div>
+          <span>Boss</span><div class="lg-bar"><i class="lg-bar-fill bad" id="bw-boss"></i></div>
+        </div>
+        <div class="bw-live">
+          <span>Time <b class="lg-mono" id="bw-time">0:00.00</b></span>
+          <span>Phase <b id="bw-phase">1</b></span>
+          <span>Hits <b id="bw-hits">0</b></span>
+        </div>
+        <div id="bw-style"></div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Controls</div>
+        <div class="lg-keys">
+          <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="lg-keys-what">move (arrows work too)</span></div>
+          <div><kbd>Shift</kbd> <span class="lg-keys-what">focus: move at half speed</span></div>
+          <div><kbd>Mouse</kbd> <span class="lg-keys-what">aim the shield (or <kbd>Q</kbd>/<kbd>E</kbd> to rotate)</span></div>
+          <div><kbd>Click</kbd> / <kbd>J</kbd> <span class="lg-keys-what">beam (30 charge)</span></div>
+          <div><kbd>Right click</kbd> / <kbd>K</kbd> <span class="lg-keys-what">barrier ahead of you (45 charge)</span></div>
+          <div><kbd>Space</kbd> <span class="lg-keys-what">dash: fast, shield down, wide graze ring</span></div>
+          <div><kbd>P</kbd> <span class="lg-keys-what">pause</span></div>
+        </div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Bests in this browser</div>
+        <div class="lg-stat"><span>Fastest kill</span><b class="lg-mono" id="bw-best-time">—</b></div>
+        <div class="lg-stat"><span>Fewest hits taken</span><b id="bw-best-clean">—</b></div>
+        <div class="lg-note">Two boards on purpose: one for the grazer, one for the wall.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/games/common.js"></script>
+<script src="/games/bulwark.js"></script>
+{{ end }}

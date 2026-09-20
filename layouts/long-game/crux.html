@@ -1,0 +1,76 @@
+{{ define "head" }}
+{{ partial "long-game/style.html" . }}
+<style>
+#crux-app .lg-stage{max-width:528px}
+#crux-app .cx-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+#crux-app .cx-height{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+#crux-app .cx-height small{font-size:13px;color:var(--muted);font-weight:400;margin-left:4px}
+#crux-app .cx-bars{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;font-size:12px;color:var(--soft);margin-top:10px}
+#crux-app .cx-bars .lg-bar{margin:0}
+#crux-app .cx-anchors{display:flex;gap:5px}
+#crux-app .cx-anchor{width:10px;height:14px;border-radius:2px 2px 5px 5px;background:var(--plane);border:1px solid var(--ring)}
+#crux-app .cx-anchor.on{background:var(--warn);border-color:var(--warn)}
+#crux-app .cx-flags{display:flex;gap:6px;margin-top:10px;min-height:22px}
+#crux-app .cx-flag{display:none;padding:1px 9px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+#crux-app .cx-flag.on{display:inline-block}
+#crux-app .cx-flag.wind{background:rgba(122,215,240,.18);color:var(--cool)}
+#crux-app .cx-flag.rest{background:rgba(63,168,96,.2);color:var(--good)}
+#crux-app .cx-flag.anchor{background:rgba(217,162,58,.2);color:var(--warn)}
+</style>
+{{ end }}
+
+{{ define "main" }}
+<!-- ananke's masthead already shows .Title and .Description above. -->
+<article class="ph3 ph4-ns pv3">
+  <div style="max-width:42rem;margin:0 auto">
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
+
+<div id="crux-app" class="lg-app">
+  <p class="lg-mobile">Crux needs a keyboard; it doesn't have touch controls yet.</p>
+  <div class="lg-cols">
+    <div class="lg-stage" id="cx-stage" aria-label="Crux game">
+      <canvas id="cx-canvas" width="528" height="660"></canvas>
+      <div class="lg-overlay" id="cx-overlay"></div>
+    </div>
+    <div>
+      <div class="lg-panel">
+        <div class="cx-top">
+          <div class="cx-height"><span id="cx-height">0</span><small>m</small></div>
+          <div class="lg-mono" id="cx-time">0:00.00</div>
+        </div>
+        <div class="cx-bars">
+          <span>Stamina</span><div class="lg-bar"><i class="lg-bar-fill good" id="cx-stamina"></i></div><b class="lg-mono" id="cx-staminav">100</b>
+          <span>Anchors</span><div class="cx-anchors" id="cx-anchors"><i class="cx-anchor on"></i><i class="cx-anchor on"></i><i class="cx-anchor on"></i></div><b id="cx-falls" title="falls">0 falls</b>
+        </div>
+        <div class="cx-flags">
+          <span class="cx-flag rest" id="cx-flag-rest">Rest ledge</span>
+          <span class="cx-flag wind" id="cx-flag-wind">Wind</span>
+          <span class="cx-flag anchor" id="cx-flag-anchor">Placing anchor</span>
+        </div>
+        <div id="cx-style"></div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Controls</div>
+        <div class="lg-keys">
+          <div><kbd>←</kbd> <kbd>→</kbd> / <kbd>A</kbd> <kbd>D</kbd> <span class="lg-keys-what">run; climb sideways is not a thing, walls go up</span></div>
+          <div><kbd>Shift</kbd> / <kbd>X</kbd> <span class="lg-keys-what">grip rock (hold), then <kbd>↑</kbd> <kbd>↓</kbd> to climb</span></div>
+          <div><kbd>Space</kbd> / <kbd>Z</kbd> <span class="lg-keys-what">jump; on a wall it's a wall-jump, or a hop straight up if you hold toward the wall</span></div>
+          <div><kbd>C</kbd> / <kbd>L</kbd> <span class="lg-keys-what">dash in any direction; comes back on the ground or on a jug</span></div>
+          <div><kbd>V</kbd> <span class="lg-keys-what">place an anchor: hold still for a second</span></div>
+          <div><kbd>P</kbd> <span class="lg-keys-what">pause</span></div>
+        </div>
+        <div class="lg-note">Stamina drains while you grip and refills on the ground, faster on rest ledges, and on the notched <em>jug</em> holds. Ice can't be gripped. Cracked holds crumble under you. Wind bands only move you while you're in the air. Rock chutes telegraph with dust before they drop.</div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Bests in this browser</div>
+        <div class="lg-stat"><span>Fastest ascent</span><b class="lg-mono" id="cx-best-time">—</b></div>
+        <div class="lg-stat"><span>Fewest falls</span><b id="cx-best-falls">—</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/games/common.js"></script>
+<script src="/games/crux.js"></script>
+{{ end }}

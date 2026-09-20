@@ -1,0 +1,88 @@
+{{ define "head" }}
+{{ partial "long-game/style.html" . }}
+<style>
+#slipstream-app .lg-stage{max-width:960px}
+#slipstream-app .ss-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+#slipstream-app .ss-pos{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+#slipstream-app .ss-pos small{font-size:13px;color:var(--muted);font-weight:400;margin-left:4px}
+#slipstream-app .ss-lap{font-size:14px;color:var(--soft);font-variant-numeric:tabular-nums}
+#slipstream-app .ss-bars{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;font-size:12px;color:var(--soft);margin-top:10px}
+#slipstream-app .ss-bars .lg-bar{margin:0}
+#slipstream-app .ss-flags{display:flex;gap:6px;margin-top:10px;min-height:22px}
+#slipstream-app .ss-flag{display:none;padding:1px 9px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+#slipstream-app .ss-flag.on{display:inline-block}
+#slipstream-app .ss-flag.tow{background:rgba(122,215,240,.18);color:var(--cool)}
+#slipstream-app .ss-flag.push{background:rgba(217,162,58,.2);color:var(--warn)}
+#slipstream-app .ss-flag.hot{background:rgba(209,73,91,.22);color:#ff8a9a}
+#slipstream-app table{border-collapse:collapse;width:100%;font-size:13px}
+#slipstream-app td{padding:3px 4px;border-bottom:1px solid var(--ring);font-variant-numeric:tabular-nums}
+#slipstream-app td.n{color:var(--muted);width:20px}
+#slipstream-app td.g{text-align:right;color:var(--soft)}
+#slipstream-app tr.you td{background:rgba(91,141,217,.14)}
+#slipstream-app .ss-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+#slipstream-app .ss-temp{display:inline-block;width:6px;height:6px;border-radius:50%;margin-left:6px}
+#slipstream-app #ss-map{display:block;width:100%;height:auto;border-radius:8px;background:#141a14;margin-top:4px}
+</style>
+{{ end }}
+
+{{ define "main" }}
+<!-- ananke's masthead already shows .Title and .Description above. -->
+<article class="ph3 ph4-ns pv3">
+  <div style="max-width:42rem;margin:0 auto">
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
+
+<div id="slipstream-app" class="lg-app">
+  <p class="lg-mobile">Slipstream needs a keyboard; it doesn't have touch controls yet.</p>
+  <div class="lg-cols">
+    <div class="lg-stage" id="ss-stage" aria-label="Slipstream game">
+      <canvas id="ss-canvas" width="960" height="600"></canvas>
+      <div class="lg-overlay" id="ss-overlay"></div>
+    </div>
+    <div>
+      <div class="lg-panel">
+        <div class="ss-top">
+          <div class="ss-pos"><span id="ss-pos">—</span><small id="ss-posof"></small></div>
+          <div class="ss-lap">Lap <b id="ss-lap">0</b>/<span id="ss-laps">0</span></div>
+        </div>
+        <div class="ss-bars">
+          <span>Tire temp</span><div class="lg-bar"><i class="lg-bar-fill good" id="ss-temp"></i><span class="lg-tick" style="left:40%"></span><span class="lg-tick" style="left:78%"></span></div><b class="lg-mono" id="ss-tempv">0°</b>
+          <span>Tire life</span><div class="lg-bar"><i class="lg-bar-fill cool" id="ss-life"></i></div><b class="lg-mono" id="ss-lifev">100%</b>
+        </div>
+        <div class="ss-flags">
+          <span class="ss-flag tow" id="ss-flag-tow">In the tow</span>
+          <span class="ss-flag push" id="ss-flag-push">Pushing</span>
+          <span class="ss-flag hot" id="ss-flag-hot">Tires gone off</span>
+        </div>
+        <div class="lg-stat" style="margin-top:8px"><span>Lap time</span><b class="lg-mono" id="ss-laptime">0:00.00</b></div>
+        <div class="lg-stat"><span>Last lap</span><b class="lg-mono" id="ss-lastlap">—</b></div>
+        <div class="lg-stat"><span>Best lap</span><b class="lg-mono" id="ss-bestlap">—</b></div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Timing</div>
+        <table id="ss-tower"><tbody></tbody></table>
+        <canvas id="ss-map" width="268" height="180"></canvas>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Controls</div>
+        <div class="lg-keys">
+          <div><kbd>↑</kbd> / <kbd>W</kbd> <span class="lg-keys-what">throttle</span></div>
+          <div><kbd>↓</kbd> / <kbd>S</kbd> <span class="lg-keys-what">brake, reverse</span></div>
+          <div><kbd>←</kbd> <kbd>→</kbd> / <kbd>A</kbd> <kbd>D</kbd> <span class="lg-keys-what">steer</span></div>
+          <div><kbd>Shift</kbd> <span class="lg-keys-what">push: more power, tires heat 2× faster</span></div>
+          <div><kbd>P</kbd> <span class="lg-keys-what">pause</span></div>
+        </div>
+        <div class="lg-note">Tires work between 40° and 78°: cold ones slide, hot ones slide more, and at 100° they go off for three seconds. Sliding and heat both eat tire life, which never comes back. Sitting in another car's slipstream cools the tires and adds top speed.</div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Bests in this browser</div>
+        <div class="lg-stat"><span>Sprint</span><b id="ss-best-sprint">—</b></div>
+        <div class="lg-stat"><span>Endurance</span><b id="ss-best-endurance">—</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/games/common.js"></script>
+<script src="/games/slipstream.js"></script>
+{{ end }}
