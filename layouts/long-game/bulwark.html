@@ -10,13 +10,8 @@
 {{ end }}
 
 {{ define "main" }}
-<!-- ananke's masthead already shows .Title and .Description above. -->
-<article class="ph3 ph4-ns pv3">
-  <div style="max-width:42rem;margin:0 auto">
-    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
-  </div>
-</article>
-
+<!-- ananke's masthead already shows .Title and .Description above. The game
+     comes first; the design notes in .Content sit underneath it. -->
 <div id="bulwark-app" class="lg-app">
   <p class="lg-mobile">Bulwark needs a keyboard and a mouse; it doesn't have touch controls yet.</p>
   <div class="lg-cols">
@@ -56,11 +51,18 @@
         <div class="lg-k">Bests in this browser</div>
         <div class="lg-stat"><span>Fastest kill</span><b class="lg-mono" id="bw-best-time">—</b></div>
         <div class="lg-stat"><span>Fewest hits taken</span><b id="bw-best-clean">—</b></div>
-        <div class="lg-note">Two boards on purpose: one for the grazer, one for the wall.</div>
+        <div class="lg-stat"><span>Fastest flawless</span><b class="lg-mono" id="bw-best-flawless">—</b></div>
+        <div class="lg-note">Three boards on purpose: one for the grazer, one for the wall, and one for the wall in a hurry.</div>
       </div>
     </div>
   </div>
 </div>
+<article class="ph3 ph4-ns pv4">
+  <div style="max-width:42rem;margin:0 auto">
+    <h2 class="f4 fw6 mid-gray">Why it's built this way</h2>
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
 <script src="/games/common.js"></script>
 <script src="/games/bulwark.js"></script>
 {{ end }}

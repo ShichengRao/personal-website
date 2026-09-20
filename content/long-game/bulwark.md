@@ -22,10 +22,12 @@ The boss regenerates when it goes untouched for a few seconds, so pure turtling
 doesn't win; you have to keep trading. Your hull regenerates slowly too. It is an
 attrition duel, and the side that spends its resources more carefully wins it.
 
-**The slow way.** Keep the shield pointed at the boss, walk sideways slowly so
-aimed bullets fall behind you, absorb what comes, and spend charge on barriers where
-the recurring patterns arrive. Fire the beam when you're safe. Watch shield
-integrity: it regenerates, but it breaks if you try to tank a whole stream at once.
+**The slow way.** Keep the shield pointed at the boss, absorb what comes, and spend
+charge on walls where the recurring patterns arrive: a right-click builds one where
+you point, and every wall casts a shadow from the boss that shows you the pocket it
+keeps safe. A wall harvests charge for you for as long as it lasts, so three or four
+of them turn the arena into a position you can hold and fire from. Watch shield
+integrity: it regenerates, but it breaks if you tank a whole stream point-blank.
 
 **The fast way.** Dash. The shield drops while you dash, but the graze ring widens
 and every bullet you skim charges the beam faster than absorbing it would. A grazer

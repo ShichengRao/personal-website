@@ -14,6 +14,12 @@
 #slipstream-app .ss-flag.tow{background:rgba(122,215,240,.18);color:var(--cool)}
 #slipstream-app .ss-flag.push{background:rgba(217,162,58,.2);color:var(--warn)}
 #slipstream-app .ss-flag.hot{background:rgba(209,73,91,.22);color:#ff8a9a}
+#slipstream-app .ss-flag.cold{background:rgba(122,215,240,.12);color:#9fd3e6}
+#slipstream-app .ss-flag.fade{background:rgba(63,168,96,.2);color:var(--good)}
+#slipstream-app tr.ahead td{background:rgba(63,168,96,.08)}
+#slipstream-app td.l{width:44px}
+#slipstream-app .ss-life{display:block;height:5px;border-radius:3px;background:var(--plane);overflow:hidden}
+#slipstream-app .ss-life i{display:block;height:100%}
 #slipstream-app table{border-collapse:collapse;width:100%;font-size:13px}
 #slipstream-app td{padding:3px 4px;border-bottom:1px solid var(--ring);font-variant-numeric:tabular-nums}
 #slipstream-app td.n{color:var(--muted);width:20px}
@@ -26,13 +32,8 @@
 {{ end }}
 
 {{ define "main" }}
-<!-- ananke's masthead already shows .Title and .Description above. -->
-<article class="ph3 ph4-ns pv3">
-  <div style="max-width:42rem;margin:0 auto">
-    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
-  </div>
-</article>
-
+<!-- ananke's masthead already shows .Title and .Description above. The game
+     comes first; the design notes in .Content sit underneath it. -->
 <div id="slipstream-app" class="lg-app">
   <p class="lg-mobile">Slipstream needs a keyboard; it doesn't have touch controls yet.</p>
   <div class="lg-cols">
@@ -54,13 +55,15 @@
           <span class="ss-flag tow" id="ss-flag-tow">In the tow</span>
           <span class="ss-flag push" id="ss-flag-push">Pushing</span>
           <span class="ss-flag hot" id="ss-flag-hot">Tires gone off</span>
+          <span class="ss-flag cold" id="ss-flag-cold">Tires cold</span>
+          <span class="ss-flag fade" id="ss-flag-fade">Car ahead is fading</span>
         </div>
         <div class="lg-stat" style="margin-top:8px"><span>Lap time</span><b class="lg-mono" id="ss-laptime">0:00.00</b></div>
         <div class="lg-stat"><span>Last lap</span><b class="lg-mono" id="ss-lastlap">—</b></div>
         <div class="lg-stat"><span>Best lap</span><b class="lg-mono" id="ss-bestlap">—</b></div>
       </div>
       <div class="lg-panel">
-        <div class="lg-k">Timing</div>
+        <div class="lg-k">Timing · dot is tire temp, bar is tire life</div>
         <table id="ss-tower"><tbody></tbody></table>
         <canvas id="ss-map" width="268" height="180"></canvas>
       </div>
@@ -83,6 +86,12 @@
     </div>
   </div>
 </div>
+<article class="ph3 ph4-ns pv4">
+  <div style="max-width:42rem;margin:0 auto">
+    <h2 class="f4 fw6 mid-gray">Why it's built this way</h2>
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
 <script src="/games/common.js"></script>
 <script src="/games/slipstream.js"></script>
 {{ end }}

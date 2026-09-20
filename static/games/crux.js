@@ -79,10 +79,8 @@
     '####..##..##..####...#',
     '####..##..##..####...#',
     '####..........####...#',
-    '####..........####...#',
     '####..........###j...#',
-    '#.............####...#',
-    '#.............####...#',
+    '####..........####...#',
     '#.............####...#',
     '#.............####...#',
     '#.............###j...#',
@@ -90,15 +88,17 @@
     '#.............####...#',
     '#.............####...#',
     '#....................#',
-    '#................RRRR#',
-    '#................#####',
-    '#................#####',
-    '#................#####',
-    '#............###.#####',
-    '#............###.#####',
-    '#............j##.#####',
-    '#.......##...###.#####',
-    '#.S.....##...###.#####',
+    '#....................#',
+    '#....................#',
+    '#.............RRRRRRR#',
+    '#......~~..###########',
+    '#......~~..###########',
+    '#......~~..j##########',
+    '#......~~..###########',
+    '#......~~..###########',
+    '#......~~..j##########',
+    '#...##.....###########',
+    '#.S.##.....###########',
     '######################',
   ];
   const ROWS = LEVEL.length;
@@ -119,7 +119,7 @@
   const ui = {
     height: $('cx-height'), time: $('cx-time'), stamina: $('cx-stamina'), staminav: $('cx-staminav'),
     anchors: $('cx-anchors'), falls: $('cx-falls'), fRest: $('cx-flag-rest'), fWind: $('cx-flag-wind'),
-    fAnchor: $('cx-flag-anchor'), style: $('cx-style'), bestTime: $('cx-best-time'), bestFalls: $('cx-best-falls')
+    fAnchor: $('cx-flag-anchor'), style: $('cx-style'), bestTime: $('cx-best-time'), bestFalls: $('cx-best-falls'), bestClean: $('cx-best-clean')
   };
   const BEST_KEY = 'lg-crux-best-v1';
 
@@ -176,7 +176,8 @@
       anchors: [], rocks: [], particles: [], crumble: {},
       chutes: CHUTES.map((ch) => ({ c: ch.c, r: ch.r, min: ch.min, max: ch.max, timer: 0, next: 1.5 + rand() * 2 })),
       wind: { t: rand() * T.windPeriod, dir: rand() < 0.5 ? -1 : 1 },
-      stats: { gripT: 0, airT: 0, groundT: 0, dashes: 0, wallJumps: 0, hops: 0, anchorsPlaced: 0, falls: 0, maxHeight: 0 }
+      stats: { gripT: 0, airT: 0, groundT: 0, dashes: 0, wallJumps: 0, hops: 0, anchorsPlaced: 0, falls: 0, maxHeight: 0 },
+      hint: { text: '', until: 0, shown: {} }
     };
     S.camY = LG.clamp(S.p.y - H * 0.6, 0, WORLD_H - H);
   }
@@ -448,10 +449,18 @@
 
     const height = (WORLD_H - (p.y + T.h)) / TILE;
     st.maxHeight = Math.max(st.maxHeight, height);
+    // three one-time hints, each at the moment it applies
+    const hint = S.hint;
+    if (!hint.shown.grip && S.t > 1.5) { hint.shown.grip = true; showHint('Hold Shift against rock to grip it, then \u2191 to climb. Space jumps.', 8); }
+    if (!hint.shown.jug && p.onJug) { hint.shown.jug = true; showHint('A yellow jug: hang here and stamina comes back.', 5); }
+    if (!hint.shown.anchor && p.onRest && height > 5) { hint.shown.anchor = true; showHint('Rest ledge: stamina and anchors refill. V plants an anchor anywhere you stand still; a fall brings you back to it.', 8); }
+    if (!hint.shown.fall && st.falls === 1) { hint.shown.fall = true; showHint('Back at your last checkpoint. Anchors placed before a hard section make falls cheap.', 6); }
     // camera: keep the climber in the lower-middle, looking up
     const target = LG.clamp(p.y - H * 0.58, 0, WORLD_H - H);
     S.camY += (target - S.camY) * (1 - Math.exp(-6 * dt));
   }
+
+  function showHint(text, secs) { S.hint.text = text; S.hint.until = S.t + secs; }
 
   // ---- world: rocks, wind, crumbling holds ---------------------------------
   function windPhase() { const t = S.wind.t % T.windPeriod; return t < T.windCalm ? 'calm' : t < T.windCalm + T.windWarn ? 'warn' : 'gust'; }
@@ -644,6 +653,14 @@
     for (const q of S.particles) { ctx.globalAlpha = Math.max(0, q.life / q.max); ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y - camY, q.r, 0, TAU); ctx.fill(); }
     ctx.globalAlpha = 1;
 
+    // the current hint, if any
+    if (S.hint.text && S.t < S.hint.until && S.state === 'running') {
+      const a = Math.min(1, (S.hint.until - S.t) / 0.6);
+      ctx.globalAlpha = a; ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fillRect(12, H - 46, W - 24, 34);
+      ctx.fillStyle = '#e8eaf0'; ctx.font = '13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(S.hint.text, W / 2, H - 25, W - 40);
+      ctx.globalAlpha = 1;
+    }
     // height ruler on the right edge
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'right';
     for (let r = r0; r <= r1; r++) { const hgt = ROWS - 1 - r; if (hgt % 10 === 0) { const y = (r + 1) * TILE - camY; ctx.fillRect(W - 10, y - 1, 6, 1); ctx.fillText(String(hgt), W - 12, y + 3); } }
@@ -680,15 +697,16 @@
     S.state = 'won';
     const st = S.stats, sty = styleOf();
     const best = LG.store.get(BEST_KEY, {});
-    let newTime = false, newFalls = false;
+    let newTime = false, newFalls = false, newClean = false;
     if (best.time === undefined || S.t < best.time) { best.time = S.t; newTime = true; }
     if (best.falls === undefined || st.falls < best.falls) { best.falls = st.falls; newFalls = true; }
+    if (st.falls === 0 && (best.clean === undefined || S.t < best.clean)) { best.clean = S.t; newClean = true; }
     LG.store.set(BEST_KEY, best);
     showBests();
     overlay.show('<div><h2>Summit</h2><span class="lg-tag">' + sty.who + '</span>' +
       '<div class="lg-results">' +
       '<span>Time</span><b>' + LG.fmtTime(S.t) + (newTime ? ' ★' : '') + '</b>' +
-      '<span>Falls</span><b>' + st.falls + (newFalls ? ' ★' : '') + '</b>' +
+      '<span>Falls</span><b>' + st.falls + (newFalls ? ' ★' : '') + (newClean ? ' · fastest clean ★' : '') + '</b>' +
       '<span>Anchors placed</span><b>' + st.anchorsPlaced + '</b>' +
       '<span>Wall-jumps</span><b>' + st.wallJumps + '</b>' +
       '<span>Dashes</span><b>' + st.dashes + '</b>' +
@@ -705,6 +723,7 @@
     const best = LG.store.get(BEST_KEY, {});
     ui.bestTime.textContent = best.time !== undefined ? LG.fmtTime(best.time) : '—';
     ui.bestFalls.textContent = best.falls !== undefined ? best.falls + (best.falls === 0 ? ' (clean)' : '') : '—';
+    ui.bestClean.textContent = best.clean !== undefined ? LG.fmtTime(best.clean) : '—';
   }
   function start() {
     reset(); S.state = 'running';
@@ -723,9 +742,9 @@
   }
   function showReady() {
     overlay.show('<div><h2>Crux</h2>' +
-      '<p>' + (ROWS - 2) + ' metres of wall. Hold grip on rock to cling and climb; stamina comes back on the ground, on the green rest ledges and on the yellow jugs. Anchors are checkpoints you place yourself. Wall-jumps and dashes are free.</p>' +
-      '<p class="lg-fine">Falls of more than five metres, rocks and long drops send you back to your last anchor.</p>' +
-      '<div class="lg-row" style="justify-content:center"><button class="primary" id="cx-start">Start</button></div></div>');
+      '<p>' + (ROWS - 2) + ' metres of wall. Hold Shift on rock to grip, ↑ to climb. Rest on the yellow jugs.</p>' +
+      '<div class="lg-row" style="justify-content:center"><button class="primary" id="cx-start">Start</button></div>' +
+      '<p class="lg-fine" style="margin-top:12px">V plants an anchor: your own checkpoint. Falls over five metres, rocks and the wind will use it.</p></div>');
     $('cx-start').onclick = start;
   }
 

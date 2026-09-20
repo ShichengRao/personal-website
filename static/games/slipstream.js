@@ -17,7 +17,7 @@
   const ui = {
     pos: $('ss-pos'), posof: $('ss-posof'), lap: $('ss-lap'), laps: $('ss-laps'),
     temp: $('ss-temp'), tempv: $('ss-tempv'), life: $('ss-life'), lifev: $('ss-lifev'),
-    fTow: $('ss-flag-tow'), fPush: $('ss-flag-push'), fHot: $('ss-flag-hot'),
+    fTow: $('ss-flag-tow'), fPush: $('ss-flag-push'), fHot: $('ss-flag-hot'), fCold: $('ss-flag-cold'), fFade: $('ss-flag-fade'),
     laptime: $('ss-laptime'), lastlap: $('ss-lastlap'), bestlap: $('ss-bestlap'),
     tower: $('ss-tower').querySelector('tbody'), map: $('ss-map'),
     bestSprint: $('ss-best-sprint'), bestEndurance: $('ss-best-endurance')
@@ -38,7 +38,7 @@
     overheatTime: 3, overheatGrip: 0.75, overheatThrottle: 0.4,
     wearSlide: 0.00003, wearHeat: 0.00035, wearGripLoss: 0.8, wearVmaxLoss: 0.12,
     carR: 10, carL: 22, carW: 12,
-    modes: { sprint: 4, endurance: 10 }
+    modes: { sprint: 4, endurance: 10, practice: 3 }
   };
   const DRIVERS = [
     { name: 'Vettori', aggr: 0.95, color: '#e4433d' },
@@ -133,7 +133,7 @@
       steer: 0, throttle: 0, brake: 0, push: false, temp: 15, wear: 0, overheat: 0, overheats: 0,
       si: 0, lat: 0, dist: 0, lap: 0, halfSeen: false, progress: 0, lapStart: 0, lastLap: 0, bestLap: Infinity,
       finished: false, finishTime: 0, finishPos: 0, inTow: false, towTime: 0, pushTime: 0,
-      latTarget: 0, commit: 0, mistake: 0, skill: 0.97 + rand() * 0.06, pushHold: 0
+      latTarget: 0, commit: 0, mistake: 0, skill: 0.97 + rand() * 0.06, pushHold: 0, lapTimes: []
     };
     c.si = nearestIndex(c);
     c.progress = -back;
@@ -150,8 +150,9 @@
     const order = DRIVERS.slice();
     for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
     const grid = [];
-    for (let i = 0; i < order.length; i++) grid.push(order[i]);
-    grid.splice(3, 0, { name: 'You', color: PLAYER_COLOR, player: true, aggr: opts.playerAggr || 0.5 });
+    // practice is the track to yourself, from pole
+    if (S.mode !== 'practice') for (let i = 0; i < order.length; i++) grid.push(order[i]);
+    grid.splice(S.mode === 'practice' ? 0 : 3, 0, { name: 'You', color: PLAYER_COLOR, player: true, aggr: opts.playerAggr || 0.5 });
     grid.forEach(function (d, i) {
       const c = makeCar(d.name, d.color, !d.player || !!opts.playerAI, d.aggr, i);
       if (d.player) { S.player = c; c.isPlayer = true; }
@@ -348,8 +349,11 @@
         if (c.lap > 0 || S.race > 5) {
           c.lastLap = S.race - c.lapStart;
           if (c.lastLap < c.bestLap) c.bestLap = c.lastLap;
+          c.lapTimes.push(c.lastLap);
         }
         c.lap++; c.lapStart = S.race;
+        // practice: fresh tires every lap, so a bad lap costs nothing permanent
+        if (S.mode === 'practice') { c.wear = 0; c.temp = Math.min(c.temp, 60); }
         if (c.lap >= S.laps) {
           c.finished = true; c.finishTime = S.race; S.finishedCount++; c.finishPos = S.finishedCount;
           if (c.isPlayer) { S.playerDone = true; }
@@ -551,8 +555,9 @@
   function renderHUD() {
     const p = S.player, st = standings();
     const pos = st.indexOf(p) + 1;
-    ui.pos.textContent = S.state === 'ready' ? '—' : 'P' + pos;
-    ui.posof.textContent = S.state === 'ready' ? '' : ' / ' + S.cars.length;
+    const practice = S.mode === 'practice';
+    ui.pos.textContent = S.state === 'ready' ? '—' : practice ? 'Practice' : 'P' + pos;
+    ui.posof.textContent = S.state === 'ready' || practice ? '' : ' / ' + S.cars.length;
     ui.lap.textContent = String(Math.min(p.lap + 1, S.laps));
     ui.laps.textContent = String(S.laps);
     LG.setBar(ui.temp, p.temp / 100, p.temp < T.tempCold ? 'cool' : p.temp <= T.tempHot ? 'good' : p.temp < 92 ? 'warn' : 'bad');
@@ -562,6 +567,10 @@
     ui.fTow.classList.toggle('on', p.inTow);
     ui.fPush.classList.toggle('on', p.push && p.overheat <= 0);
     ui.fHot.classList.toggle('on', p.overheat > 0);
+    ui.fCold.classList.toggle('on', S.state !== 'ready' && p.temp < T.tempCold);
+    // the moment the patient driver is waiting for: the car ahead is on worn rubber
+    const ahead = pos > 1 ? st[pos - 2] : null;
+    ui.fFade.classList.toggle('on', !!ahead && !ahead.finished && ahead.wear - p.wear > 0.15 && ahead.wear > 0.3);
     ui.laptime.textContent = LG.fmtTime(S.state === 'running' && !p.finished ? S.race - p.lapStart : 0);
     ui.lastlap.textContent = p.lastLap ? LG.fmtTime(p.lastLap) : '—';
     ui.bestlap.textContent = isFinite(p.bestLap) ? LG.fmtTime(p.bestLap) : '—';
@@ -576,8 +585,12 @@
         gap = dp > TRACK.total ? '+' + Math.floor(dp / TRACK.total) + ' lap' : '+' + (dp / Math.max(120, leader.spd || 200)).toFixed(1) + 's';
       }
       const tcol = c.temp < T.tempCold ? '#7ad7f0' : c.temp <= T.tempHot ? '#3fa860' : c.temp < 92 ? '#d9a23a' : '#d1495b';
-      html += '<tr' + (c === p ? ' class="you"' : '') + '><td class="n">' + (i + 1) + '</td><td><span class="ss-dot" style="background:' + c.color + '"></span>' + c.name +
-        '<span class="ss-temp" style="background:' + tcol + '" title="tire temp"></span></td><td class="g">' + gap + '</td></tr>';
+      const life = Math.round((1 - c.wear) * 100);
+      const lcol = life > 60 ? '#7ad7f0' : life > 35 ? '#d9a23a' : '#d1495b';
+      html += '<tr' + (c === p ? ' class="you"' : c === ahead ? ' class="ahead"' : '') + '><td class="n">' + (i + 1) + '</td><td><span class="ss-dot" style="background:' + c.color + '"></span>' + c.name +
+        '<span class="ss-temp" style="background:' + tcol + '" title="tire temp"></span></td>' +
+        '<td class="l" title="tire life ' + life + '%"><span class="ss-life"><i style="width:' + life + '%;background:' + lcol + '"></i></span></td>' +
+        '<td class="g">' + gap + '</td></tr>';
     });
     ui.tower.innerHTML = html;
   }
@@ -596,6 +609,17 @@
     S.state = 'finished';
     const p = S.player, st = standings(), pos = st.indexOf(p) + 1;
     const style = styleOf(p);
+    if (S.mode === 'practice') {
+      overlay.show('<div><h2>Practice done</h2>' +
+        '<div class="lg-results">' + p.lapTimes.map((t, i) => '<span>Lap ' + (i + 1) + '</span><b>' + LG.fmtTime(t) + '</b>').join('') +
+        '<span>Best lap</span><b>' + LG.fmtTime(p.bestLap) + '</b></div>' +
+        LG.styleBar('Tow & manage', 'Push & charge', style.t, LG.pct(style.push) + ' of the time pushing') +
+        '<div class="lg-row" style="justify-content:center"><button class="primary" id="ss-again">Again</button><button id="ss-menu">Race</button></div></div>');
+      $('ss-again').onclick = function () { start('practice'); };
+      $('ss-menu').onclick = function () { reset('sprint'); showReady(); render(); };
+      render(); loop.stop();
+      return;
+    }
     const best = LG.store.get(BEST_KEY, {});
     const b = best[S.mode] || {};
     let newPos = false, newLap = false;
@@ -650,11 +674,12 @@
   }
   function showReady() {
     overlay.show('<div><h2>Slipstream</h2>' +
-      '<p>Six drivers, ' + T.modes.sprint + ' or ' + T.modes.endurance + ' laps. Pushing is fast and cooks the tires; the tow cools them. The chargers lead early. Whether they still lead at the end is up to the tires.</p>' +
-      '<div class="lg-row" style="justify-content:center"><button class="primary" id="ss-start-sprint">Sprint · ' + T.modes.sprint + ' laps</button><button class="primary" id="ss-start-endurance">Endurance · ' + T.modes.endurance + ' laps</button></div>' +
-      '<p class="lg-fine" style="margin-top:12px">Sprint suits the chargers. Endurance is the long game.</p></div>');
+      '<p>Push heats the tires. The tow cools them. Whoever has rubber left at the end wins.</p>' +
+      '<div class="lg-row" style="justify-content:center"><button class="primary" id="ss-start-sprint">Sprint · ' + T.modes.sprint + ' laps</button><button class="primary" id="ss-start-endurance">Endurance · ' + T.modes.endurance + ' laps</button><button id="ss-start-practice">Practice</button></div>' +
+      '<p class="lg-fine" style="margin-top:12px">Practice is the track to yourself with fresh tires every lap. Sprint suits the chargers; Endurance is the long game.</p></div>');
     $('ss-start-sprint').onclick = function () { start('sprint'); };
     $('ss-start-endurance').onclick = function () { start('endurance'); };
+    $('ss-start-practice').onclick = function () { start('practice'); };
   }
 
   loop = LG.loop(update, render, input);
