@@ -128,7 +128,7 @@
     run: 130, groundAccel: 1500, airAccel: 800, friction: 1700, iceFriction: 250,
     jumpV: 490, jumpCut: 0.45, coyote: 0.1, buffer: 0.12,
     climbUp: 55, climbDown: 85, drainIdle: 5, drainUp: 20, drainDown: 8,
-    wallJumpVx: 240, wallJumpVy: 400, wallLock: 0.12, hopVy: 380, hopCost: 15,
+    wallJumpVx: 240, wallJumpVy: 400, wallLock: 0.12, hopVy: 380, hopCost: 15, hopTime: 0.2,
     dashSpeed: 400, dashTime: 0.16, dashEndVy: 120,
     staminaMax: 100, regenGround: 30, regenRest: 60, regenJug: 45,
     anchorTime: 1.2, anchorsPerPitch: 3, respawnStamina: 0.6,
@@ -232,7 +232,7 @@
         if (t === 'c') touchCrumble(c, r);
       }
     }
-    return { on, rest, ice };
+    return { on, rest, ice, r };
   }
   function wallInfo(p) {
     const rs = rowsSpanned(p);
@@ -263,6 +263,7 @@
 
   function update(dt) {
     if (S.state !== 'running') return;
+    if (input.hit('KeyP')) { pause(); return; }
     S.t += dt;
     const p = S.p, st = S.stats;
 
@@ -281,14 +282,19 @@
     if (h) p.facing = h;
     p.autoGrip = Math.max(0, p.autoGrip - dt);
     p.wallLock = Math.max(0, p.wallLock - dt);
+    p.hopT = Math.max(0, p.hopT - dt);
     p.coyoteT = Math.max(0, p.coyoteT - dt);
     p.bufferT = Math.max(0, p.bufferT - dt);
     if (jumpHit) p.bufferT = T.buffer;
 
     const g = groundInfo(p);
     const walls = wallInfo(p);
+    const wasGrounded = p.onGround;
     p.onGround = g.on && p.vy >= 0;
     p.onRest = g.rest && p.onGround; p.onIce = g.ice && p.onGround;
+    // the probe can find support a step before the collision snap does, so a
+    // landing is judged here, before the fall origin is reset
+    if (p.onGround && !wasGrounded && !p.gripping && (g.r * TILE - T.h) - p.fallFrom > T.hardFall) { die('fall'); return; }
     if (p.onGround) { p.coyoteT = T.coyote; p.dashAvail = true; p.fallFrom = p.y; }
     if (p.onRest) {
       if (!S.checkpoint.rest || S.checkpoint.y !== p.y || Math.abs(S.checkpoint.x - p.x) > TILE) {
@@ -305,7 +311,7 @@
     p.wallDir = wall ? wallDir : 0;
     p.wallTile = wall ? wall.t : '.';
     // from the ground you start a climb by holding up; in the air, grip alone catches the wall
-    const wantGrip = wall && grippable(wall.t) && gripKey && p.stamina > 0 && p.dashT <= 0;
+    const wantGrip = wall && grippable(wall.t) && gripKey && p.stamina > 0 && p.dashT <= 0 && p.hopT <= 0;
     const canGrip = wantGrip && (!p.onGround || up);
 
     // ---- dash
@@ -360,7 +366,7 @@
       if (p.gripping && p.bufferT > 0) {
         p.bufferT = 0;
         if (h === 0 || h === wallDir) {
-          if (p.stamina >= T.hopCost) { p.vy = -T.hopVy; p.stamina -= T.hopCost; p.gripping = false; p.hopT = 0.15; st.hops++; }
+          if (p.stamina >= T.hopCost) { p.vy = -T.hopVy; p.stamina -= T.hopCost; p.gripping = false; p.hopT = T.hopTime; st.hops++; }
         } else {
           p.vx = -wallDir * T.wallJumpVx; p.vy = -T.wallJumpVy; p.wallLock = T.wallLock; p.gripping = false; st.wallJumps++;
           puff(p.x + T.w / 2, p.y + T.h, '#dfe6f5', 5, 60, 1.5, 0.3);
@@ -390,7 +396,6 @@
       }
       // letting go of jump early caps the rise: short hop or full jump
       if (!jumpHeld && p.hopT <= 0 && p.vy < -T.jumpV * T.jumpCut) p.vy = -T.jumpV * T.jumpCut;
-      p.hopT = Math.max(0, p.hopT - dt);
       // wind, only in the air
       if (!p.onGround) {
         const r = Math.floor((p.y + T.h / 2) / TILE);
@@ -421,12 +426,12 @@
 
     // ---- integrate
     p.landed = false;
-    const wasGround = p.onGround;
     moveX(p, p.vx * dt);
     moveY(p, p.vy * dt);
-    if (p.landed && !wasGround && !p.gripping) {
+    if (p.landed && !p.onGround && !p.gripping) {
       if (p.y - p.fallFrom > T.hardFall) { die('fall'); return; }
       p.fallFrom = p.y;
+      p.onGround = true;
       puff(p.x + T.w / 2, p.y + T.h, '#8f97a8', 3, 40, 1.5, 0.3);
     }
     if (!p.onGround && !p.gripping && p.vy < 0) p.fallFrom = Math.min(p.fallFrom, p.y);
@@ -724,11 +729,7 @@
     $('cx-start').onclick = start;
   }
 
-  loop = LG.loop(update, function () {
-    if (S.state === 'running' && input.hit('KeyP')) { input.flush(); pause(); return; }
-    render();
-    input.flush();
-  });
+  loop = LG.loop(update, render, input);
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.code === 'KeyP' && S.state === 'paused') resume();

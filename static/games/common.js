@@ -91,7 +91,7 @@
     for (let i = 0; i < arguments.length; i++) if (this.pressed.has(arguments[i])) return true;
     return false;
   };
-  // Called once per rendered frame after the game has consumed edge events.
+  // Called by the loop after each simulation step has consumed edge events.
   LG.Input.prototype.flush = function () {
     this.pressed.clear();
     this.mousePressed.left = this.mousePressed.right = false;
@@ -101,8 +101,11 @@
 
   // Fixed-timestep simulation with a render per animation frame. update(dt)
   // runs at STEP; render() once per frame. Long stalls (tab hidden) are capped
-  // so the sim never tries to catch up on seconds of missed time.
-  LG.loop = function (update, render) {
+  // so the sim never tries to catch up on seconds of missed time. Edge inputs
+  // (pressed keys, clicks) are flushed after every step, so a press is seen by
+  // exactly one update whatever the display's refresh rate: never twice when a
+  // 60 Hz frame runs two steps, never dropped by a 240 Hz frame that runs none.
+  LG.loop = function (update, render, input) {
     const STEP = 1 / 120;
     let last = 0, acc = 0, running = false, raf = 0;
     function frame(now) {
@@ -111,7 +114,7 @@
       last = now;
       if (dt > 0.1) dt = 0.1;
       acc += dt;
-      while (acc >= STEP) { update(STEP); acc -= STEP; }
+      while (acc >= STEP) { update(STEP); if (input) input.flush(); acc -= STEP; }
       render();
       raf = requestAnimationFrame(frame);
     }

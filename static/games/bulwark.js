@@ -206,6 +206,7 @@
   // ---- update -------------------------------------------------------------
   function update(dt) {
     if (S.state !== 'running') return;
+    if (input.hit('KeyP')) { pause(); return; }
     S.t += dt;
     const p = S.p, b = S.boss, st = S.stats;
 
@@ -565,13 +566,7 @@
     $('bw-start').onclick = start;
   }
 
-  loop = LG.loop(function (dt) {
-    update(dt);
-  }, function () {
-    if (S.state === 'running' && input.hit('KeyP')) { input.flush(); pause(); return; }
-    render();
-    input.flush();
-  });
+  loop = LG.loop(update, render, input);
   input.onBlur = function () { if (S.state === 'running') pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.code === 'KeyP' && S.state === 'paused') resume();
