@@ -19,9 +19,11 @@ car's **slipstream** gives you a speed boost and cools the tires, and the track 
 narrow enough that a car ahead can genuinely **block**.
 
 The field has personalities. The chargers push from the first corner and lead early;
-the managers sit in the tow and wait. In a Sprint the chargers usually get away with
-it. In an Endurance race the tires decide, and a driver who spent the middle laps
-saving rubber arrives at the finish with the grip to pass.
+the patient ones sit in the tow and wait. In a Sprint leading early is usually
+enough. Over ten laps the tires decide: whoever overcooked them drifts back, a worn
+car can't hold a defensive line, and the driver who kept the rubber in its window
+arrives at the finish with the grip to pass. Pushing too little is a way to lose
+too.
 
 **The slow way.** Stay in the tow, keep the temperature in the green, hold the
 inside line when someone lines you up, and let the pushers overheat in front of you.

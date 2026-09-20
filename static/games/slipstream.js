@@ -27,7 +27,7 @@
 
   // ---- tuning -------------------------------------------------------------
   const T = {
-    trackW: 60, zoom: 1.3,
+    trackW: 66, zoom: 1.3,
     vmax: 300, engine: 250, brake: 380, drag: 0.22, grassDrag: 2.2,
     alat: 520,            // lateral acceleration the tires can supply at full grip
     yawMax: 3.6, yawHigh: 0.38,
@@ -36,7 +36,7 @@
     heatBase: 10, heatPush: 2.0, heatSlide: 0.08, coolK: 0.15, coolTow: 5,   // Newtonian cooling: hot tires shed heat faster
     tempCold: 40, coldGrip: 0.75, tempHot: 78, hotGripLoss: 0.08,   // the operating window
     overheatTime: 3, overheatGrip: 0.75, overheatThrottle: 0.4,
-    wearSlide: 0.00003, wearHeat: 0.00035, wearGripLoss: 0.8,
+    wearSlide: 0.00003, wearHeat: 0.00035, wearGripLoss: 0.8, wearVmaxLoss: 0.12,
     carR: 10, carL: 22, carW: 12,
     modes: { sprint: 4, endurance: 10 }
   };
@@ -191,13 +191,17 @@
     const spd = c.spd;
     c.throttle = spd < target - 4 ? 1 : (spd < target ? 0.5 : 0);
     c.brake = spd > target + 10 ? 1 : (spd > target + 3 ? 0.4 : 0);
-    // everyone lifts a little before the tires go off, except on the last lap
-    const lastLap = c.lap >= S.laps - 1;
-    if (c.temp > 94 && !lastLap && c.overheat <= 0) c.throttle = Math.min(c.throttle, 0.55);
+    // everyone lifts a little before the tires go off, except in the endgame:
+    // the last lap of a sprint, the last three of an endurance race, when
+    // whoever has rubber left spends it
+    const lapsLeft = S.laps - c.lap;
+    const endgame = lapsLeft <= Math.max(1, Math.round(S.laps * 0.3));
+    if (c.temp > 94 && !endgame && c.overheat <= 0) c.throttle = Math.min(c.throttle, 0.55);
 
     // where to be on the track: inside of the next corner, else the middle
     const ahead = pts[(c.si + 18) % N];
     let want = Math.abs(ahead.k) > 1 / 400 ? Math.sign(ahead.k) * HALF * 0.45 : 0;
+    const straight = Math.abs(ahead.k) < 1 / 500 && Math.abs(pts[c.si].k) < 1 / 500;
 
     // overtaking and defending
     c.commit = Math.max(0, c.commit - dt);
@@ -211,16 +215,19 @@
       }
       // chargers attack whenever they can; patient drivers sit in the tow and
       // only go for it late, or when the car ahead is clearly slower
-      const lapsLeft = S.laps - c.lap;
-      const eager = c.aggr > 0.6 || lapsLeft <= 3 || (front && (front.spd < target - 15 || grip > gripOf(front) + 0.12));
-      if (front && target > front.spd + 6 && eager) {
+      const eager = c.aggr > 0.6 || endgame || (front && (front.spd < target - 15 || grip > gripOf(front) + 0.12));
+      // pull out only with the speed to make it stick: a real pace advantage,
+      // or a slipstream run with push on a straight
+      const faster = front && (spd > front.spd + 8 || (c.inTow && c.push && straight));
+      if (front && faster && eager) {
         want = front.lat > 0 ? -HALF * 0.6 : HALF * 0.6;
         c.commit = 1.2 + c.aggr;
       } else if (front && !eager) {
         want = front.lat;                                       // hold the tow
         c.commit = 0.4;
-      } else if (behind && behind.spd > spd - 5 && c.aggr > 0.5) {
-        want = LG.clamp(behind.lat, -HALF * 0.6, HALF * 0.6);   // mirror the attacker
+      } else if (behind && behind.spd > spd - 5 && c.aggr > 0.5 && grip > 0.72) {
+        // mirror the attacker: worn tires can't hold a defensive line
+        want = LG.clamp(behind.lat, -HALF * 0.6, HALF * 0.6);
         c.commit = 0.6;
       }
       c.latTarget = want;
@@ -240,9 +247,10 @@
     c.steer = LG.clamp(err * 2.8, -1, 1);
 
     // push policy: straights only, while the tires can take it
-    const straight = Math.abs(ahead.k) < 1 / 500 && Math.abs(pts[c.si].k) < 1 / 500;
-    const limit = 45 + 50 * c.aggr;
-    c.push = straight && c.overheat <= 0 && (c.temp < limit || (lastLap && c.temp < 92)) && c.throttle > 0.9;
+    // temperature each driver is willing to run: the 0.85 charger sits right at
+    // the top of the window, the 0.95 hothead a little over it
+    const limit = endgame ? 90 : 40 + 45 * c.aggr;
+    c.push = straight && c.overheat <= 0 && c.temp < limit && c.throttle > 0.9;
   }
 
   function drivePlayer(c, dt) {
@@ -261,14 +269,20 @@
     let grip = gripOf(c);
     if (!onTrack) grip *= 0.55;
     const push = c.push && c.overheat <= 0;
-    const vmax = T.vmax * (push ? T.pushVmax : 1) * (c.inTow ? T.towVmax : 1) * (onTrack ? 1 : 0.6);
+    // worn tires cost a little everywhere, not only in the corners
+    const vmax = T.vmax * (push ? T.pushVmax : 1) * (c.inTow ? T.towVmax : 1) * (onTrack ? 1 : 0.6) * (1 - T.wearVmaxLoss * c.wear);
     let thr = c.throttle;
     if (c.overheat > 0) thr = Math.min(thr, T.overheatThrottle);
 
-    // speed along the velocity direction; the car's heading is separate
+    // signed speed along the velocity direction; the car's heading is separate.
+    // Direction comes from the velocity's projection on the heading so a car
+    // creeping backwards at under 1 px/s still counts as reversing. vang is
+    // kept nose-aligned (a reversing car's is flipped) so the slip and the
+    // reconstruction below need no sign juggling.
     let spd = Math.hypot(c.vx, c.vy);
-    let vang = spd > 1 ? Math.atan2(c.vy, c.vx) : c.h;
-    let forward = Math.cos(wrapAngle(vang - c.h)) >= 0;
+    const hx = Math.cos(c.h), hy = Math.sin(c.h);
+    const forward = c.vx * hx + c.vy * hy >= 0;
+    let vang = spd > 1 ? Math.atan2(c.vy, c.vx) + (forward ? 0 : Math.PI) : c.h;
     let v = forward ? spd : -spd;
 
     const eng = T.engine * (push ? T.pushEngine : 1) * Math.max(0, 1 - Math.max(v, 0) / vmax);
@@ -283,18 +297,17 @@
     const av = Math.abs(v);
     const yaw = c.steer * T.yawMax * LG.clamp(av / 70, 0, 1) * (1 - T.yawHigh * Math.min(av / T.vmax, 1)) * (0.6 + 0.4 * grip) * (v >= 0 ? 1 : -1);
     c.h += yaw * dt;
-    const slip = wrapAngle(c.h - vang) * (forward ? 1 : -1);
+    const slip = wrapAngle(c.h - vang);
     const gripK = (onTrack ? T.gripK : T.grassGripK) * grip;
     const maxRot = (T.alat * grip) / Math.max(av, 30);
-    const rot = LG.clamp(gripK * slip, -maxRot, maxRot) * dt * (forward ? 1 : -1);
+    const rot = LG.clamp(gripK * slip, -maxRot, maxRot) * dt;
     vang += rot;
     // scrubbing speed while sliding
     const slideMag = Math.abs(Math.sin(slip)) * av;
     v -= Math.sign(v) * slideMag * 0.9 * dt;
     c.vx = Math.cos(vang) * v; c.vy = Math.sin(vang) * v;
-    if (!forward) { c.vx = -c.vx; c.vy = -c.vy; }
     // when nearly stopped, snap the velocity direction to the heading
-    if (av < 5) { c.vx = Math.cos(c.h) * v; c.vy = Math.sin(c.h) * v; }
+    if (av < 5) { c.vx = hx * v; c.vy = hy * v; }
     c.x += c.vx * dt; c.y += c.vy * dt;
     c.spd = av; c.slip = slip;
 
@@ -345,7 +358,10 @@
     } else if (prev < 25 && c.si > N - 25) {
       c.lap = Math.max(0, c.lap - 1);   // went backwards over the line
     }
-    c.progress = c.lap * TRACK.total + p.s + ((c.x - p.x) * p.tx + (c.y - p.y) * p.ty);
+    let s = p.s + ((c.x - p.x) * p.tx + (c.y - p.y) * p.ty);
+    // on the grid, or reversed back over the line: behind the start, not a lap ahead
+    if (c.lap === 0 && !c.halfSeen && s > TRACK.total / 2) s -= TRACK.total;
+    c.progress = c.lap * TRACK.total + s;
   }
 
   function collide(dt) {
@@ -384,6 +400,7 @@
   // ---- update -------------------------------------------------------------
   function update(dt) {
     if (S.state !== 'running' && S.state !== 'countdown') return;
+    if (input.hit('KeyP')) { pause(); return; }
     S.t += dt;
     if (S.state === 'countdown') {
       S.countdown -= dt;
@@ -640,11 +657,7 @@
     $('ss-start-endurance').onclick = function () { start('endurance'); };
   }
 
-  loop = LG.loop(update, function () {
-    if ((S.state === 'running' || S.state === 'countdown') && input.hit('KeyP')) { input.flush(); pause(); return; }
-    render();
-    input.flush();
-  });
+  loop = LG.loop(update, render, input);
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.code === 'KeyP' && S.state === 'paused') resume();
