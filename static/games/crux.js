@@ -330,6 +330,7 @@
       p.vx = p.dashDx * T.dashSpeed; p.vy = p.dashDy * T.dashSpeed;
       if (p.dashT <= 0) { p.vy = Math.min(p.vy, T.dashEndVy); p.vx *= 0.6; }
       p.gripping = false;
+      st.airT += dt;     // a dash is dynamic movement for the style meter
     } else if (canGrip || (p.gripping && wantGrip)) {
       // ---- gripping: cling, climb, rest on jugs, mantle over the top
       // a dash comes back on the ground or on a jug, not on every grab, so
@@ -377,14 +378,21 @@
       p.gripping = false; p.onJug = false;
       // ---- ordinary platforming
       const accel = p.onGround ? T.groundAccel : T.airAccel;
+      const cap = T.run * (p.onIce ? 1.25 : 1);
       if (p.wallLock <= 0) {
-        if (h) p.vx += h * accel * dt;
-        else {
+        if (h) {
+          // input accelerates up to the run cap and never past it; momentum
+          // from a dash or wall-jump above the cap is left to decay below
+          const same = Math.sign(p.vx) === h;
+          if (!same || Math.abs(p.vx) < cap) {
+            p.vx += h * accel * dt;
+            if (Math.sign(p.vx) === h && Math.abs(p.vx) > cap) p.vx = h * cap;
+          }
+        } else {
           const f = (p.onGround ? (p.onIce ? T.iceFriction : T.friction) : T.airAccel * 0.5) * dt;
           if (Math.abs(p.vx) <= f) p.vx = 0; else p.vx -= Math.sign(p.vx) * f;
         }
       }
-      const cap = T.run * (p.onIce ? 1.25 : 1);
       if (Math.abs(p.vx) > cap) p.vx -= Math.sign(p.vx) * Math.min(Math.abs(p.vx) - cap, (p.onGround && !p.onIce ? 900 : 300) * dt);
       // jump / wall-jump
       if (p.bufferT > 0) {
@@ -453,6 +461,7 @@
     const hint = S.hint;
     if (!hint.shown.grip && S.t > 1.5) { hint.shown.grip = true; showHint('Hold Shift against rock to grip it, then \u2191 to climb. Space jumps.', 8); }
     if (!hint.shown.jug && p.onJug) { hint.shown.jug = true; showHint('A yellow jug: hang here and stamina comes back.', 5); }
+    if (!hint.shown.hop && p.gripping && st.gripT > 2.5) { hint.shown.hop = true; showHint('Space on the wall: hold away for a free wall-jump, or hold toward it for a hop straight up (15 stamina).', 8); }
     if (!hint.shown.anchor && p.onRest && height > 5) { hint.shown.anchor = true; showHint('Rest ledge: stamina and anchors refill. V plants an anchor anywhere you stand still; a fall brings you back to it.', 8); }
     if (!hint.shown.fall && st.falls === 1) { hint.shown.fall = true; showHint('Back at your last checkpoint. Anchors placed before a hard section make falls cheap.', 6); }
     // camera: keep the climber in the lower-middle, looking up

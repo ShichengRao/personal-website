@@ -407,18 +407,20 @@
     if (input.hit('KeyP')) { pause(); return; }
     S.t += dt;
     if (S.state === 'countdown') {
+      // the grid is frozen until GO: no physics at all, so nobody creeps
+      // (braking from rest would otherwise engage reverse)
       S.countdown -= dt;
       if (S.countdown <= 0) { S.state = 'running'; S.race = 0; for (const c of S.cars) c.lapStart = 0; }
-    } else S.race += dt;
-    const live = S.state === 'running';
+      return;
+    }
+    S.race += dt;
     towCheck();
     for (const c of S.cars) {
       if (c.ai) {
-        if (live) driveAI(c, dt); else { c.throttle = 0; c.brake = 1; c.steer = 0; c.push = false; }
+        driveAI(c, dt);
         if (c.finished) { c.push = false; c.throttle = Math.min(c.throttle, 0.4); }
       } else {
         drivePlayer(c, dt);
-        if (!live) { c.throttle = 0; c.push = false; }
       }
       stepCar(c, dt);
     }

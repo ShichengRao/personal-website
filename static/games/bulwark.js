@@ -309,12 +309,13 @@
       b.regenPulse += dt;
     } else b.regenPulse = 0;
 
-    // bullets
-    const shieldUp = p.shieldDown <= 0 && p.dash <= 0;
+    // bullets. Shield state is re-read per bullet: once it breaks, the rest
+    // of this step's bullets meet the hull, not a shield with no integrity
     const grazeR = p.dash > 0 ? T.grazeR * T.dashGrazeR : T.grazeR;
     const beamDx = Math.cos(p.beamAng), beamDy = Math.sin(p.beamAng);
     for (let i = S.bullets.length - 1; i >= 0; i--) {
       const bl = S.bullets[i];
+      const shieldUp = p.shieldDown <= 0 && p.dash <= 0;
       bl.t += dt;
       if (bl.kind === 'turret') bl.vy = 34 * Math.sin(bl.wave + bl.t * 5);
       // the shield pulls anything light in its cone onto itself: facing the

@@ -29,7 +29,8 @@ keeps safe. A wall harvests charge for you for as long as it lasts, so three or 
 of them turn the arena into a position you can hold and fire from. Watch shield
 integrity: it regenerates, but it breaks if you tank a whole stream point-blank.
 
-**The fast way.** Dash. The shield drops while you dash, but the graze ring widens
-and every bullet you skim charges the beam faster than absorbing it would. A grazer
-threads the patterns the way the genre intends, kills the boss in a fraction of the
-time, takes more hits doing it, and never needs a single barrier.
+**The fast way.** Dash through the thick of it. The shield drops while you dash, but
+the graze ring widens and every bullet you skim mid-dash is worth almost as much as
+one absorbed. A grazer who threads the patterns the way the genre intends kills the
+boss about a third faster than any wall will, takes real hits doing it, and never
+needs a single barrier.
