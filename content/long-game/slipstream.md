@@ -26,8 +26,10 @@ arrives at the finish with the grip to pass. Pushing too little is a way to lose
 too.
 
 **The slow way.** Stay in the tow, keep the temperature in the green, hold the
-inside line when someone lines you up, and let the pushers overheat in front of you.
-The timing tower tells you who is fading.
+inside line when someone lines you up, and watch the timing tower: the bar beside
+each name is that car's tire life, the car directly ahead is marked, and a flag
+tells you when it is running on worn rubber. That is the moment you saved your
+tires for; a worn car slides wide in corners and can no longer hold a line.
 
 **The fast way.** Hold push on every straight, brake late, and build a gap while the
 tires are fresh. It works if you can manage a car that slides more every lap.
