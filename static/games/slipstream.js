@@ -38,7 +38,8 @@
     overheatTime: 3, overheatGrip: 0.75, overheatThrottle: 0.4,
     wearSlide: 0.00003, wearHeat: 0.00035, wearGripLoss: 0.8, wearVmaxLoss: 0.12,
     carR: 10, carL: 22, carW: 12,
-    modes: { sprint: 4, endurance: 10, practice: 3 }
+    modes: { sprint: 4, endurance: 10, practice: 3 },
+    cleanWear: 0.5          // a clean podium: top three, no overheat, at least half the tire life left
   };
   const DRIVERS = [
     { name: 'Vettori', aggr: 0.95, color: '#e4433d' },
@@ -345,7 +346,11 @@
     if (c.si > N / 2 && c.si < N * 0.75) c.halfSeen = true;
     if (prev > N - 25 && c.si < 25 && c.halfSeen) {
       c.halfSeen = false;
-      if (S.state === 'running' && !c.finished) {
+      if (c.recrossed) {
+        // back over the line after reversing across it: the lap is restored,
+        // nothing is timed
+        c.recrossed = false; c.lap++;
+      } else if (S.state === 'running' && !c.finished) {
         if (c.lap > 0 || S.race > 5) {
           c.lastLap = S.race - c.lapStart;
           if (c.lastLap < c.bestLap) c.bestLap = c.lastLap;
@@ -359,8 +364,10 @@
           if (c.isPlayer) { S.playerDone = true; }
         }
       }
-    } else if (prev < 25 && c.si > N - 25) {
-      c.lap = Math.max(0, c.lap - 1);   // went backwards over the line
+    } else if (prev < 25 && c.si > N - 25 && !c.finished) {
+      // went backwards over the line: the lap comes off, and comes back on
+      // the next forward crossing without needing the half-lap checkpoint
+      if (c.lap > 0) { c.lap--; c.halfSeen = true; c.recrossed = true; }
     }
     let s = p.s + ((c.x - p.x) * p.tx + (c.y - p.y) * p.ty);
     // on the grid, or reversed back over the line: behind the start, not a lap ahead
@@ -624,13 +631,17 @@
     }
     const best = LG.store.get(BEST_KEY, {});
     const b = best[S.mode] || {};
-    let newPos = false, newLap = false;
+    let newPos = false, newLap = false, newClean = false;
     if (b.pos === undefined || pos < b.pos) { b.pos = pos; newPos = true; }
     if (isFinite(p.bestLap) && (b.lap === undefined || p.bestLap < b.lap)) { b.lap = p.bestLap; newLap = true; }
+    // the patient driver's record: a podium with the car looked after
+    const clean = pos <= 3 && p.overheats === 0 && p.wear <= T.cleanWear;
+    if (clean && (!b.clean || pos < b.clean.pos || (pos === b.clean.pos && p.finishTime < b.clean.time))) { b.clean = { pos, time: p.finishTime }; newClean = true; }
     best[S.mode] = b; LG.store.set(BEST_KEY, best);
     showBests();
     const ord = ['', 'st', 'nd', 'rd'][pos] || 'th';
     overlay.show('<div><h2>' + pos + ord + ' place</h2><span class="lg-tag">' + style.who + '</span>' +
+      (clean ? ' <span class="lg-tag" style="border-color:var(--good);color:var(--good)">Clean podium' + (newClean ? ' ★' : '') + '</span>' : '') +
       '<div class="lg-results">' +
       '<span>Race time</span><b>' + LG.fmtTime(p.finishTime) + '</b>' +
       '<span>Best lap</span><b>' + LG.fmtTime(p.bestLap) + (newLap ? ' ★' : '') + '</b>' +
@@ -653,7 +664,7 @@
     const best = LG.store.get(BEST_KEY, {});
     for (const m of ['sprint', 'endurance']) {
       const b = best[m];
-      ui[m === 'sprint' ? 'bestSprint' : 'bestEndurance'].textContent = b && b.pos ? 'P' + b.pos + (b.lap ? ' · lap ' + LG.fmtTime(b.lap) : '') : '—';
+      ui[m === 'sprint' ? 'bestSprint' : 'bestEndurance'].textContent = b && b.pos ? 'P' + b.pos + (b.lap ? ' · lap ' + LG.fmtTime(b.lap) : '') + (b.clean ? ' · clean P' + b.clean.pos + ' ' + LG.fmtTime(b.clean.time) : '') : '—';
     }
   }
 
@@ -687,6 +698,7 @@
   loop = LG.loop(update, render, input);
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
+    if (e.target && e.target.tagName === 'BUTTON') return;   // the button handles its own Enter/Space
     if (e.code === 'KeyP' && S.state === 'paused') resume();
     if (e.code === 'Enter' && S.state === 'ready') start(S.mode);
   });
