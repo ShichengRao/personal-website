@@ -176,7 +176,7 @@
       anchors: [], rocks: [], particles: [], crumble: {},
       chutes: CHUTES.map((ch) => ({ c: ch.c, r: ch.r, min: ch.min, max: ch.max, timer: 0, next: 1.5 + rand() * 2 })),
       wind: { t: rand() * T.windPeriod, dir: rand() < 0.5 ? -1 : 1 },
-      stats: { gripT: 0, airT: 0, groundT: 0, dashes: 0, wallJumps: 0, hops: 0, anchorsPlaced: 0, falls: 0, maxHeight: 0 },
+      stats: { gripT: 0, airT: 0, groundT: 0, restT: 0, anchorT: 0, dashes: 0, wallJumps: 0, hops: 0, anchorsPlaced: 0, falls: 0, maxHeight: 0 },
       hint: { text: '', until: 0, shown: {} }
     };
     S.camY = LG.clamp(S.p.y - H * 0.6, 0, WORLD_H - H);
@@ -413,7 +413,7 @@
       p.vy = Math.min(T.maxFall, p.vy + T.gravity * dt);
       // sliding down an unclimbable wall is slower than falling
       if (wall && !p.onGround && p.vy > 0 && h === wallDir && wall.t !== '~') p.vy = Math.min(p.vy, 160);
-      if (p.onGround) st.groundT += dt; else st.airT += dt;
+      if (p.onGround) { st.groundT += dt; if ((p.onRest || p.onJug) && p.anchoring <= 0) st.restT += dt; } else st.airT += dt;
     }
 
     // ---- stamina & anchors
@@ -423,7 +423,7 @@
     if (p.anchoring > 0) {
       if (!still) p.anchoring = 0;
       else {
-        p.anchoring -= dt;
+        p.anchoring -= dt; st.anchorT += dt;
         if (p.anchoring <= 0) {
           p.anchoring = 0; p.anchorsLeft--; st.anchorsPlaced++;
           const a = { x: p.x, y: p.y, grip: p.gripping ? wallDir : 0, rest: false };
@@ -702,12 +702,15 @@
     ui.style.innerHTML = LG.styleBar('Static', 'Dynamic', sty.t, sty.note);
   }
 
+  // The meter describes the strategy, not only the motion: time on the rock,
+  // resting on ledges and jugs, and standing still to place anchors all count
+  // as the patient side; time in the air (jumps, hops, dashes) as the dynamic one.
   function styleOf() {
-    const st = S.stats, moving = st.gripT + st.airT;
-    if (moving < 1) return { who: 'Static', t: 0.5, note: 'Grip time vs air time appears here' };
-    const air = st.airT / moving;
+    const st = S.stats, patient = st.gripT + st.restT + st.anchorT, total = patient + st.airT;
+    if (total < 1) return { who: 'Static', t: 0.5, note: 'Time on the rock, resting and anchoring vs time in the air appears here' };
+    const air = st.airT / total;
     const who = air < 0.4 ? 'Static' : air > 0.6 ? 'Dynamic' : 'Mixed';
-    return { who, t: air, note: who + ' — ' + LG.pct(1 - air) + ' of the moving time on the rock, ' + LG.pct(air) + ' in the air' };
+    return { who, t: air, note: who + ' — ' + LG.pct(1 - air) + ' on the rock, resting or anchoring (' + st.anchorsPlaced + ' anchor' + (st.anchorsPlaced === 1 ? '' : 's') + '), ' + LG.pct(air) + ' in the air' };
   }
 
   // ---- flow ---------------------------------------------------------------
@@ -769,7 +772,7 @@
   loop = LG.loop(update, render, input);
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
-    if (e.target && e.target.tagName === 'BUTTON') return;   // the button handles its own Enter/Space
+    if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
     if (e.code === 'KeyP' && S.state === 'paused') resume();
     if (e.code === 'Enter' && (S.state === 'ready' || S.state === 'won')) start();
   });

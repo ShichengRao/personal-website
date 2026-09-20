@@ -38,8 +38,7 @@
     overheatTime: 3, overheatGrip: 0.75, overheatThrottle: 0.4,
     wearSlide: 0.00003, wearHeat: 0.00035, wearGripLoss: 0.8, wearVmaxLoss: 0.12,
     carR: 10, carL: 22, carW: 12,
-    modes: { sprint: 4, endurance: 10, practice: 3 },
-    cleanWear: 0.5          // a clean podium: top three, no overheat, at least half the tire life left
+    modes: { sprint: 4, endurance: 10, practice: 3 }
   };
   const DRIVERS = [
     { name: 'Vettori', aggr: 0.95, color: '#e4433d' },
@@ -132,7 +131,7 @@
     const c = {
       name, color, ai, aggr, x, y, h: Math.atan2(p.ty, p.tx), vx: 0, vy: 0, spd: 0, slip: 0,
       steer: 0, throttle: 0, brake: 0, push: false, temp: 15, wear: 0, overheat: 0, overheats: 0,
-      si: 0, lat: 0, dist: 0, lap: 0, halfSeen: false, progress: 0, lapStart: 0, lastLap: 0, bestLap: Infinity,
+      si: 0, lat: 0, dist: 0, lap: 0, cpNext: 1, recrossed: false, progress: 0, lapStart: 0, lastLap: 0, bestLap: Infinity, maxTemp: 0,
       finished: false, finishTime: 0, finishPos: 0, inTow: false, towTime: 0, pushTime: 0,
       latTarget: 0, commit: 0, mistake: 0, skill: 0.97 + rand() * 0.06, pushHold: 0, lapTimes: []
     };
@@ -317,6 +316,7 @@
     const heatIn = (0.55 + 0.45 * thr) * Math.pow(Math.max(v, 0) / T.vmax, 2) * T.heatBase * (push ? T.heatPush : 1) + slideMag * T.heatSlide;
     const cool = T.coolK * c.temp + (c.inTow ? T.coolTow : 0);
     c.temp = LG.clamp(c.temp + (heatIn - cool) * dt, 0, 100);
+    if (!c.finished) c.maxTemp = Math.max(c.maxTemp, c.temp);
     if (c.temp >= 100 && c.overheat <= 0) { c.overheat = T.overheatTime; c.overheats++; }
     if (c.overheat > 0) { c.overheat -= dt; if (c.overheat <= 0) c.temp = Math.min(c.temp, 70); }
     c.wear = Math.min(1, c.wear + (slideMag * T.wearSlide + Math.max(0, c.temp - 65) * T.wearHeat) * dt);
@@ -343,10 +343,18 @@
       c.x = p.x + p.nx * side * (HALF + 34); c.y = p.y + p.ny * side * (HALF + 34);
       c.vx *= 0.6; c.vy *= 0.6;
     }
-    if (c.si > N / 2 && c.si < N * 0.75) c.halfSeen = true;
-    if (prev > N - 25 && c.si < 25 && c.halfSeen) {
-      c.halfSeen = false;
-      if (c.recrossed) {
+    // quarter checkpoints must be passed in order, moving forward, before a
+    // line crossing counts: reversing into a checkpoint zone earns nothing
+    if (c.cpNext <= 3) {
+      const m = Math.floor(N * c.cpNext / 4);
+      if (prev < m && c.si >= m && c.si - prev < 40) c.cpNext++;
+    }
+    if (prev > N - 25 && c.si < 25) {
+      const complete = c.cpNext === 4;
+      c.cpNext = 1;
+      if (!complete && !c.recrossed) {
+        // the grid's first crossing, or a lap with missed checkpoints
+      } else if (c.recrossed) {
         // back over the line after reversing across it: the lap is restored,
         // nothing is timed
         c.recrossed = false; c.lap++;
@@ -361,17 +369,19 @@
         if (S.mode === 'practice') { c.wear = 0; c.temp = Math.min(c.temp, 60); }
         if (c.lap >= S.laps) {
           c.finished = true; c.finishTime = S.race; S.finishedCount++; c.finishPos = S.finishedCount;
+          // what the results judge is what crossed the line, not what happened while coasting after it
+          c.finishWear = c.wear; c.finishOverheats = c.overheats; c.finishMaxTemp = c.maxTemp;
           if (c.isPlayer) { S.playerDone = true; }
         }
       }
     } else if (prev < 25 && c.si > N - 25 && !c.finished) {
       // went backwards over the line: the lap comes off, and comes back on
-      // the next forward crossing without needing the half-lap checkpoint
-      if (c.lap > 0) { c.lap--; c.halfSeen = true; c.recrossed = true; }
+      // the next forward crossing without redoing the checkpoints
+      if (c.lap > 0) { c.lap--; c.recrossed = true; c.cpNext = 4; }
     }
     let s = p.s + ((c.x - p.x) * p.tx + (c.y - p.y) * p.ty);
     // on the grid, or reversed back over the line: behind the start, not a lap ahead
-    if (c.lap === 0 && !c.halfSeen && s > TRACK.total / 2) s -= TRACK.total;
+    if (c.lap === 0 && c.cpNext <= 2 && s > TRACK.total / 2) s -= TRACK.total;
     c.progress = c.lap * TRACK.total + s;
   }
 
@@ -634,8 +644,9 @@
     let newPos = false, newLap = false, newClean = false;
     if (b.pos === undefined || pos < b.pos) { b.pos = pos; newPos = true; }
     if (isFinite(p.bestLap) && (b.lap === undefined || p.bestLap < b.lap)) { b.lap = p.bestLap; newLap = true; }
-    // the patient driver's record: a podium with the car looked after
-    const clean = pos <= 3 && p.overheats === 0 && p.wear <= T.cleanWear;
+    // the patient driver's record: a podium without the tires ever leaving
+    // their window, judged from the numbers at the finish line
+    const clean = pos <= 3 && p.finishOverheats === 0 && p.finishMaxTemp <= T.tempHot;
     if (clean && (!b.clean || pos < b.clean.pos || (pos === b.clean.pos && p.finishTime < b.clean.time))) { b.clean = { pos, time: p.finishTime }; newClean = true; }
     best[S.mode] = b; LG.store.set(BEST_KEY, best);
     showBests();
@@ -646,10 +657,11 @@
       '<span>Race time</span><b>' + LG.fmtTime(p.finishTime) + '</b>' +
       '<span>Best lap</span><b>' + LG.fmtTime(p.bestLap) + (newLap ? ' ★' : '') + '</b>' +
       '<span>Finish</span><b>P' + pos + (newPos ? ' ★' : '') + '</b>' +
-      '<span>Tire life left</span><b>' + Math.round((1 - p.wear) * 100) + '%</b>' +
+      '<span>Tire life left</span><b>' + Math.round((1 - p.finishWear) * 100) + '%</b>' +
+      '<span>Hottest tire</span><b>' + Math.round(p.finishMaxTemp) + '°</b>' +
       '<span>Time in tow</span><b>' + LG.pct(style.tow) + '</b>' +
       '<span>Time pushing</span><b>' + LG.pct(style.push) + '</b>' +
-      '<span>Tires went off</span><b>' + p.overheats + '×</b>' +
+      '<span>Tires went off</span><b>' + p.finishOverheats + '×</b>' +
       '</div>' +
       LG.styleBar('Tow & manage', 'Push & charge', style.t, style.who + ' — ' + LG.pct(style.tow) + ' of the race in a slipstream, ' + LG.pct(style.push) + ' pushing') +
       '<div class="lg-row" style="justify-content:center"><button class="primary" id="ss-again">Race again</button><button id="ss-menu">Change mode</button></div>' +
@@ -698,7 +710,7 @@
   loop = LG.loop(update, render, input);
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
-    if (e.target && e.target.tagName === 'BUTTON') return;   // the button handles its own Enter/Space
+    if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
     if (e.code === 'KeyP' && S.state === 'paused') resume();
     if (e.code === 'Enter' && S.state === 'ready') start(S.mode);
   });
