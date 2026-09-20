@@ -1,0 +1,25 @@
+{{ define "main" }}
+<article class="ph3 ph4-ns pv3">
+  <div style="max-width:42rem;margin:0 auto">
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
+
+<section class="ph3 ph4-ns pb5 center mw8">
+  <div class="flex flex-wrap justify-center nl2 nr2">
+    {{ range .RegularPages.ByWeight }}
+    <div class="w-100 w-third-ns pa2 flex">
+      <a href="{{ .RelPermalink }}" class="link db w-100 pa3 br3 ba b--black-10 bg-white dim near-black">
+        <div class="f7 ttu tracked mid-gray mb1">{{ .Params.genre }}</div>
+        <h3 class="f4 fw6 mt0 mb2">{{ .Title }}</h3>
+        <p class="f6 mid-gray lh-copy mv0">{{ .Params.blurb }}</p>
+        <dl class="f6 lh-copy mt3 mb0">
+          <dt class="fw6 dib mr1">Slow:</dt><dd class="ml0 dib">{{ .Params.slow }}</dd><br>
+          <dt class="fw6 dib mr1">Fast:</dt><dd class="ml0 dib">{{ .Params.fast }}</dd>
+        </dl>
+      </a>
+    </div>
+    {{ end }}
+  </div>
+</section>
+{{ end }}
