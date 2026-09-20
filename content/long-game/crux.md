@@ -26,10 +26,16 @@ second of standing still, and any fall or hazard returns you to the last one. Ro
 chutes, wind bands, crumbling holds and ice all have a timing to them, and a
 gripping climber is safe from wind while an airborne one is not.
 
-**The slow way.** Climb on the holds, wait out the rockfall on a jug, anchor before
-every crux, arrive at the top having never fallen.
+**The slow way.** Climb on the holds, wait out the rockfall in a pocket, anchor
+before every crux, arrive at the top having never fallen. On the crux face, climbing
+up into a pocket steps you inside it, where the rocks can't reach; rest, wait for a
+rock to pass, and press ↑ again to climb out onto the face above. A marker at the
+top of the screen shows a rock coming down your column.
 
 **The fast way.** Wall-jumps and dashes cost no stamina at all, and a hop off the
 rock covers two metres in a blink for the price of a few seconds of climbing. A
-confident climber chains up a chimney in seconds and skips most of the holds; a
-fall costs more without anchors, and that is the whole trade.
+confident climber chains up a chimney in seconds and skips most of the holds. But
+the air is gated: the wind bands only move you while you're airborne, the rock
+chutes only threaten the exposed, and a dash comes back on real ground rather than
+in a pocket. Over most of the wall the fast climber spends the time saved waiting
+for a window, and a fall costs more without anchors. That is the whole trade.
