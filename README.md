@@ -27,7 +27,7 @@ install is needed to build or serve the site.
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects |
-| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux level is well-formed |
+| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux level is well-formed. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
 
