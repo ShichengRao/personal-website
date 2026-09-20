@@ -410,15 +410,19 @@
       ctx.fillRect(tr.x === 0 ? 0 : W - 8, tr.y - 8, 8, 16);
     }
 
-    // every wall casts a shadow from the boss: that is the pocket it keeps safe
-    ctx.fillStyle = 'rgba(91,141,217,0.075)';
-    for (const br of S.barriers) {
-      const l1 = Math.hypot(br.x1 - b.x, br.y1 - b.y) || 1, l2 = Math.hypot(br.x2 - b.x, br.y2 - b.y) || 1;
+    // every wall casts a shadow from each thing currently shooting: the boss,
+    // and the side turrets while they fire. Cover is directional, and the
+    // shadows say exactly which direction
+    const sources = [{ x: b.x, y: b.y }];
+    if (turretsOn) for (const tr of TURRETS) sources.push({ x: tr.x, y: tr.y });
+    ctx.fillStyle = turretsOn ? 'rgba(91,141,217,0.05)' : 'rgba(91,141,217,0.075)';
+    for (const src of sources) for (const br of S.barriers) {
+      const l1 = Math.hypot(br.x1 - src.x, br.y1 - src.y) || 1, l2 = Math.hypot(br.x2 - src.x, br.y2 - src.y) || 1;
       const R = 1400;
       ctx.beginPath();
       ctx.moveTo(br.x1, br.y1); ctx.lineTo(br.x2, br.y2);
-      ctx.lineTo(br.x2 + (br.x2 - b.x) / l2 * R, br.y2 + (br.y2 - b.y) / l2 * R);
-      ctx.lineTo(br.x1 + (br.x1 - b.x) / l1 * R, br.y1 + (br.y1 - b.y) / l1 * R);
+      ctx.lineTo(br.x2 + (br.x2 - src.x) / l2 * R, br.y2 + (br.y2 - src.y) / l2 * R);
+      ctx.lineTo(br.x1 + (br.x1 - src.x) / l1 * R, br.y1 + (br.y1 - src.y) / l1 * R);
       ctx.closePath(); ctx.fill();
     }
     // the wall a right-click would build right now, red inside the keep-out zone
@@ -619,7 +623,7 @@
   loop = LG.loop(update, render, input);
   input.onBlur = function () { if (S.state === 'running') pause(); };
   stage.addEventListener('keydown', function (e) {
-    if (e.target && e.target.tagName === 'BUTTON') return;   // the button handles its own Enter/Space
+    if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
     if (e.code === 'KeyP' && S.state === 'paused') resume();
     if (e.code === 'Enter' && (S.state === 'ready' || S.state === 'won' || S.state === 'lost')) start();
   });
