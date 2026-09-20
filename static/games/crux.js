@@ -26,7 +26,6 @@
     '#...........##########',
     '#...........##########',
     '#...........##########',
-    '#...........##########',
     '#............j########',
     '#...........##########',
     '#...........##########',
@@ -39,6 +38,7 @@
     '#...........##########',
     '#...........##########',
     '#...........##########',
+    '#..........###########',
     '#............j########',
     '#...........##########',
     '#...........#........#',
@@ -107,7 +107,7 @@
   // the chimney chute is quick and misses anyone hugging a wall; the crux
   // chute falls straight down the climbing column, so it is slower and the
   // face has notches to duck into
-  const CHUTES = [{ c: 19, r: 84 - 41, min: 2.4, max: 3.6 }, { c: 11, r: 84 - 78, min: 3.8, max: 5.4 }];
+  const CHUTES = [{ c: 19, r: 84 - 41, min: 2.4, max: 3.6 }, { c: 11, r: 84 - 78, min: 4.6, max: 6.6 }];
   const WIND = [{ r0: 84 - 37, r1: 84 - 26 }, { r0: 84 - 54, r1: 84 - 44 }, { r0: 84 - 73, r1: 84 - 65 }];
 
   const canvas = document.getElementById('cx-canvas');
@@ -131,7 +131,7 @@
     wallJumpVx: 240, wallJumpVy: 400, wallLock: 0.12, hopVy: 380, hopCost: 15, hopTime: 0.2,
     dashSpeed: 400, dashTime: 0.16, dashEndVy: 120,
     staminaMax: 100, regenGround: 30, regenRest: 60, regenJug: 45,
-    anchorTime: 1.2, anchorsPerPitch: 3, respawnStamina: 0.6,
+    anchorTime: 1.2, anchorsPerPitch: 3, respawnStamina: 0.6, climbOutCost: 10,
     hardFall: 5.5 * TILE,
     rockR: 9, rockAccel: 900, rockMaxV: 420, rockWarn: 0.7,
     windPeriod: 7, windCalm: 4.5, windWarn: 0.8, windForce: 700,
@@ -296,7 +296,9 @@
     // the probe can find support a step before the collision snap does, so a
     // landing is judged here, before the fall origin is reset
     if (p.onGround && !wasGrounded && !p.gripping && (g.r * TILE - T.h) - p.fallFrom > T.hardFall) { die('fall'); return; }
-    if (p.onGround) { p.coyoteT = T.coyote; p.dashAvail = true; p.fallFrom = p.y; }
+    // a dash comes back on real ground, not on a pocket's floor: the crux face
+    // is climbed between shelters, not dashed between them
+    if (p.onGround) { p.coyoteT = T.coyote; if (!pocketInfo(p)) p.dashAvail = true; p.fallFrom = p.y; }
     if (p.onRest) {
       if (!S.checkpoint.rest || S.checkpoint.y !== p.y || Math.abs(S.checkpoint.x - p.x) > TILE) {
         S.checkpoint = { x: p.x, y: p.y, grip: 0, rest: true };
@@ -314,6 +316,24 @@
     // from the ground you start a climb by holding up; in the air, grip alone catches the wall
     const wantGrip = wall && grippable(wall.t) && gripKey && p.stamina > 0 && p.dashT <= 0 && p.hopT <= 0;
     const canGrip = wantGrip && (!p.onGround || up);
+
+    // ---- climbing out of a pocket: a fresh press of up (or jump) puts you
+    // back on the face above. Holding up through the entry doesn't count, so
+    // the pocket is never skipped by accident
+    const pocket = p.onGround && p.dashT <= 0 ? pocketInfo(p) : null;
+    if (!pocket) p.pocketArmed = false;
+    else if (!up) p.pocketArmed = true;
+    if (pocket && ((up && p.pocketArmed) || p.bufferT > 0)) {
+      p.bufferT = 0;
+      p.x = (pocket.c + pocket.open) * TILE + (pocket.open < 0 ? TILE - T.w : 0);
+      p.y = pocket.exitRow * TILE + (TILE - T.h);
+      p.vx = 0; p.vy = 0; p.gripping = true; p.wallDir = -pocket.open; p.onGround = false;
+      p.fallFrom = p.y; p.stamina = Math.max(0, p.stamina - T.climbOutCost); p.autoGrip = 0.3;
+      st.gripT += dt;
+      puff(p.x + T.w / 2, p.y + T.h, '#dfe6f5', 4, 50, 1.5, 0.3);
+      if (!S.hint.shown.out) { S.hint.shown.out = true; }
+      return finishStep(dt);
+    }
 
     // ---- dash
     if (dashHit && p.dashAvail && p.dashT <= 0) {
@@ -350,13 +370,12 @@
       }
       p.vy = climb;
       st.gripT += dt;
-      // mantle: the body straddles the wall's top edge. A one-tile notch in
-      // the face counts too, but only when pushing into it; otherwise you
-      // climb past (hop over the gap) rather than being pulled into every pocket
+      // mantle: the body straddles the wall's top edge. A one-tile pocket in
+      // the face counts too: climbing up into it steps you inside, where the
+      // rocks can't reach; climbOut() below takes you back onto the face
       const rs = rowsSpanned(p);
-      const notch = solidAt(wall.c, rs[1] - 2);
       if (climb < 0 && !solidAt(wall.c, rs[0]) && solidAt(wall.c, rs[1]) && !solidAt(wall.c, rs[1] - 1) &&
-          (rs[1] * TILE - p.y) > 6 && (!notch || h === wallDir)) {
+          (rs[1] * TILE - p.y) > 6) {
         const nx = wall.c * TILE + (TILE - T.w) / 2, ny = rs[1] * TILE - T.h;
         let free = true;
         const c0 = Math.floor(nx / TILE), c1 = Math.floor((nx + T.w - EPS) / TILE);
@@ -433,6 +452,12 @@
       }
     }
 
+    return finishStep(dt);
+  }
+
+  // the part of a step after movement decisions: integrate, hazards, camera, hints
+  function finishStep(dt) {
+    const p = S.p, st = S.stats;
     // ---- integrate
     p.landed = false;
     moveX(p, p.vx * dt);
@@ -464,12 +489,29 @@
     if (!hint.shown.hop && p.gripping && st.gripT > 2.5) { hint.shown.hop = true; showHint('Space on the wall: hold away for a free wall-jump, or hold toward it for a hop straight up (15 stamina).', 8); }
     if (!hint.shown.anchor && p.onRest && height > 5) { hint.shown.anchor = true; showHint('Rest ledge: stamina and anchors refill. V plants an anchor anywhere you stand still; a fall brings you back to it.', 8); }
     if (!hint.shown.fall && st.falls === 1) { hint.shown.fall = true; showHint('Back at your last checkpoint. Anchors placed before a hard section make falls cheap.', 6); }
+    if (!hint.shown.crux && p.onRest && height >= 55 && height <= 57) { hint.shown.crux = true; showHint('The crux: climb the wall on the right. The pockets in it are shelter from the rocks; press \u2191 again to climb out of one.', 9); }
+    if (!hint.shown.pocket && p.onGround && pocketInfo(p)) { hint.shown.pocket = true; showHint('A pocket: the rocks can\'t reach you here. Rest, then press \u2191 again to climb out onto the face above.', 8); }
     // camera: keep the climber in the lower-middle, looking up
     const target = LG.clamp(p.y - H * 0.58, 0, WORLD_H - H);
     S.camY += (target - S.camY) * (1 - Math.exp(-6 * dt));
   }
 
   function showHint(text, secs) { S.hint.text = text; S.hint.until = S.t + secs; }
+
+  // A pocket: standing inside the face with rock overhead and one open side.
+  // The exit is the first row above where the open side is clear and the
+  // face beside it is rock (a roof over the open side is skipped).
+  function pocketInfo(p) {
+    const c = Math.floor((p.x + T.w / 2) / TILE), r = Math.floor((p.y + T.h / 2) / TILE);
+    if (!solidAt(c, r - 1)) return null;
+    const openL = !solidAt(c - 1, r), openR = !solidAt(c + 1, r);
+    if (openL === openR) return null;
+    const open = openL ? -1 : 1;
+    for (let rr = r - 1; rr >= r - 4; rr--) {
+      if (!solidAt(c + open, rr) && solidAt(c, rr)) return { c, r, open, exitRow: rr };
+    }
+    return null;
+  }
 
   // ---- world: rocks, wind, crumbling holds ---------------------------------
   function windPhase() { const t = S.wind.t % T.windPeriod; return t < T.windCalm ? 'calm' : t < T.windCalm + T.windWarn ? 'warn' : 'gust'; }
@@ -671,6 +713,15 @@
     for (const q of S.particles) { ctx.globalAlpha = Math.max(0, q.life / q.max); ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y - camY, q.r, 0, TAU); ctx.fill(); }
     ctx.globalAlpha = 1;
 
+    // a rock coming down your column (or the one beside your pocket): a
+    // marker at the top of the screen
+    for (const rk of S.rocks) {
+      if (Math.abs(rk.x - (p.x + T.w / 2)) > 40 || rk.y > p.y) continue;
+      const ry = rk.y - camY;
+      if (ry > 0) continue;   // already on screen
+      ctx.fillStyle = 'rgba(255,90,90,0.9)'; ctx.beginPath(); ctx.moveTo(rk.x - 9, 6); ctx.lineTo(rk.x + 9, 6); ctx.lineTo(rk.x, 20); ctx.closePath(); ctx.fill();
+      ctx.font = '600 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('ROCK', rk.x, 32);
+    }
     // the current hint, if any
     if (S.hint.text && S.t < S.hint.until && S.state === 'running') {
       const a = Math.min(1, (S.hint.until - S.t) / 0.6);

@@ -33,3 +33,8 @@ tires for; a worn car slides wide in corners and can no longer hold a line.
 
 **The fast way.** Hold push on every straight, brake late, and build a gap while the
 tires are fresh. It works if you can manage a car that slides more every lap.
+
+Rivals come in two paces. Rookies lap about four seconds slower than the pros;
+start there, and use Practice to learn where the braking chevrons are. The fence at
+the edge of the run-off is the limit of the world: you slide along it, and you can
+always steer away from it.
