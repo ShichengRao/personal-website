@@ -17,19 +17,21 @@
   const ui = {
     hull: $('bw-hull'), shield: $('bw-shield'), charge: $('bw-charge'), boss: $('bw-boss'),
     time: $('bw-time'), phase: $('bw-phase'), hits: $('bw-hits'), style: $('bw-style'),
-    bestTime: $('bw-best-time'), bestClean: $('bw-best-clean')
+    bestTime: $('bw-best-time'), bestClean: $('bw-best-clean'), bestFlawless: $('bw-best-flawless')
   };
   const BEST_KEY = 'lg-bulwark-best-v1';
 
   // ---- tuning -------------------------------------------------------------
   const T = {
     moveSpeed: 150, focusSpeed: 72, hurtR: 6, shieldR: 24, arcHalf: 65 * Math.PI / 180, grazeR: 38,
-    magnetR: 80, magnetA: 800,      // the shield draws bullets in its cone onto itself
+    magnetR: 96, magnetA: 1500,     // the shield draws bullets in its cone onto itself
     hullMax: 100, hullRegen: 1.0, hullRegenDelay: 5,
     shieldMax: 100, shieldRegen: 20, shieldRegenDelay: 0.6, shieldBreakTime: 2.5, shieldReturn: 35,
-    chargeMax: 100, absorbGain: 1.2, grazeGain: 2.5, dashGrazeMul: 3, dashGrazeR: 1.6, barrierGain: 0.5,
+    // a graze while standing still is worth little; a graze mid-dash is the
+    // fast player's income
+    chargeMax: 100, absorbGain: 1.2, grazeGain: 1.0, dashGrazeMul: 6, dashGrazeR: 1.6, barrierGain: 1.0,
     beamCost: 30, beamDmg: 36, beamTime: 0.2, beamW: 10,
-    barrierCost: 45, barrierHP: 180, barrierLen: 64, barrierDist: 48, barrierMax: 6,
+    barrierCost: 45, barrierHP: 180, barrierLen: 64, barrierDist: 48, barrierRange: 260, barrierMax: 6,
     dashSpeed: 520, dashTime: 0.2, dashCD: 0.9,
     bossHP: 600, bossRegen: 4, bossRegenDelay: 5, bossR: 34,
     turretRate: 0.28, turretSpeed: 160
@@ -194,6 +196,23 @@
     else if (b.phase === 2 && b.hp <= T.bossHP * 0.33) startPhase(3);
   }
 
+  // where a right-click wall would go: toward the cursor, at most barrierRange away
+  function barrierAt(p, mx, my) {
+    let dx = mx - p.x, dy = my - p.y, d = Math.hypot(dx, dy);
+    if (d < 30) { dx = Math.cos(p.aim); dy = Math.sin(p.aim); d = 1; }
+    const dist = Math.max(30, Math.min(T.barrierRange, d));
+    return { x: p.x + dx / d * dist, y: p.y + dy / d * dist, ang: Math.atan2(dy, dx) };
+  }
+  function buildBarrier(cx, cy, ang) {
+    const p = S.p;
+    p.charge -= T.barrierCost; S.stats.barriersPlaced++;
+    const px = -Math.sin(ang) * T.barrierLen / 2, py = Math.cos(ang) * T.barrierLen / 2;
+    const clampX = (v) => LG.clamp(v, 4, W - 4), clampY = (v) => LG.clamp(v, 60, H - 4);
+    S.barriers.push({ x1: clampX(cx - px), y1: clampY(cy - py), x2: clampX(cx + px), y2: clampY(cy + py), hp: T.barrierHP, born: S.t });
+    if (S.barriers.length > T.barrierMax) S.barriers.shift();
+    puff(cx, cy, '#5b8dd9', 8, 60, 2);
+  }
+
   function segDist(px, py, x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const l2 = dx * dx + dy * dy;
@@ -253,15 +272,13 @@
       if (along > 0 && Math.abs(ox * dy - oy * dx) <= T.bossR + T.beamW / 2) damageBoss(T.beamDmg);
       if (S.state !== 'running') return;
     }
-    // barrier
-    if ((input.mousePressed.right || input.hit('KeyK')) && p.charge >= T.barrierCost) {
-      p.charge -= T.barrierCost; st.barriersPlaced++;
-      const cx = p.x + Math.cos(p.aim) * T.barrierDist, cy = p.y + Math.sin(p.aim) * T.barrierDist;
-      const px = -Math.sin(p.aim) * T.barrierLen / 2, py = Math.cos(p.aim) * T.barrierLen / 2;
-      const clampX = (v) => LG.clamp(v, 4, W - 4), clampY = (v) => LG.clamp(v, 60, H - 4);
-      S.barriers.push({ x1: clampX(cx - px), y1: clampY(cy - py), x2: clampX(cx + px), y2: clampY(cy + py), hp: T.barrierHP, born: S.t });
-      if (S.barriers.length > T.barrierMax) S.barriers.shift();
-      puff(cx, cy, '#5b8dd9', 8, 60, 2);
+    // barrier: a right-click builds it where you point (a lane can be closed
+    // from a distance), K builds it just ahead of you
+    if (input.mousePressed.right && p.charge >= T.barrierCost) {
+      const g = barrierAt(p, input.mx, input.my);
+      buildBarrier(g.x, g.y, g.ang);
+    } else if (input.hit('KeyK') && p.charge >= T.barrierCost) {
+      buildBarrier(p.x + Math.cos(p.aim) * T.barrierDist, p.y + Math.sin(p.aim) * T.barrierDist, p.aim);
     }
 
     // shield & hull recovery
@@ -384,6 +401,25 @@
       ctx.fillRect(tr.x === 0 ? 0 : W - 8, tr.y - 8, 8, 16);
     }
 
+    // every wall casts a shadow from the boss: that is the pocket it keeps safe
+    ctx.fillStyle = 'rgba(91,141,217,0.075)';
+    for (const br of S.barriers) {
+      const l1 = Math.hypot(br.x1 - b.x, br.y1 - b.y) || 1, l2 = Math.hypot(br.x2 - b.x, br.y2 - b.y) || 1;
+      const R = 1400;
+      ctx.beginPath();
+      ctx.moveTo(br.x1, br.y1); ctx.lineTo(br.x2, br.y2);
+      ctx.lineTo(br.x2 + (br.x2 - b.x) / l2 * R, br.y2 + (br.y2 - b.y) / l2 * R);
+      ctx.lineTo(br.x1 + (br.x1 - b.x) / l1 * R, br.y1 + (br.y1 - b.y) / l1 * R);
+      ctx.closePath(); ctx.fill();
+    }
+    // the wall a right-click would build right now
+    if (S.state === 'running' && p.mouseAim && p.charge >= T.barrierCost) {
+      const g = barrierAt(p, input.mx, input.my);
+      const px = -Math.sin(g.ang) * T.barrierLen / 2, py = Math.cos(g.ang) * T.barrierLen / 2;
+      ctx.strokeStyle = 'rgba(91,141,217,0.35)'; ctx.lineWidth = 5; ctx.setLineDash([6, 6]); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(g.x - px, g.y - py); ctx.lineTo(g.x + px, g.y + py); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     // barriers
     for (const br of S.barriers) {
       const f = br.hp / T.barrierHP;
@@ -504,10 +540,11 @@
     S.state = result;
     const st = S.stats;
     const best = LG.store.get(BEST_KEY, {});
-    let newTime = false, newClean = false;
+    let newTime = false, newClean = false, newFlawless = false;
     if (result === 'won') {
       if (best.time === undefined || S.t < best.time) { best.time = S.t; newTime = true; }
       if (best.hits === undefined || st.hits < best.hits) { best.hits = st.hits; newClean = true; }
+      if (st.hits === 0 && (best.flawless === undefined || S.t < best.flawless)) { best.flawless = S.t; newFlawless = true; }
       LG.store.set(BEST_KEY, best);
     }
     showBests();
@@ -517,7 +554,7 @@
       (result === 'won' ? '<span class="lg-tag">' + styleLabel(st).split(' — ')[0] + '</span>' : '<p>Phase ' + S.boss.phase + ', boss at ' + Math.round(S.boss.hp / T.bossHP * 100) + '%.</p>') +
       '<div class="lg-results">' +
       '<span>Time</span><b>' + LG.fmtTime(S.t) + (newTime ? ' ★' : '') + '</b>' +
-      '<span>Hits taken</span><b>' + st.hits + (newClean ? ' ★' : '') + '</b>' +
+      '<span>Hits taken</span><b>' + st.hits + (newClean ? ' ★' : '') + (newFlawless ? ' · fastest flawless ★' : '') + '</b>' +
       '<span>Damage taken</span><b>' + Math.round(st.dmgTaken) + '</b>' +
       '<span>Beams fired</span><b>' + st.beams + '</b>' +
       '<span>Barriers built</span><b>' + st.barriersPlaced + '</b>' +
@@ -536,6 +573,7 @@
     const best = LG.store.get(BEST_KEY, {});
     ui.bestTime.textContent = best.time !== undefined ? LG.fmtTime(best.time) : '—';
     ui.bestClean.textContent = best.hits !== undefined ? best.hits + (best.hits === 0 ? ' (flawless)' : '') : '—';
+    ui.bestFlawless.textContent = best.flawless !== undefined ? LG.fmtTime(best.flawless) : '—';
   }
 
   function start() {
@@ -560,9 +598,9 @@
   }
   function showReady() {
     overlay.show('<div><h2>Bulwark</h2>' +
-      '<p>Point the shield at what\'s coming and let it charge you. Spend charge on a beam, or on a barrier that eats bullets for as long as it lasts. Dash if you\'d rather not be hit at all.</p>' +
-      '<p class="lg-fine">The boss recovers if you leave it alone for four seconds. So do you, more slowly.</p>' +
-      '<div class="lg-row" style="justify-content:center"><button class="primary" id="bw-start">Start</button></div></div>');
+      '<p>Aim the shield at the bullets. They\'re your ammo.</p>' +
+      '<div class="lg-row" style="justify-content:center"><button class="primary" id="bw-start">Start</button></div>' +
+      '<p class="lg-fine" style="margin-top:12px">Click fires the beam. Right-click builds a wall where you point. Space dashes.</p></div>');
     $('bw-start').onclick = start;
   }
 

@@ -15,6 +15,10 @@ Platformers ask you to commit to a jump and be right. Climbing games ask you to
 *maneuver*: find the holds, budget your strength, rest when you can, and only commit
 when the move is safe. Crux puts both on the same wall.
 
+The first pitch is the whole game in miniature: a slot with an ice pillar on one
+side, which you can only bounce off, and a jug wall on the other, which you can rest
+on. Both reach the same ledge.
+
 Holding **grip** on rock lets you cling and climb, slowly, on a stamina bar that only
 refills on the ground, on rest ledges, or on the good holds (jugs). **Anchors** are
 checkpoints you place yourself; you carry three per pitch, placing one takes a

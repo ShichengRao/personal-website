@@ -20,13 +20,8 @@
 {{ end }}
 
 {{ define "main" }}
-<!-- ananke's masthead already shows .Title and .Description above. -->
-<article class="ph3 ph4-ns pv3">
-  <div style="max-width:42rem;margin:0 auto">
-    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
-  </div>
-</article>
-
+<!-- ananke's masthead already shows .Title and .Description above. The game
+     comes first; the design notes in .Content sit underneath it. -->
 <div id="crux-app" class="lg-app">
   <p class="lg-mobile">Crux needs a keyboard; it doesn't have touch controls yet.</p>
   <div class="lg-cols">
@@ -67,10 +62,17 @@
         <div class="lg-k">Bests in this browser</div>
         <div class="lg-stat"><span>Fastest ascent</span><b class="lg-mono" id="cx-best-time">—</b></div>
         <div class="lg-stat"><span>Fewest falls</span><b id="cx-best-falls">—</b></div>
+        <div class="lg-stat"><span>Fastest clean ascent</span><b class="lg-mono" id="cx-best-clean">—</b></div>
       </div>
     </div>
   </div>
 </div>
+<article class="ph3 ph4-ns pv4">
+  <div style="max-width:42rem;margin:0 auto">
+    <h2 class="f4 fw6 mid-gray">Why it's built this way</h2>
+    <div class="nested-copy-line-height nested-links">{{ .Content }}</div>
+  </div>
+</article>
 <script src="/games/common.js"></script>
 <script src="/games/crux.js"></script>
 {{ end }}
