@@ -32,6 +32,7 @@
     chargeMax: 100, absorbGain: 1.2, grazeGain: 1.0, dashGrazeMul: 6, dashGrazeR: 1.6, barrierGain: 1.0,
     beamCost: 30, beamDmg: 36, beamTime: 0.2, beamW: 10,
     barrierCost: 45, barrierHP: 180, barrierLen: 64, barrierDist: 48, barrierRange: 260, barrierMax: 6,
+    wallKeepOut: 150, bulletEmerge: 0.3,   // no walls at the muzzle, and bullets emerge before walls can catch them
     dashSpeed: 520, dashTime: 0.2, dashCD: 0.9,
     bossHP: 600, bossRegen: 4, bossRegenDelay: 5, bossR: 34,
     turretRate: 0.28, turretSpeed: 160
@@ -203,12 +204,19 @@
     const dist = Math.max(30, Math.min(T.barrierRange, d));
     return { x: p.x + dx / d * dist, y: p.y + dy / d * dist, ang: Math.atan2(dy, dx) };
   }
-  function buildBarrier(cx, cy, ang) {
-    const p = S.p;
-    p.charge -= T.barrierCost; S.stats.barriersPlaced++;
+  function wallEndpoints(cx, cy, ang) {
     const px = -Math.sin(ang) * T.barrierLen / 2, py = Math.cos(ang) * T.barrierLen / 2;
     const clampX = (v) => LG.clamp(v, 4, W - 4), clampY = (v) => LG.clamp(v, 60, H - 4);
-    S.barriers.push({ x1: clampX(cx - px), y1: clampY(cy - py), x2: clampX(cx + px), y2: clampY(cy + py), hp: T.barrierHP, born: S.t });
+    return { x1: clampX(cx - px), y1: clampY(cy - py), x2: clampX(cx + px), y2: clampY(cy + py) };
+  }
+  // a wall may not sit in the boss's keep-out zone: harvesting bullets as they
+  // spawn would make the fortress both the safest and the fastest option
+  function wallAllowed(e) { return segDist(S.boss.x, S.boss.y, e.x1, e.y1, e.x2, e.y2) > T.wallKeepOut; }
+  function buildBarrier(cx, cy, ang) {
+    const p = S.p, e = wallEndpoints(cx, cy, ang);
+    if (!wallAllowed(e)) { puff(cx, cy, '#d1495b', 6, 40, 2); return; }
+    p.charge -= T.barrierCost; S.stats.barriersPlaced++;
+    S.barriers.push({ x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2, hp: T.barrierHP, born: S.t });
     if (S.barriers.length > T.barrierMax) S.barriers.shift();
     puff(cx, cy, '#5b8dd9', 8, 60, 2);
   }
@@ -339,9 +347,9 @@
           S.bullets.splice(i, 1); continue;
         }
       }
-      // barriers
+      // barriers (a bullet emerges from the boss before a wall can catch it)
       let gone = false;
-      for (let j = S.barriers.length - 1; j >= 0; j--) {
+      if (bl.t >= T.bulletEmerge) for (let j = S.barriers.length - 1; j >= 0; j--) {
         const br = S.barriers[j];
         if (segDist(bl.x, bl.y, br.x1, br.y1, br.x2, br.y2) <= bl.r + 4) {
           if (bl.kind === 'breaker') { br.hp = 0; puff(bl.x, bl.y, '#e06cff', 24, 160, 3); }
@@ -413,13 +421,16 @@
       ctx.lineTo(br.x1 + (br.x1 - b.x) / l1 * R, br.y1 + (br.y1 - b.y) / l1 * R);
       ctx.closePath(); ctx.fill();
     }
-    // the wall a right-click would build right now
+    // the wall a right-click would build right now, red inside the keep-out zone
     if (S.state === 'running' && p.mouseAim && p.charge >= T.barrierCost) {
-      const g = barrierAt(p, input.mx, input.my);
-      const px = -Math.sin(g.ang) * T.barrierLen / 2, py = Math.cos(g.ang) * T.barrierLen / 2;
-      ctx.strokeStyle = 'rgba(91,141,217,0.35)'; ctx.lineWidth = 5; ctx.setLineDash([6, 6]); ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(g.x - px, g.y - py); ctx.lineTo(g.x + px, g.y + py); ctx.stroke();
+      const g = barrierAt(p, input.mx, input.my), e = wallEndpoints(g.x, g.y, g.ang), ok = wallAllowed(e);
+      ctx.strokeStyle = ok ? 'rgba(91,141,217,0.35)' : 'rgba(209,73,91,0.5)'; ctx.lineWidth = 5; ctx.setLineDash([6, 6]); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(e.x1, e.y1); ctx.lineTo(e.x2, e.y2); ctx.stroke();
       ctx.setLineDash([]);
+      if (!ok) {
+        ctx.strokeStyle = 'rgba(209,73,91,0.3)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 6]);
+        ctx.beginPath(); ctx.arc(b.x, b.y, T.wallKeepOut, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      }
     }
     // barriers
     for (const br of S.barriers) {
@@ -608,6 +619,7 @@
   loop = LG.loop(update, render, input);
   input.onBlur = function () { if (S.state === 'running') pause(); };
   stage.addEventListener('keydown', function (e) {
+    if (e.target && e.target.tagName === 'BUTTON') return;   // the button handles its own Enter/Space
     if (e.code === 'KeyP' && S.state === 'paused') resume();
     if (e.code === 'Enter' && (S.state === 'ready' || S.state === 'won' || S.state === 'lost')) start();
   });

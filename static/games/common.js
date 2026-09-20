@@ -58,11 +58,16 @@
       if (!PASS.test(e.code)) e.preventDefault();
     });
     el.addEventListener('keyup', function (e) { self.keys.delete(e.code); });
-    el.addEventListener('blur', function () {
+    // losing focus in any way (the stage, the window, or the tab going
+    // hidden) drops every held key and lets the game pause itself
+    function lost() {
       self.keys.clear();
       self.mouseDown.left = self.mouseDown.right = false;
       if (self.onBlur) self.onBlur();
-    });
+    }
+    el.addEventListener('blur', lost);
+    window.addEventListener('blur', lost);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) lost(); });
 
     function toLogical(e) {
       const r = canvas.getBoundingClientRect();

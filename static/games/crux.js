@@ -500,10 +500,19 @@
         S.rocks.splice(i, 1);
       }
     }
+    const p = S.p;
     for (const k in S.crumble) {
       const c = S.crumble[k];
-      if (c.broken > 0) { c.broken -= dt; if (c.broken <= 0) { c.broken = 0; c.t = 0; } }
-      else if (c.touched) { c.t += dt; if (c.t >= T.crumbleDelay) { c.broken = T.crumbleRegrow; const p = k.split(','); puff((+p[0] + 0.5) * TILE, (+p[1] + 0.5) * TILE, '#8a7a66', 8, 70, 2, 0.4); } }
+      if (c.broken > 0) {
+        c.broken -= dt;
+        if (c.broken <= 0) {
+          // never regrow into the climber: wait until they have moved off
+          const kc = k.split(','), tx = kc[0] * TILE, ty = kc[1] * TILE;
+          const overlaps = p.x < tx + TILE && p.x + T.w > tx && p.y < ty + TILE && p.y + T.h > ty;
+          if (overlaps) c.broken = 0.2; else { c.broken = 0; c.t = 0; }
+        }
+      }
+      else if (c.touched) { c.t += dt; if (c.t >= T.crumbleDelay) { c.broken = T.crumbleRegrow; const kc = k.split(','); puff((+kc[0] + 0.5) * TILE, (+kc[1] + 0.5) * TILE, '#8a7a66', 8, 70, 2, 0.4); } }
       else c.t = Math.max(0, c.t - dt * 2);
       c.touched = false;
     }
@@ -760,6 +769,7 @@
   loop = LG.loop(update, render, input);
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
+    if (e.target && e.target.tagName === 'BUTTON') return;   // the button handles its own Enter/Space
     if (e.code === 'KeyP' && S.state === 'paused') resume();
     if (e.code === 'Enter' && (S.state === 'ready' || S.state === 'won')) start();
   });
