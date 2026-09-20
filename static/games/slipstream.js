@@ -27,8 +27,9 @@
 
   // ---- tuning -------------------------------------------------------------
   const T = {
-    trackW: 66, zoom: 1.3,
-    vmax: 300, engine: 250, brake: 380, drag: 0.22, grassDrag: 2.2,
+    trackW: 66, zoom: 1.15, fence: 40, camLead: 0.45,
+    vmax: 300, engine: 250, brake: 380, drag: 0.22, grassDrag: 1.0, grassVmax: 0.7, grassGrip: 0.6,
+    aiPace: { rookie: 0.86, pro: 1.0 },
     alat: 520,            // lateral acceleration the tires can supply at full grip
     yawMax: 3.6, yawHigh: 0.38,
     gripK: 9, grassGripK: 3.5,
@@ -106,6 +107,17 @@
   }
   const TRACK = buildTrack(CP);
   const HALF = T.trackW / 2;
+  // where to brake: ~90px before the road first bends tighter than R=200
+  const BRAKE_POINTS = (function () {
+    const out = [], pts = TRACK.pts, N = TRACK.N;
+    let inBend = false;
+    for (let i = 0; i < N; i++) {
+      const tight = Math.abs(pts[i].k) > 1 / 200;
+      if (tight && !inBend) { out.push((i - 11 + N) % N); }
+      inBend = tight;
+    }
+    return out;
+  })();
 
   function nearestIndex(c) {
     const pts = TRACK.pts, N = TRACK.N;
@@ -133,18 +145,19 @@
       steer: 0, throttle: 0, brake: 0, push: false, temp: 15, wear: 0, overheat: 0, overheats: 0,
       si: 0, lat: 0, dist: 0, lap: 0, cpNext: 1, recrossed: false, progress: 0, lapStart: 0, lastLap: 0, bestLap: Infinity, maxTemp: 0,
       finished: false, finishTime: 0, finishPos: 0, inTow: false, towTime: 0, pushTime: 0,
-      latTarget: 0, commit: 0, mistake: 0, skill: 0.97 + rand() * 0.06, pushHold: 0, lapTimes: []
+      latTarget: 0, commit: 0, mistake: 0, skill: 0.97 + rand() * 0.06, pushHold: 0, lapTimes: [], pace: 1
     };
     c.si = nearestIndex(c);
     c.progress = -back;
     return c;
   }
 
+  let rivals = LG.store.get('lg-slipstream-rivals', 'rookie');
   function reset(mode, seed, opts) {
     opts = opts || {};
     rand = seed ? LG.rng(seed) : Math.random;
     S = {
-      t: 0, race: 0, state: 'ready', mode: mode || 'sprint', laps: T.modes[mode || 'sprint'],
+      t: 0, race: 0, state: 'ready', mode: mode || 'sprint', laps: T.modes[mode || 'sprint'], rivals,
       cars: [], cam: { x: 0, y: 0 }, skids: [], smoke: [], countdown: 3, finishedCount: 0, playerDone: false
     };
     const order = DRIVERS.slice();
@@ -155,7 +168,7 @@
     grid.splice(S.mode === 'practice' ? 0 : 3, 0, { name: 'You', color: PLAYER_COLOR, player: true, aggr: opts.playerAggr || 0.5 });
     grid.forEach(function (d, i) {
       const c = makeCar(d.name, d.color, !d.player || !!opts.playerAI, d.aggr, i);
-      if (d.player) { S.player = c; c.isPlayer = true; }
+      if (d.player) { S.player = c; c.isPlayer = true; } else c.pace = T.aiPace[rivals] || 1;
       S.cars.push(c);
     });
     S.cam.x = S.player.x; S.cam.y = S.player.y;
@@ -179,7 +192,7 @@
   function driveAI(c, dt) {
     const pts = TRACK.pts, N = TRACK.N;
     const grip = gripOf(c);
-    const factor = (0.90 + 0.10 * c.aggr) * c.skill;
+    const factor = (0.90 + 0.10 * c.aggr) * c.skill * c.pace;
     // target speed: the slowest upcoming corner we couldn't brake for otherwise
     let target = T.vmax * 1.2, dist = 0;
     for (let k = 1; k <= 45; k++) {
@@ -268,10 +281,10 @@
   function stepCar(c, dt) {
     const onTrack = c.dist <= HALF + 3;
     let grip = gripOf(c);
-    if (!onTrack) grip *= 0.55;
+    if (!onTrack) grip *= T.grassGrip;
     const push = c.push && c.overheat <= 0;
     // worn tires cost a little everywhere, not only in the corners
-    const vmax = T.vmax * (push ? T.pushVmax : 1) * (c.inTow ? T.towVmax : 1) * (onTrack ? 1 : 0.6) * (1 - T.wearVmaxLoss * c.wear);
+    const vmax = T.vmax * (push ? T.pushVmax : 1) * (c.inTow ? T.towVmax : 1) * (onTrack ? 1 : T.grassVmax) * (1 - T.wearVmaxLoss * c.wear) * (c.ai ? c.pace : 1);
     let thr = c.throttle;
     if (c.overheat > 0) thr = Math.min(thr, T.overheatThrottle);
 
@@ -286,7 +299,7 @@
     let vang = spd > 1 ? Math.atan2(c.vy, c.vx) + (forward ? 0 : Math.PI) : c.h;
     let v = forward ? spd : -spd;
 
-    const eng = T.engine * (push ? T.pushEngine : 1) * Math.max(0, 1 - Math.max(v, 0) / vmax);
+    const eng = T.engine * (push ? T.pushEngine : 1) * (c.ai ? c.pace : 1) * Math.max(0, 1 - Math.max(v, 0) / vmax);
     v += thr * eng * dt;
     if (c.brake > 0) v = v > 0 ? Math.max(0, v - T.brake * c.brake * dt) : Math.max(-60, v - 120 * c.brake * dt);
     v -= v * (onTrack ? T.drag : T.grassDrag) * dt;
@@ -296,7 +309,7 @@
     // but only as fast as their lateral grip allows -- beyond that the car
     // runs wide, which is what hot or worn tires feel like
     const av = Math.abs(v);
-    const yaw = c.steer * T.yawMax * LG.clamp(av / 70, 0, 1) * (1 - T.yawHigh * Math.min(av / T.vmax, 1)) * (0.6 + 0.4 * grip) * (v >= 0 ? 1 : -1);
+    const yaw = c.steer * T.yawMax * LG.clamp(av / 30, 0, 1) * (1 - T.yawHigh * Math.min(av / T.vmax, 1)) * (0.6 + 0.4 * grip) * (v >= 0 ? 1 : -1);
     c.h += yaw * dt;
     const slip = wrapAngle(c.h - vang);
     const gripK = (onTrack ? T.gripK : T.grassGripK) * grip;
@@ -338,10 +351,11 @@
     const p = pts[c.si];
     c.lat = (c.x - p.x) * p.nx + (c.y - p.y) * p.ny;
     c.dist = Math.abs(c.lat);
-    if (c.dist > HALF + 34) {                // the wall
-      const side = Math.sign(c.lat);
-      c.x = p.x + p.nx * side * (HALF + 34); c.y = p.y + p.ny * side * (HALF + 34);
-      c.vx *= 0.6; c.vy *= 0.6;
+    if (c.dist > HALF + T.fence) {           // the fence: keep the speed along it, lose the speed into it
+      const side = Math.sign(c.lat), nx = p.nx * side, ny = p.ny * side;
+      c.x = p.x + nx * (HALF + T.fence); c.y = p.y + ny * (HALF + T.fence);
+      const into = c.vx * nx + c.vy * ny;
+      if (into > 0) { c.vx -= nx * into; c.vy -= ny * into; c.vx *= 0.9; c.vy *= 0.9; }
     }
     // quarter checkpoints must be passed in order, moving forward, before a
     // line crossing counts: reversing into a checkpoint zone earns nothing
@@ -453,8 +467,8 @@
     }
     // camera leads the player a little in the direction of travel
     const p = S.player, k = 1 - Math.exp(-5 * dt);
-    S.cam.x += (p.x + p.vx * 0.25 - S.cam.x) * k;
-    S.cam.y += (p.y + p.vy * 0.25 - S.cam.y) * k;
+    S.cam.x += (p.x + p.vx * T.camLead - S.cam.x) * k;
+    S.cam.y += (p.y + p.vy * T.camLead - S.cam.y) * k;
   }
 
   function standings() {
@@ -521,6 +535,22 @@
         for (let i = ch.start; i <= ch.end + 1; i++) { const p = pts[i % N]; if (i === ch.start) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
         ctx.stroke();
       }
+    }
+    // the fence at the edge of the run-off, so the limit is visible
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(230,230,230,0.45)';
+    for (const ch of vis) for (const side of [-1, 1]) {
+      ctx.beginPath();
+      for (let i = ch.start; i <= ch.end + 1; i++) { const p = pts[i % N]; const x = p.x + p.nx * side * (HALF + T.fence), y = p.y + p.ny * side * (HALF + T.fence); if (i === ch.start) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+    // braking chevrons on the road ahead of each tight corner
+    for (const bp of BRAKE_POINTS) {
+      const p = pts[bp];
+      if (p.x < left - 40 || p.x > left + vw + 40 || p.y < top - 40 || p.y > top + vh + 40) continue;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.atan2(p.ty, p.tx));
+      ctx.strokeStyle = 'rgba(230,80,80,0.75)'; ctx.lineWidth = 3;
+      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-8 - k * 12, -14); ctx.lineTo(2 - k * 12, 0); ctx.lineTo(-8 - k * 12, 14); ctx.stroke(); }
+      ctx.restore();
     }
     // kerbs where it bends
     for (const ch of vis) {
@@ -640,7 +670,8 @@
       return;
     }
     const best = LG.store.get(BEST_KEY, {});
-    const b = best[S.mode] || {};
+    const bk = S.mode + ':' + S.rivals;      // bests are per mode and per rival level
+    const b = best[bk] || {};
     let newPos = false, newLap = false, newClean = false;
     if (b.pos === undefined || pos < b.pos) { b.pos = pos; newPos = true; }
     if (isFinite(p.bestLap) && (b.lap === undefined || p.bestLap < b.lap)) { b.lap = p.bestLap; newLap = true; }
@@ -648,7 +679,7 @@
     // their window, judged from the numbers at the finish line
     const clean = pos <= 3 && p.finishOverheats === 0 && p.finishMaxTemp <= T.tempHot;
     if (clean && (!b.clean || pos < b.clean.pos || (pos === b.clean.pos && p.finishTime < b.clean.time))) { b.clean = { pos, time: p.finishTime }; newClean = true; }
-    best[S.mode] = b; LG.store.set(BEST_KEY, best);
+    best[bk] = b; LG.store.set(BEST_KEY, best);
     showBests();
     const ord = ['', 'st', 'nd', 'rd'][pos] || 'th';
     overlay.show('<div><h2>' + pos + ord + ' place</h2><span class="lg-tag">' + style.who + '</span>' +
@@ -675,8 +706,8 @@
   function showBests() {
     const best = LG.store.get(BEST_KEY, {});
     for (const m of ['sprint', 'endurance']) {
-      const b = best[m];
-      ui[m === 'sprint' ? 'bestSprint' : 'bestEndurance'].textContent = b && b.pos ? 'P' + b.pos + (b.lap ? ' · lap ' + LG.fmtTime(b.lap) : '') + (b.clean ? ' · clean P' + b.clean.pos + ' ' + LG.fmtTime(b.clean.time) : '') : '—';
+      const b = best[m + ':' + rivals];
+      ui[m === 'sprint' ? 'bestSprint' : 'bestEndurance'].textContent = (b && b.pos ? 'P' + b.pos + (b.lap ? ' · lap ' + LG.fmtTime(b.lap) : '') + (b.clean ? ' · clean P' + b.clean.pos + ' ' + LG.fmtTime(b.clean.time) : '') : '—') + ' (' + rivals + ')';
     }
   }
 
@@ -701,7 +732,10 @@
     overlay.show('<div><h2>Slipstream</h2>' +
       '<p>Push heats the tires. The tow cools them. Whoever has rubber left at the end wins.</p>' +
       '<div class="lg-row" style="justify-content:center"><button class="primary" id="ss-start-sprint">Sprint · ' + T.modes.sprint + ' laps</button><button class="primary" id="ss-start-endurance">Endurance · ' + T.modes.endurance + ' laps</button><button id="ss-start-practice">Practice</button></div>' +
-      '<p class="lg-fine" style="margin-top:12px">Practice is the track to yourself with fresh tires every lap. Sprint suits the chargers; Endurance is the long game.</p></div>');
+      '<div class="lg-row" style="justify-content:center"><label class="lg-fine">Rivals <select id="ss-rivals"><option value="rookie">Rookie</option><option value="pro">Pro</option></select></label></div>' +
+      '<p class="lg-fine" style="margin-top:12px">Practice is the track to yourself with fresh tires every lap. Rookie rivals lap about four seconds slower than the pros.</p></div>');
+    $('ss-rivals').value = rivals;
+    $('ss-rivals').onchange = function () { rivals = this.value; LG.store.set('lg-slipstream-rivals', rivals); showBests(); };
     $('ss-start-sprint').onclick = function () { start('sprint'); };
     $('ss-start-endurance').onclick = function () { start('endurance'); };
     $('ss-start-practice').onclick = function () { start('practice'); };

@@ -25,7 +25,7 @@
   const T = {
     moveSpeed: 150, focusSpeed: 72, hurtR: 6, shieldR: 24, arcHalf: 65 * Math.PI / 180, grazeR: 38,
     magnetR: 96, magnetA: 1500,     // the shield draws bullets in its cone onto itself
-    hullMax: 100, hullRegen: 1.0, hullRegenDelay: 5,
+    hullMax: 40, hullRegen: 0, hullRegenDelay: 5,   // four ordinary hits; the shield regenerates, the hull does not
     shieldMax: 100, shieldRegen: 20, shieldRegenDelay: 0.6, shieldBreakTime: 2.5, shieldReturn: 35,
     // a graze while standing still is worth little; a graze mid-dash is the
     // fast player's income
@@ -35,6 +35,7 @@
     wallKeepOut: 150, bulletEmerge: 0.3,   // no walls at the muzzle, and bullets emerge before walls can catch them
     dashSpeed: 520, dashTime: 0.2, dashCD: 0.9,
     bossHP: 600, bossRegen: 4, bossRegenDelay: 5, bossR: 34,
+    adaptMemory: 10, adaptMin: 60, adaptShare: 0.55,   // when one source is over 55% of recent income, the boss answers it
     turretRate: 0.28, turretSpeed: 160
   };
   const KIND = {
@@ -94,6 +95,9 @@
       boss: { x: W / 2, y: 110, hp: T.bossHP, lastHit: -99, phase: 1, script: SCRIPTS[1], step: 0, cur: null,
               spin: 0, transition: 1.2, flash: 0, regenPulse: 0 },
       turretAcc: 0, bullets: [], barriers: [], particles: [],
+      // the boss's read of your style: recent charge income by source, with a
+      // ~10s memory. Lean on one source and the next cycle opens with a counter
+      style: { absorb: 0, graze: 0, barrier: 0 }, adapt: { count: 0, kinds: {}, text: '', until: 0 },
       stats: { absorb: 0, graze: 0, barrier: 0, dmgTaken: 0, hits: 0, dashes: 0, beams: 0, barriersPlaced: 0, facing: 0 }
     };
     S.boss.cur = Object.assign({}, S.boss.script[0]);
@@ -123,7 +127,17 @@
         while (step.acc >= step.rate) {
           step.acc -= step.rate;
           const a = Math.atan2(p.y - b.y, p.x - b.x) + (rand() - 0.5) * 0.05;
-          spawn(b.x, b.y, a, step.speed, 'basic');
+          spawn(b.x, b.y, a, step.speed, step.heavy ? 'heavy' : 'basic');
+        }
+        break;
+      case 'fans':
+        if (step.next === undefined) step.next = 0.2;
+        if (step.t >= step.next) {
+          step.next += step.every;
+          // aimed where the ship will be, not where it is
+          const tx = p.x + p.vx * step.lead, ty = p.y + p.vy * step.lead;
+          const a0 = Math.atan2(ty - b.y, tx - b.x);
+          for (let i = 0; i < step.n; i++) spawn(b.x, b.y, a0 + ((i / (step.n - 1)) - 0.5) * step.spread, step.speed, 'basic');
         }
         break;
       case 'rings':
@@ -156,8 +170,12 @@
         if (step.fired === undefined) { step.fired = 0; step.next = 0.3; }
         if (step.fired < step.n && step.t >= step.next) {
           step.fired++; step.next += 0.9;
-          const a = Math.atan2(p.y - b.y, p.x - b.x);
-          spawn(b.x, b.y + 20, a, step.speed, 'breaker');
+          let tx = p.x, ty = p.y;
+          if (step.seekWalls && S.barriers.length) {   // the nearest wall, then the rest in turn
+            const w = S.barriers[(step.fired - 1) % S.barriers.length];
+            tx = (w.x1 + w.x2) / 2; ty = (w.y1 + w.y2) / 2;
+          }
+          spawn(b.x, b.y + 20, Math.atan2(ty - b.y, tx - b.x), step.speed, 'breaker');
         }
         break;
       case 'bouncers':
@@ -186,6 +204,20 @@
     b.transition = 1.6; S.turretAcc = 0;
     for (const bl of S.bullets) puff(bl.x, bl.y, KIND[bl.kind].color, 1, 40, 2);
     S.bullets.length = 0;
+    maybeCounter();   // a new phase opens with an answer to how the last one was played
+  }
+
+  // Every few steps, and at each phase start, the boss answers whatever the
+  // ship has leaned on. The counter runs as the next step; the script then
+  // continues from where it was. The read is cleared so it isn't answered twice.
+  function maybeCounter() {
+    const b = S.boss, k = chooseCounter();
+    if (!k) return;
+    b.cur = Object.assign({}, COUNTERS[k]);
+    b.step = (b.step - 1 + b.script.length) % b.script.length;
+    S.adapt.count++; S.adapt.kinds[k] = (S.adapt.kinds[k] || 0) + 1;
+    S.adapt.text = 'the boss ' + COUNTERS[k].name; S.adapt.until = S.t + 2.2;
+    S.style.absorb = S.style.graze = S.style.barrier = 0;
   }
 
   function damageBoss(d) {
@@ -221,6 +253,29 @@
     puff(cx, cy, '#5b8dd9', 8, 60, 2);
   }
 
+  function income(kind, g) {
+    const p = S.p;
+    p.charge = Math.min(T.chargeMax, p.charge + g);
+    S.stats[kind] += g; S.style[kind] += g;
+  }
+
+  // The counters. Each answers one pure style: fans lead the target so a
+  // dasher runs into them; breakers go for the walls; a heavy stream is
+  // more than any shield can hold, so it has to be walled or sidestepped.
+  const COUNTERS = {
+    graze:   { kind: 'fans', dur: 3.2, every: 0.45, n: 7, spread: 0.6, speed: 260, lead: 0.35, name: 'leads the dash' },
+    barrier: { kind: 'breaker', dur: 3.0, n: 3, speed: 95, seekWalls: true, name: 'goes for the walls' },
+    absorb:  { kind: 'aimed', dur: 2.6, rate: 0.07, speed: 300, heavy: true, name: 'overloads the shield' }
+  };
+  function chooseCounter() {
+    const st = S.style, tot = st.absorb + st.graze + st.barrier;
+    if (tot < T.adaptMin) return null;
+    let best = null;
+    for (const k in st) if (!best || st[k] > st[best]) best = k;
+    if (st[best] / tot < T.adaptShare) return null;
+    return best;
+  }
+
   function segDist(px, py, x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const l2 = dx * dx + dy * dy;
@@ -234,6 +289,7 @@
   function update(dt) {
     if (S.state !== 'running') return;
     if (input.hit('KeyP')) { pause(); return; }
+    if (input.hit('KeyR')) { start(); return; }
     S.t += dt;
     const p = S.p, b = S.boss, st = S.stats;
 
@@ -261,6 +317,7 @@
       p.x += mx * sp * dt; p.y += my * sp * dt;
     }
     p.x = LG.clamp(p.x, 10, W - 10); p.y = LG.clamp(p.y, 200, H - 10);
+    p.vx = (p.x - (p.px === undefined ? p.x : p.px)) / dt; p.vy = (p.y - (p.py === undefined ? p.y : p.py)) / dt; p.px = p.x; p.py = p.y;
     for (const tr of p.trail) tr.a -= dt * 4;
 
     // aim: the mouse owns it until a rotate key is used, and vice versa
@@ -271,9 +328,10 @@
     const toBoss = Math.atan2(b.y - p.y, b.x - p.x);
     if (Math.abs(wrapAngle(toBoss - p.aim)) < 35 * Math.PI / 180) st.facing += dt;
 
-    // beam
+    // beam: fires whenever it is ready while the button is held, so nobody
+    // has to hammer the mouse
     p.beam = Math.max(0, p.beam - dt);
-    if ((input.mousePressed.left || input.hit('KeyJ')) && p.charge >= T.beamCost && p.beam <= 0) {
+    if ((input.mouseDown.left || input.down('KeyJ')) && p.charge >= T.beamCost && p.beam <= 0) {
       p.charge -= T.beamCost; p.beam = T.beamTime; p.beamAng = p.aim; st.beams++;
       const dx = Math.cos(p.aim), dy = Math.sin(p.aim);
       const ox = b.x - p.x, oy = b.y - p.y, along = ox * dx + oy * dy;
@@ -296,13 +354,15 @@
     } else if (S.t - p.lastAbsorb > T.shieldRegenDelay) {
       p.shield = Math.min(T.shieldMax, p.shield + T.shieldRegen * dt);
     }
-    if (S.t - p.lastHit > T.hullRegenDelay) p.hull = Math.min(T.hullMax, p.hull + T.hullRegen * dt);
+    if (T.hullRegen > 0 && S.t - p.lastHit > T.hullRegenDelay) p.hull = Math.min(T.hullMax, p.hull + T.hullRegen * dt);
     p.absorbFlash = Math.max(0, p.absorbFlash - dt * 6);
 
     // boss
     b.x = W / 2 + 120 * Math.sin(S.t * 0.35);
     b.y = 110 + 10 * Math.sin(S.t * 0.9);
     b.flash = Math.max(0, b.flash - dt);
+    const decay = Math.exp(-dt / T.adaptMemory);
+    S.style.absorb *= decay; S.style.graze *= decay; S.style.barrier *= decay;
     if (b.transition > 0) {
       b.transition -= dt;
     } else {
@@ -310,6 +370,7 @@
       if (b.cur.t >= b.cur.dur) {
         b.step = (b.step + 1) % b.script.length;
         b.cur = Object.assign({}, b.script[b.step]);
+        if (b.step % 3 === 0) maybeCounter();
       }
     }
     if (S.t - b.lastHit > T.bossRegenDelay && b.hp < T.bossHP) {
@@ -353,7 +414,7 @@
         const br = S.barriers[j];
         if (segDist(bl.x, bl.y, br.x1, br.y1, br.x2, br.y2) <= bl.r + 4) {
           if (bl.kind === 'breaker') { br.hp = 0; puff(bl.x, bl.y, '#e06cff', 24, 160, 3); }
-          else { br.hp -= bl.power; const g = bl.power * T.barrierGain; p.charge = Math.min(T.chargeMax, p.charge + g); st.barrier += g; puff(bl.x, bl.y, '#9fb8e6', 2, 50, 1.5); }
+          else { br.hp -= bl.power; income('barrier', bl.power * T.barrierGain); puff(bl.x, bl.y, '#9fb8e6', 2, 50, 1.5); }
           if (br.hp <= 0) { S.barriers.splice(j, 1); puff((br.x1 + br.x2) / 2, (br.y1 + br.y2) / 2, '#55617a', 10, 70, 2); }
           gone = true; break;
         }
@@ -364,7 +425,7 @@
       const dx = bl.x - p.x, dy = bl.y - p.y, d = Math.hypot(dx, dy);
       if (shieldUp && d <= T.shieldR + bl.r && Math.abs(wrapAngle(Math.atan2(dy, dx) - p.aim)) <= T.arcHalf) {
         p.shield -= bl.power; p.lastAbsorb = S.t; p.absorbFlash = 1;
-        const g = bl.power * T.absorbGain; p.charge = Math.min(T.chargeMax, p.charge + g); st.absorb += g;
+        income('absorb', bl.power * T.absorbGain);
         puff(bl.x, bl.y, '#8fb6ff', 4, 90, 2);
         if (p.shield <= 0) { p.shield = 0; p.shieldDown = T.shieldBreakTime; puff(p.x, p.y, '#5b8dd9', 24, 180, 3); }
         S.bullets.splice(i, 1); continue;
@@ -378,8 +439,7 @@
       }
       if (!bl.grazed && d <= grazeR + bl.r) {
         bl.grazed = true;
-        const g = T.grazeGain * (p.dash > 0 ? T.dashGrazeMul : 1);
-        p.charge = Math.min(T.chargeMax, p.charge + g); st.graze += g;
+        income('graze', T.grazeGain * (p.dash > 0 ? T.dashGrazeMul : 1));
         puff(bl.x, bl.y, '#ffffff', 1, 50, 1.2);
       }
     }
@@ -468,6 +528,11 @@
       ctx.font = '600 14px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText('PHASE ' + b.phase, b.x, b.y + T.bossR + 22);
     }
+    if (S.adapt.until > S.t) {
+      ctx.fillStyle = 'rgba(255,200,120,' + Math.min(1, (S.adapt.until - S.t) / 0.5) + ')';
+      ctx.font = '600 13px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(S.adapt.text, b.x, b.y + T.bossR + 40);
+    }
 
     // bullets, batched by kind
     for (const kind in KIND) {
@@ -543,6 +608,12 @@
     ui.style.innerHTML = LG.styleBar('Absorbed & walled', 'Grazed', tot ? st.graze / tot : 0.5, tot ? styleLabel(st) : 'Charge sources appear here');
   }
 
+  function adaptSummary() {
+    const a = S.adapt;
+    if (!a.count) return 'never';
+    const names = { absorb: 'shield', graze: 'dashing', barrier: 'walls' };
+    return a.count + '× (' + Object.keys(a.kinds).map((k) => names[k] + ' ' + a.kinds[k]).join(', ') + ')';
+  }
   function styleLabel(st) {
     const tot = st.absorb + st.graze + st.barrier;
     if (!tot) return '';
@@ -576,6 +647,7 @@
       '<span>Barriers built</span><b>' + st.barriersPlaced + '</b>' +
       '<span>Dashes</span><b>' + st.dashes + '</b>' +
       '<span>Facing the boss</span><b>' + LG.pct(S.t ? st.facing / S.t : 0) + '</b>' +
+      '<span>Boss adapted</span><b>' + adaptSummary() + '</b>' +
       '</div>' +
       LG.styleBar('Absorbed & walled', 'Grazed', tot ? st.graze / tot : 0.5, tot ? styleLabel(st) : '') +
       '<div class="lg-row" style="justify-content:center"><button class="primary" id="bw-again">Play again</button></div>' +
@@ -614,13 +686,14 @@
   }
   function showReady() {
     overlay.show('<div><h2>Bulwark</h2>' +
-      '<p>Aim the shield at the bullets. They\'re your ammo.</p>' +
+      '<p>Aim the shield at the bullets. They\'re your ammo. Lean on one trick and the boss answers it.</p>' +
       '<div class="lg-row" style="justify-content:center"><button class="primary" id="bw-start">Start</button></div>' +
       '<p class="lg-fine" style="margin-top:12px">Click fires the beam. Right-click builds a wall where you point. Space dashes.</p></div>');
     $('bw-start').onclick = start;
   }
 
   loop = LG.loop(update, render, input);
+  $('bw-restart').onclick = function () { start(); };
   input.onBlur = function () { if (S.state === 'running') pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
