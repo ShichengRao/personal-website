@@ -50,6 +50,16 @@
         </div>
       </div>
       <div class="lg-panel">
+        <div class="lg-k">Replay</div>
+        <div class="lg-row" style="margin-top:4px">
+          <button id="bw-rep-download">Download last run</button>
+          <button id="bw-rep-copy">Copy</button>
+          <label><span class="lg-tag" style="cursor:pointer">Load file</span><input type="file" id="bw-rep-file" accept="application/json,.json" style="display:none"></label>
+          <button id="bw-rep-paste">Paste &amp; watch</button>
+        </div>
+        <div class="lg-note" id="bw-rep-status">Every run is recorded as inputs plus a seed, so it replays exactly. Download a file or Copy a pasteable string to share a run; Load or Paste to watch one.</div>
+      </div>
+      <div class="lg-panel">
         <div class="lg-k">Bests in this browser</div>
         <div class="lg-stat"><span>Fastest kill</span><b class="lg-mono" id="bw-best-time">—</b></div>
         <div class="lg-stat"><span>Fewest hits taken</span><b id="bw-best-clean">—</b></div>

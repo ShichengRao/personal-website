@@ -87,8 +87,8 @@
     '#.............####...#',
     '#.............####...#',
     '#.............####...#',
-    '#....................#',
-    '#....................#',
+    '#................#...#',
+    '#................#...#',
     '#....................#',
     '#.............RRRRRRR#',
     '#......~~..###########',
@@ -122,6 +122,8 @@
     fAnchor: $('cx-flag-anchor'), style: $('cx-style'), bestTime: $('cx-best-time'), bestFalls: $('cx-best-falls'), bestClean: $('cx-best-clean')
   };
   const BEST_KEY = 'lg-crux-best-v1';
+  const VERSION = 2;
+  const tape = new LG.Tape('crux', VERSION);
 
   const T = {
     w: 14, h: 20, gravity: 1400, maxFall: 520, corner: 8,
@@ -579,7 +581,7 @@
     if (t === 'c') {
       const st = S.crumble[c + ',' + r];
       if (st && st.broken > 0) { ctx.strokeStyle = 'rgba(138,122,102,0.35)'; ctx.setLineDash([3, 3]); ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); ctx.setLineDash([]); return; }
-      const shake = st && st.t > 0.25 ? (rand() - 0.5) * 2 : 0;
+      const shake = st && st.t > 0.25 ? (Math.random() - 0.5) * 2 : 0;   // visual only: never the seeded generator
       ctx.fillStyle = '#6b5a4a'; ctx.fillRect(x + shake, y, TILE, TILE);
       ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.beginPath();
       ctx.moveTo(x + 4 + shake, y + 20); ctx.lineTo(x + 10 + shake, y + 12); ctx.lineTo(x + 8 + shake, y + 6); ctx.moveTo(x + 10 + shake, y + 12); ctx.lineTo(x + 19 + shake, y + 9); ctx.stroke();
@@ -730,6 +732,13 @@
       ctx.fillText(S.hint.text, W / 2, H - 25, W - 40);
       ctx.globalAlpha = 1;
     }
+    if (S.replay || S.hud) {
+      const line = Math.max(0, Math.floor((WORLD_H - (p.y + T.h)) / TILE)) + ' m · ' + LG.fmtTime(S.t) + ' · stamina ' + Math.round(p.stamina) + ' · anchors ' + p.anchorsLeft + ' · falls ' + S.stats.falls;
+      ctx.font = '13px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(8, 8, ctx.measureText(line).width + 16, 22);
+      ctx.fillStyle = '#fff'; ctx.fillText(line, 16, 24);
+      if (S.replay) { ctx.fillStyle = 'rgba(217,162,58,0.9)'; ctx.font = '700 12px sans-serif'; ctx.fillText('REPLAY' + (S.replayOld ? ' (older version)' : ''), 16, 46); }
+    }
     // height ruler on the right edge
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'right';
     for (let r = r0; r <= r1; r++) { const hgt = ROWS - 1 - r; if (hgt % 10 === 0) { const y = (r + 1) * TILE - camY; ctx.fillRect(W - 10, y - 1, 6, 1); ctx.fillText(String(hgt), W - 12, y + 3); } }
@@ -768,12 +777,15 @@
   function finish() {
     S.state = 'won';
     const st = S.stats, sty = styleOf();
+    tape.finish({ t: +S.t.toFixed(2), falls: st.falls });
     const best = LG.store.get(BEST_KEY, {});
     let newTime = false, newFalls = false, newClean = false;
-    if (best.time === undefined || S.t < best.time) { best.time = S.t; newTime = true; }
-    if (best.falls === undefined || st.falls < best.falls) { best.falls = st.falls; newFalls = true; }
-    if (st.falls === 0 && (best.clean === undefined || S.t < best.clean)) { best.clean = S.t; newClean = true; }
-    LG.store.set(BEST_KEY, best);
+    if (!S.replay) {
+      if (best.time === undefined || S.t < best.time) { best.time = S.t; newTime = true; }
+      if (best.falls === undefined || st.falls < best.falls) { best.falls = st.falls; newFalls = true; }
+      if (st.falls === 0 && (best.clean === undefined || S.t < best.clean)) { best.clean = S.t; newClean = true; }
+      LG.store.set(BEST_KEY, best);
+    }
     showBests();
     overlay.show('<div><h2>Summit</h2><span class="lg-tag">' + sty.who + '</span>' +
       '<div class="lg-results">' +
@@ -798,9 +810,24 @@
     ui.bestClean.textContent = best.clean !== undefined ? LG.fmtTime(best.clean) : '—';
   }
   function start() {
-    reset(); S.state = 'running';
+    const seed = LG.newSeed();
+    reset(seed); tape.begin(seed, {}); S.state = 'running';
     overlay.hide(); input.focus(); input.flush(); loop.start();
   }
+  function watch(rec) {
+    if (rec.game !== 'crux') throw new Error('that is a ' + rec.game + ' replay');
+    reset(rec.seed);
+    S.state = 'running'; S.replay = true; S.replayOld = rec.version !== VERSION;
+    tape.load(rec);
+    overlay.hide(); input.flush(); loop.start();
+  }
+  tape.onEnd = function () {
+    if (S.state !== 'running') return;
+    S.state = 'paused';
+    overlay.show('<div><h2>Replay ended</h2><p>The recording stopped here.</p><div class="lg-row" style="justify-content:center"><button class="primary" id="cx-back">Back</button></div></div>');
+    $('cx-back').onclick = function () { reset(); showReady(); render(); };
+    render();
+  };
   function pause() {
     if (S.state !== 'running') return;
     S.state = 'paused';
@@ -820,7 +847,8 @@
     $('cx-start').onclick = start;
   }
 
-  loop = LG.loop(update, render, input);
+  loop = LG.loop(update, render, input, tape);
+  LG.replayPanel('cx-', tape, watch, $('cx-rep-status'));
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
@@ -834,6 +862,6 @@
   render();
 
   window.__lg = window.__lg || {};
-  window.__lg.crux = { get S() { return S; }, T, LEVEL, TILE, input, reset, update, render, finish, solidAt,
+  window.__lg.crux = { get S() { return S; }, T, LEVEL, TILE, input, tape, loop, reset, update, render, finish, start, watch, solidAt,
     fly(c, r) { S.p.x = c * TILE + (TILE - T.w) / 2; S.p.y = (r + 1) * TILE - T.h; S.p.vx = S.p.vy = 0; S.camY = LG.clamp(S.p.y - H * 0.58, 0, WORLD_H - H); } };
 })();

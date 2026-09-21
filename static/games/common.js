@@ -110,23 +110,153 @@
   // (pressed keys, clicks) are flushed after every step, so a press is seen by
   // exactly one update whatever the display's refresh rate: never twice when a
   // 60 Hz frame runs two steps, never dropped by a 240 Hz frame that runs none.
-  LG.loop = function (update, render, input) {
+  // With a tape: a recording tape captures the input every step, a playing
+  // tape supplies it. step() runs one fixed step outside the animation loop,
+  // for headless runs and video capture.
+  LG.loop = function (update, render, input, tape) {
     const STEP = 1 / 120;
     let last = 0, acc = 0, running = false, raf = 0;
+    function step() {
+      if (tape && tape.playing) {
+        if (!tape.apply(input)) { running = false; if (tape.onEnd) tape.onEnd(); return false; }
+      } else if (input) {
+        // the game only ever sees whole logical pixels: exactly what a tape
+        // stores, so a replay aims and builds where the live run did
+        input.mx = Math.round(input.mx); input.my = Math.round(input.my);
+      }
+      update(STEP);
+      if (tape && tape.recording) tape.capture(input);
+      if (input) input.flush();
+      return true;
+    }
     function frame(now) {
       if (!running) return;
       let dt = (now - last) / 1000;
       last = now;
       if (dt > 0.1) dt = 0.1;
       acc += dt;
-      while (acc >= STEP) { update(STEP); if (input) input.flush(); acc -= STEP; }
+      while (acc >= STEP && running) { if (!step()) break; acc -= STEP; }
       render();
-      raf = requestAnimationFrame(frame);
+      if (running) raf = requestAnimationFrame(frame);
     }
     return {
       start() { if (running) return; running = true; last = performance.now(); acc = 0; raf = requestAnimationFrame(frame); },
       stop() { running = false; cancelAnimationFrame(raf); },
+      step,
       get running() { return running; }
+    };
+  };
+
+  // ---- replays ------------------------------------------------------------
+  // A tape is the seed plus the input at every fixed step, run-length
+  // encoded: [count, heldKeyBits, pressedKeyBits, mouseX, mouseY, buttonBits].
+  // Every game runs on the fixed step with a seeded generator, so a tape
+  // replays exactly. Pressed keys and clicks are edges and only apply on the
+  // first step of a run.
+  LG.KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight',
+    'Space', 'KeyQ', 'KeyE', 'KeyJ', 'KeyK', 'KeyX', 'KeyZ', 'KeyC', 'KeyL', 'KeyV', 'KeyP', 'KeyR', 'Enter'];
+  const KEYBIT = {};
+  LG.KEYS.forEach(function (k, i) { KEYBIT[k] = 1 << i; });
+
+  LG.Tape = function (game, version) { this.game = game; this.version = version; this.rec = null; this.recording = false; this.playing = false; this.onEnd = null; };
+  LG.Tape.prototype.begin = function (seed, meta) {
+    this.rec = { v: 1, game: this.game, version: this.version, seed, meta: meta || {}, date: new Date().toISOString(), steps: 0, runs: [] };
+    this.recording = true; this.playing = false; this.lastRun = null;
+  };
+  LG.Tape.prototype.capture = function (input) {
+    let k = 0, p = 0;
+    input.keys.forEach(function (c) { k |= KEYBIT[c] || 0; });
+    input.pressed.forEach(function (c) { p |= KEYBIT[c] || 0; });
+    const x = input.mx, y = input.my;
+    // bits: 1 left held, 2 right held, 4 left pressed, 8 right pressed, 16 mouse moved
+    const b = (input.mouseDown.left ? 1 : 0) | (input.mouseDown.right ? 2 : 0) | (input.mousePressed.left ? 4 : 0) | (input.mousePressed.right ? 8 : 0) | (input.mouseMoved ? 16 : 0);
+    const last = this.lastRun;
+    // a step joins the previous run only when nothing edge-like happened in it
+    if (last && !p && !(b & 28) && last[1] === k && last[3] === x && last[4] === y && (last[5] & 3) === (b & 3)) last[0]++;
+    else { const run = [1, k, p, x, y, b]; this.rec.runs.push(run); this.lastRun = run; }
+    this.rec.steps++;
+    if (this.closing) { this.recording = false; this.closing = false; }
+  };
+  // finish() is called from inside the step that ends the game, so recording
+  // closes after that step has been captured, not before
+  LG.Tape.prototype.finish = function (result) { if (this.rec && this.recording) { this.rec.result = result; this.closing = true; } };
+  LG.Tape.prototype.load = function (rec) {
+    this.rec = rec; this.recording = false; this.playing = true;
+    this.pos = 0; this.left = rec.runs.length ? rec.runs[0][0] : 0; this.step = 0;
+  };
+  // Supplies one step of input from the tape; false once it has run out.
+  LG.Tape.prototype.apply = function (input) {
+    const runs = this.rec.runs;
+    if (this.pos >= runs.length) { this.playing = false; return false; }
+    const run = runs[this.pos], first = this.left === run[0];
+    input.keys.clear(); input.pressed.clear();
+    LG.KEYS.forEach(function (c, i) { if (run[1] & (1 << i)) input.keys.add(c); if (first && (run[2] & (1 << i))) input.pressed.add(c); });
+    input.mx = run[3]; input.my = run[4];
+    input.mouseDown.left = !!(run[5] & 1); input.mouseDown.right = !!(run[5] & 2);
+    input.mousePressed.left = first && !!(run[5] & 4); input.mousePressed.right = first && !!(run[5] & 8);
+    input.mouseMoved = first && !!(run[5] & 16);
+    this.left--; this.step++;
+    if (this.left <= 0) { this.pos++; this.left = this.pos < runs.length ? runs[this.pos][0] : 0; }
+    return true;
+  };
+  LG.Tape.prototype.toJSON = function () { return JSON.stringify(this.rec); };
+  // 'LGR1:' + base64(gzip(json)): small enough to paste into a message.
+  LG.Tape.prototype.toCompact = async function () {
+    const json = this.toJSON();
+    if (typeof CompressionStream === 'undefined') return 'LGJ1:' + btoa(json);
+    const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+    const buf = await new Response(stream).arrayBuffer();
+    let bin = ''; const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return 'LGR1:' + btoa(bin);
+  };
+  LG.Tape.parse = async function (text) {
+    text = text.trim();
+    if (text.startsWith('LGJ1:')) return JSON.parse(atob(text.slice(5)));
+    if (text.startsWith('LGR1:')) {
+      const bin = atob(text.slice(5)), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return JSON.parse(await new Response(stream).text());
+    }
+    return JSON.parse(text);
+  };
+  LG.download = function (name, text) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  };
+  LG.newSeed = function () { return ((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0) || 1; };
+
+  // Wires the shared replay panel: download / copy / load / paste. `watch`
+  // is the game's function that replays a parsed tape.
+  LG.replayPanel = function (prefix, tape, watch, status) {
+    const $ = (id) => document.getElementById(prefix + id);
+    const say = (t) => { if (status) status.textContent = t; };
+    $('rep-download').onclick = function () {
+      if (!tape.rec) return say('Nothing recorded yet.');
+      LG.download(tape.game + '-' + tape.rec.date.replace(/[:.]/g, '-').slice(0, 19) + '.json', tape.toJSON());
+      say('Saved ' + Math.round(tape.toJSON().length / 1024) + ' KB.');
+    };
+    $('rep-copy').onclick = async function () {
+      if (!tape.rec) return say('Nothing recorded yet.');
+      try { const c = await tape.toCompact(); await navigator.clipboard.writeText(c); say('Copied ' + Math.round(c.length / 1024) + ' KB to the clipboard. Paste it into a message.'); }
+      catch (e) { say('Could not copy: ' + e.message); }
+    };
+    $('rep-file').onchange = async function () {
+      const f = this.files[0]; if (!f) return;
+      try { watch(await LG.Tape.parse(await f.text())); say('Watching ' + f.name); } catch (e) { say('Not a replay: ' + e.message); }
+      this.value = '';
+    };
+    // reading the clipboard needs a permission some browsers never grant;
+    // when it is refused, ask for the text directly
+    $('rep-paste').onclick = async function () {
+      let text = '';
+      try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
+      if (!text.trim()) text = window.prompt('Paste the replay text (LGR1:… or the JSON):') || '';
+      if (!text.trim()) return say('Nothing to watch.');
+      try { watch(await LG.Tape.parse(text)); say('Watching the pasted replay.'); }
+      catch (e) { say('Not a replay: ' + e.message); }
     };
   };
 
