@@ -2,20 +2,15 @@
 {{ partial "long-game/style.html" . }}
 <style>
 #crux-app .lg-stage{max-width:528px}
-#crux-app .cx-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
-#crux-app .cx-height{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
-#crux-app .cx-height small{font-size:13px;color:var(--muted);font-weight:400;margin-left:4px}
+#crux-app .cx-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+#crux-app .cx-nums{display:flex;gap:14px;font-size:13px;color:var(--soft)}
+#crux-app .cx-nums b{color:var(--text);font-variant-numeric:tabular-nums}
 #crux-app .cx-bars{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;font-size:12px;color:var(--soft);margin-top:10px}
 #crux-app .cx-bars .lg-bar{margin:0}
-#crux-app .cx-anchors{display:flex;gap:5px}
-#crux-app .cx-anchor{width:10px;height:14px;border-radius:2px 2px 5px 5px;background:var(--plane);border:1px solid var(--ring)}
-#crux-app .cx-anchor.on{background:var(--warn);border-color:var(--warn)}
-#crux-app .cx-flags{display:flex;gap:6px;margin-top:10px;min-height:22px}
-#crux-app .cx-flag{display:none;padding:1px 9px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
-#crux-app .cx-flag.on{display:inline-block}
-#crux-app .cx-flag.wind{background:rgba(122,215,240,.18);color:var(--cool)}
-#crux-app .cx-flag.rest{background:rgba(63,168,96,.2);color:var(--good)}
-#crux-app .cx-flag.anchor{background:rgba(217,162,58,.2);color:var(--warn)}
+#crux-app .cx-status{font-size:13px;color:var(--soft);margin-top:10px;min-height:40px;line-height:1.5}
+#crux-app .cx-legend{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12px;color:var(--soft);align-items:center;margin-top:6px}
+#crux-app .cx-legend i{display:inline-block;width:26px;height:10px;border-radius:3px}
+#crux-app .cx-legend b{color:var(--text);font-weight:600}
 </style>
 {{ end }}
 
@@ -23,7 +18,7 @@
 <!-- ananke's masthead already shows .Title and .Description above. The game
      comes first; the design notes in .Content sit underneath it. -->
 <div id="crux-app" class="lg-app">
-  <p class="lg-mobile">Crux needs a keyboard; it doesn't have touch controls yet.</p>
+  <p class="lg-mobile">Crux is played with clicks or taps; the buttons below the wall do everything the keys do.</p>
   <div class="lg-cols">
     <div class="lg-stage" id="cx-stage" aria-label="Crux game">
       <canvas id="cx-canvas" width="528" height="660"></canvas>
@@ -32,31 +27,33 @@
     <div>
       <div class="lg-panel">
         <div class="cx-top">
-          <div class="cx-height"><span id="cx-height">0</span><small>m</small></div>
-          <div class="lg-mono" id="cx-time">0:00.00</div>
+          <select id="cx-wall" aria-label="Wall"></select>
+          <div class="cx-nums"><span>Par <b id="cx-par">—</b></span><span>Plan <b id="cx-beats">0</b></span><span>Tries <b id="cx-attempts">0</b></span></div>
         </div>
         <div class="cx-bars">
           <span>Stamina</span><div class="lg-bar"><i class="lg-bar-fill good" id="cx-stamina"></i></div><b class="lg-mono" id="cx-staminav">100</b>
-          <span>Anchors</span><div class="cx-anchors" id="cx-anchors"><i class="cx-anchor on"></i><i class="cx-anchor on"></i><i class="cx-anchor on"></i></div><b id="cx-falls" title="falls">0 falls</b>
         </div>
-        <div class="cx-flags">
-          <span class="cx-flag rest" id="cx-flag-rest">Rest ledge</span>
-          <span class="cx-flag wind" id="cx-flag-wind">Wind</span>
-          <span class="cx-flag anchor" id="cx-flag-anchor">Placing anchor</span>
+        <div class="cx-status" id="cx-status"></div>
+        <div class="lg-row">
+          <button class="primary" id="cx-climb" title="Enter">Climb</button>
+          <button id="cx-wait" title="W or Space">Wait a beat</button>
+          <button id="cx-undo" title="Z, Backspace or right-click">Undo</button>
+          <button id="cx-clear" title="R">Clear</button>
         </div>
         <div id="cx-style"></div>
+        <div class="lg-note"><span id="cx-seed"></span> · <button id="cx-random" style="padding:2px 9px;font-size:12px">New random wall</button></div>
       </div>
       <div class="lg-panel">
-        <div class="lg-k">Controls</div>
-        <div class="lg-keys">
-          <div><kbd>←</kbd> <kbd>→</kbd> / <kbd>A</kbd> <kbd>D</kbd> <span class="lg-keys-what">run; climb sideways is not a thing, walls go up</span></div>
-          <div><kbd>Shift</kbd> / <kbd>X</kbd> <span class="lg-keys-what">grip rock (hold), then <kbd>↑</kbd> <kbd>↓</kbd> to climb</span></div>
-          <div><kbd>Space</kbd> / <kbd>Z</kbd> <span class="lg-keys-what">jump. On a wall: hold <em>away</em> for a free wall-jump; hold <em>toward</em> it or nothing for a hop straight up (15 stamina, clears a gap in the holds)</span></div>
-          <div><kbd>C</kbd> / <kbd>L</kbd> <span class="lg-keys-what">dash in any direction; comes back on the ground or on a jug</span></div>
-          <div><kbd>V</kbd> <span class="lg-keys-what">place an anchor: hold still for a second</span></div>
-          <div><kbd>P</kbd> <span class="lg-keys-what">pause</span></div>
+        <div class="lg-k">How a beat works</div>
+        <div class="lg-note" style="margin-top:2px">Every step of the plan is one beat: a <b>static move</b> to a touching hold (3 extra to go up), a <b>dyno</b> to a hold two away (20 extra), or a <b>wait</b>. Waiting on a ledge recovers 12 a beat, on the ground 20; a jug costs 2 to hang on, a crimp 5. Rocks fall on the beats marked red, gusts blow on the beats marked blue, and the wall always shows the hazards of the beat your next click would take. A pocket is safe from rock. A crumbling hold can't be waited on and is gone once you leave it.</div>
+        <div class="cx-legend">
+          <i style="background:#6fb37a"></i><span><b>Jug</b> cheap to use, cheap to hold</span>
+          <i style="background:#d9a23a;height:5px"></i><span><b>Crimp</b> costs 8 to reach, 5 a beat to hold</span>
+          <i style="background:#e8eaf0"></i><span><b>Ledge</b> rest here</span>
+          <i style="background:#050608;border:2px solid #7ad7f0;height:12px"></i><span><b>Pocket</b> rock can't reach you</span>
+          <i style="background:#a97c5b"></i><span><b>Crumble</b> one use, no waiting</span>
+          <i style="background:none;border:3px solid #d9a23a;border-radius:99px;width:12px;height:12px;margin-left:7px"></i><span><b>Anchor</b> the top</span>
         </div>
-        <div class="lg-note">Stamina drains while you grip and refills on the ground, faster on rest ledges, and on the notched <em>jug</em> holds. Ice can't be gripped. Cracked holds crumble under you. Wind bands only move you while you're in the air. Rock chutes telegraph with dust before they drop.</div>
       </div>
       <div class="lg-panel">
         <div class="lg-k">Replay</div>
@@ -66,13 +63,12 @@
           <label><span class="lg-tag" style="cursor:pointer">Load file</span><input type="file" id="cx-rep-file" accept="application/json,.json" style="display:none"></label>
           <button id="cx-rep-paste">Paste &amp; watch</button>
         </div>
-        <div class="lg-note" id="cx-rep-status">Every climb is recorded as inputs plus a seed, so it replays exactly. Download a file or Copy a pasteable string to share a climb; Load or Paste to watch one.</div>
+        <div class="lg-note" id="cx-rep-status">Every session on a wall is recorded as inputs plus the wall's seed, so it replays exactly, planning included. Download a file or Copy a pasteable string to share it; Load or Paste to watch one.</div>
       </div>
       <div class="lg-panel">
-        <div class="lg-k">Bests in this browser</div>
-        <div class="lg-stat"><span>Fastest ascent</span><b class="lg-mono" id="cx-best-time">—</b></div>
-        <div class="lg-stat"><span>Fewest falls</span><b id="cx-best-falls">—</b></div>
-        <div class="lg-stat"><span>Fastest clean ascent</span><b class="lg-mono" id="cx-best-clean">—</b></div>
+        <div class="lg-k">Bests on this wall, in this browser</div>
+        <div class="lg-stat"><span>Fewest beats</span><b class="lg-mono" id="cx-best-beats">—</b></div>
+        <div class="lg-stat"><span>Summited first try</span><b id="cx-best-try">—</b></div>
       </div>
     </div>
   </div>
@@ -84,5 +80,6 @@
   </div>
 </article>
 <script src="/games/common.js"></script>
+<script src="/games/crux-core.js"></script>
 <script src="/games/crux.js"></script>
 {{ end }}

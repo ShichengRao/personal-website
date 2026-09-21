@@ -30,29 +30,57 @@ test('each Long Game page has the layout its front matter names', () => {
   }
 });
 
-test('the Crux wall is well-formed', () => {
+test('every set Crux wall is solvable and the solver agrees with the evaluator', async () => {
+  const core = (await import(join(gamesDir, 'crux-core.js'))).default;
   const src = readFileSync(join(gamesDir, 'crux.js'), 'utf8');
-  const block = src.match(/const LEVEL = \[\n([\s\S]*?)\n\s*\];/);
-  assert.ok(block, 'LEVEL array should be present');
-  const rows = [...block[1].matchAll(/'([^']*)'/g)].map((m) => m[1]);
-  assert.ok(rows.length > 40, 'the wall should be tall');
-  const width = rows[0].length;
-  for (const [i, r] of rows.entries()) {
-    assert.equal(r.length, width, `row ${i} has width ${r.length}, expected ${width}`);
-    assert.ok(/^[#.~cjR^|<>=SF]+$/.test(r), `row ${i} has an unknown tile: ${r}`);
-    assert.equal(r[0], '#', `row ${i} should start with the outer wall`);
-    assert.ok(r[width - 1] === '#' || r[width - 1] === '~', `row ${i} should end with an outer wall`);
+  const walls = [...src.matchAll(/tier: (\d+), seed: (\d+)/g)].map((m) => ({ tier: Number(m[1]), seed: Number(m[2]) }));
+  assert.ok(walls.length >= 5, 'the set walls should be declared in crux.js');
+  for (const w of walls) {
+    const level = core.generate(w.seed, w.tier);
+    assert.deepEqual(level.cells, core.generate(w.seed, w.tier).cells, `wall ${w.tier}-${w.seed} should generate deterministically`);
+    const sol = core.solve(level);
+    assert.ok(sol, `wall ${w.tier}-${w.seed} should be solvable`);
+    const ev = core.evaluate(level, sol.plan);
+    assert.equal(ev.ok, true, `the solver's plan for ${w.tier}-${w.seed} should evaluate as a summit`);
+    assert.equal(ev.beats, sol.par, `par for ${w.tier}-${w.seed} should match the plan's beats`);
+    assert.equal(ev.stamina, sol.stamina);
+    // the anchors are the only way up and the ground is the only way in
+    assert.ok(level.cells.slice(0, core.COLS).includes('F'));
+    assert.ok(level.cells.slice(-core.COLS).every((c) => c === 'G'));
   }
-  assert.ok(/^#+$/.test(rows[0]) && /^#+$/.test(rows[rows.length - 1]), 'top and bottom rows should be solid');
-  const all = rows.join('');
-  assert.equal((all.match(/S/g) || []).length, 1, 'exactly one start');
-  assert.equal((all.match(/F/g) || []).length, 1, 'exactly one summit flag');
-  // every rest ledge needs headroom, or the checkpoint would be unreachable
-  for (let r = 1; r < rows.length; r++) for (let c = 0; c < width; c++) {
-    if (rows[r][c] === 'R') assert.ok('.SF'.includes(rows[r - 1][c]), `rest ledge at ${c},${r} has no headroom`);
-  }
-  // rock chutes must sit in open air
-  const chutes = [...src.matchAll(/\{ c: (\d+), r: (\d+) - (\d+)/g)].map((m) => [Number(m[1]), Number(m[2]) - Number(m[3])]);
-  assert.ok(chutes.length >= 1, 'chutes should be declared');
-  for (const [c, r] of chutes) assert.equal(rows[r][c], '.', `chute at ${c},${r} is not in open air`);
+});
+
+test('Crux plans fail for the right reasons', async () => {
+  const core = (await import(join(gamesDir, 'crux-core.js'))).default;
+  const cells = new Array(core.COLS * core.ROWS).fill('.');
+  for (let c = 0; c < core.COLS; c++) cells[(core.ROWS - 1) * core.COLS + c] = 'G';
+  const put = (c, r, v) => { cells[r * core.COLS + c] = v; };
+  put(3, 14, 'j'); put(3, 13, 'c'); put(3, 12, 'p'); put(3, 11, 'x'); put(3, 9, 'j'); put(3, 0, 'F'); put(6, 14, 'c');
+  const level = { cols: core.COLS, rows: core.ROWS, cells, chutes: [{ c: 3, period: 4, offset: 1 }], winds: [{ r0: 9, r1: 11, period: 3, offset: 0, dur: 1 }] };
+  const s = { t: 's', c: 3, r: 15 };
+  // beat 1 in the chute column is a rock beat
+  assert.equal(core.evaluate(level, [s, { t: 'm', c: 3, r: 14 }]).fatal.reason, 'rock');
+  // waiting on the ground first makes beat 2 safe; the pocket is safe on beat 5
+  const safe = core.evaluate(level, [s, { t: 'w', c: 3, r: 15 }, { t: 'm', c: 3, r: 14 }, { t: 'm', c: 3, r: 13 }, { t: 'm', c: 3, r: 12 }, { t: 'w', c: 3, r: 12 }]);
+  assert.equal(safe.fatal, null);
+  // a dyno out of the wind band on a gust beat is fatal; a beat later it is fine
+  const gust = safe.steps.length; // next beat is 6: (6 - 0) % 3 === 0 -> gust
+  assert.equal(core.evaluate(level, [...safe.steps.map(stepOf), { t: 'd', c: 3, r: 10 }]).fatal.reason, 'nohold');
+  assert.equal(gust, 6);
+  // sit in the pocket through rock beat 5, step onto the crumble at 8, dyno on gust beat 9
+  const w = { t: 'w', c: 3, r: 12 };
+  const dyno = core.evaluate(level, [s, { t: 'w', c: 3, r: 15 }, { t: 'm', c: 3, r: 14 }, { t: 'm', c: 3, r: 13 }, { t: 'm', c: 3, r: 12 }, w, w, w, { t: 'm', c: 3, r: 11 }, { t: 'd', c: 3, r: 9 }]);
+  assert.equal(dyno.fatal.reason, 'gust');
+  // two beats later (rock at 9 rules out beat 9 on the crumble) the same dyno is clean
+  const clean = core.evaluate(level, [s, { t: 'w', c: 3, r: 15 }, { t: 'm', c: 3, r: 14 }, { t: 'm', c: 3, r: 13 }, { t: 'm', c: 3, r: 12 }, w, w, w, w, w, { t: 'm', c: 3, r: 11 }, { t: 'd', c: 3, r: 9 }, { t: 'm', c: 3, r: 10 }]);
+  assert.equal(clean.fatal.reason, 'nohold');
+  assert.equal(clean.steps[11].fatal, undefined);
+  // waiting on a crumble hold is a fall
+  const crumble = core.evaluate(level, [s, { t: 'w', c: 3, r: 15 }, { t: 'm', c: 3, r: 14 }, { t: 'm', c: 3, r: 13 }, { t: 'm', c: 3, r: 12 }, w, w, w, w, w, { t: 'm', c: 3, r: 11 }, { t: 'w', c: 3, r: 11 }]);
+  assert.equal(crumble.fatal.reason, 'crumble');
+  // stamina runs out hanging on a crimp, away from the chute
+  const pump = core.evaluate(level, [{ t: 's', c: 6, r: 15 }, { t: 'm', c: 6, r: 14 }, ...Array(30).fill({ t: 'w', c: 6, r: 14 })]);
+  assert.equal(pump.fatal.reason, 'pumped');
+  assert.equal(pump.fatal.index, 19);
+  function stepOf(st) { return { t: st.t, c: st.c, r: st.r }; }
 });

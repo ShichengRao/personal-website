@@ -14,11 +14,14 @@ Each game below has two honest ways to play. The slow way stabilizes the game
 state and grinds out small edges; the fast way is the genre's usual twitch play.
 The slow way is not a safer route for weaker players; it is meant to be as strong
 as the fast one, the way a tank is as strong as a carry and d4 is as strong as e4.
-Each game gets there differently: Bulwark's boss reads your style and counters
-whatever you lean on, so no pure style is optimal; Slipstream's race format decides
-whether pushing or managing wins; Crux gates the air with rock and wind, so a fast
-climber spends the time saved waiting for windows. The results screen tells you
-which style you actually played, and bests are kept in this browser for both the
-fast metric and the clean one.
 
-Keyboard recommended. Nothing is uploaded anywhere.
+The test I hold them to: take a good run and delay every input by five seconds.
+If the plan was what mattered, the run should still mostly work; if the fingers
+were what mattered, it dies. The first versions all died. Bulwark is now a siege
+whose weather moves slower than that delay, Crux is a route you plan before the
+climber moves, and Slipstream is still the racing game it was, which is to say it
+still fails the test. The results screen tells you which style you actually
+played, and bests are kept in this browser for both the fast metric and the clean
+one. Every run is recorded and can be replayed.
+
+Mouse and keyboard. Nothing is uploaded anywhere.
