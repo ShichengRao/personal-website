@@ -107,7 +107,9 @@
     for (let k = i; k >= 0; k--) if (S.plan[k].t !== 'w') return { c: S.plan[k].c, r: S.plan[k].r };
     return { c: S.plan[0].c, r: S.plan[0].r };
   }
+  // W appends a wait, or slips one in after the beat being viewed
   function tryWait() {
+    if (S.scrub !== null && S.scrub < S.plan.length) { insertWait(S.scrub); return; }
     const k = S.cands.find((x) => x.t === 'w');
     if (!k) return;
     if (k.fatal) { flash('Not now: ' + k.fatal.text + '.'); return; }
@@ -349,14 +351,16 @@
         else { ctx.beginPath(); ctx.moveTo(cellX(a.c), cellY(a.r)); ctx.lineTo(cellX(b.c), cellY(b.r)); ctx.stroke(); }
       }
       ctx.setLineDash([]);
-      // beat numbers at every hold the plan touches
+      // beat numbers at every hold the plan touches, and how many beats it waits there
       ctx.font = '600 9px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
-      const seen = new Map();
-      for (let i = 0; i < steps.length; i++) { const s = steps[i]; seen.set(s.c + ',' + s.r, i); }
+      const seen = new Map(), waits = new Map();
+      for (let i = 0; i < steps.length; i++) { const s = steps[i], key = s.c + ',' + s.r; seen.set(key, i); if (s.t === 'w') waits.set(key, (waits.get(key) || 0) + 1); }
       for (const [key, i] of seen) {
         const [c, r] = key.split(',').map(Number);
         ctx.fillStyle = '#0b0d14'; ctx.beginPath(); ctx.arc(cellX(c) + 12, cellY(r) - 11, 7, 0, TAU); ctx.fill();
         ctx.fillStyle = steps[i].fatal ? '#d1495b' : '#e8eaf0'; ctx.fillText(String(i), cellX(c) + 12, cellY(r) - 8);
+        const n = waits.get(key);
+        if (n > 1) { ctx.fillStyle = 'rgba(232,234,240,0.8)'; ctx.textAlign = 'left'; ctx.fillText('×' + n, cellX(c) + 17, cellY(r) + 4); ctx.textAlign = 'center'; }
       }
       // steps the evaluation never reached, faint, so a fix upstream shows what it restores
       if (steps.length < S.plan.length) {
