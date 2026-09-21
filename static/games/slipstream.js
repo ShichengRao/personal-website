@@ -24,6 +24,8 @@
   };
   const mapCtx = LG.setupCanvas(ui.map, 268, 180);
   const BEST_KEY = 'lg-slipstream-best-v1';
+  const VERSION = 2;
+  const tape = new LG.Tape('slipstream', VERSION);
 
   // ---- tuning -------------------------------------------------------------
   const T = {
@@ -596,6 +598,14 @@
     }
     ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '13px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left';
     ctx.fillText(Math.round(S.player.spd * 0.62) + ' km/h', 14, H - 14);
+    if (S.replay || S.hud) {
+      const p = S.player, st = standings(), pos = st.indexOf(p) + 1;
+      const line = (S.mode === 'practice' ? 'Practice' : 'P' + pos + '/' + S.cars.length) + ' · lap ' + Math.min(p.lap + 1, S.laps) + '/' + S.laps +
+        ' · tires ' + Math.round(p.temp) + '° · life ' + Math.round((1 - p.wear) * 100) + '%' + (p.inTow ? ' · TOW' : '') + (p.push && p.overheat <= 0 ? ' · PUSH' : '') + (p.overheat > 0 ? ' · GONE OFF' : '');
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(8, 8, ctx.measureText(line).width + 16, 22);
+      ctx.fillStyle = '#fff'; ctx.fillText(line, 16, 24);
+      if (S.replay) { ctx.fillStyle = 'rgba(217,162,58,0.9)'; ctx.font = '700 12px sans-serif'; ctx.fillText('REPLAY' + (S.replayOld ? ' (older version)' : ''), 16, 46); }
+    }
 
     renderHUD();
     renderMap();
@@ -658,6 +668,7 @@
     S.state = 'finished';
     const p = S.player, st = standings(), pos = st.indexOf(p) + 1;
     const style = styleOf(p);
+    tape.finish({ pos, time: +p.finishTime.toFixed(2), bestLap: isFinite(p.bestLap) ? +p.bestLap.toFixed(2) : null });
     if (S.mode === 'practice') {
       overlay.show('<div><h2>Practice done</h2>' +
         '<div class="lg-results">' + p.lapTimes.map((t, i) => '<span>Lap ' + (i + 1) + '</span><b>' + LG.fmtTime(t) + '</b>').join('') +
@@ -673,13 +684,15 @@
     const bk = S.mode + ':' + S.rivals;      // bests are per mode and per rival level
     const b = best[bk] || {};
     let newPos = false, newLap = false, newClean = false;
-    if (b.pos === undefined || pos < b.pos) { b.pos = pos; newPos = true; }
-    if (isFinite(p.bestLap) && (b.lap === undefined || p.bestLap < b.lap)) { b.lap = p.bestLap; newLap = true; }
     // the patient driver's record: a podium without the tires ever leaving
     // their window, judged from the numbers at the finish line
     const clean = pos <= 3 && p.finishOverheats === 0 && p.finishMaxTemp <= T.tempHot;
-    if (clean && (!b.clean || pos < b.clean.pos || (pos === b.clean.pos && p.finishTime < b.clean.time))) { b.clean = { pos, time: p.finishTime }; newClean = true; }
-    best[bk] = b; LG.store.set(BEST_KEY, best);
+    if (!S.replay) {
+      if (b.pos === undefined || pos < b.pos) { b.pos = pos; newPos = true; }
+      if (isFinite(p.bestLap) && (b.lap === undefined || p.bestLap < b.lap)) { b.lap = p.bestLap; newLap = true; }
+      if (clean && (!b.clean || pos < b.clean.pos || (pos === b.clean.pos && p.finishTime < b.clean.time))) { b.clean = { pos, time: p.finishTime }; newClean = true; }
+      best[bk] = b; LG.store.set(BEST_KEY, best);
+    }
     showBests();
     const ord = ['', 'st', 'nd', 'rd'][pos] || 'th';
     overlay.show('<div><h2>' + pos + ord + ' place</h2><span class="lg-tag">' + style.who + '</span>' +
@@ -712,11 +725,28 @@
   }
 
   function start(mode) {
-    reset(mode);
+    const seed = LG.newSeed();
+    reset(mode, seed);
+    tape.begin(seed, { mode: S.mode, rivals });
     S.state = 'countdown';
     overlay.hide(); input.focus(); input.flush();
     loop.start();
   }
+  function watch(rec) {
+    if (rec.game !== 'slipstream') throw new Error('that is a ' + rec.game + ' replay');
+    rivals = rec.meta.rivals || rivals;
+    reset(rec.meta.mode || 'sprint', rec.seed);
+    S.state = 'countdown'; S.replay = true; S.replayOld = rec.version !== VERSION;
+    tape.load(rec);
+    overlay.hide(); input.flush(); loop.start();
+  }
+  tape.onEnd = function () {
+    if (S.state !== 'running' && S.state !== 'countdown') return;
+    S.state = 'paused';
+    overlay.show('<div><h2>Replay ended</h2><p>The recording stopped here.</p><div class="lg-row" style="justify-content:center"><button class="primary" id="ss-back">Back</button></div></div>');
+    $('ss-back').onclick = function () { reset('sprint'); showReady(); render(); };
+    render();
+  };
   function pause() {
     if (S.state !== 'running' && S.state !== 'countdown') return;
     S.paused = S.state; S.state = 'paused';
@@ -741,7 +771,8 @@
     $('ss-start-practice').onclick = function () { start('practice'); };
   }
 
-  loop = LG.loop(update, render, input);
+  loop = LG.loop(update, render, input, tape);
+  LG.replayPanel('ss-', tape, watch, $('ss-rep-status'));
   input.onBlur = function () { pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
@@ -755,5 +786,5 @@
   render();
 
   window.__lg = window.__lg || {};
-  window.__lg.slipstream = { get S() { return S; }, T, TRACK, input, reset, update, render, finish, standings, gripOf };
+  window.__lg.slipstream = { get S() { return S; }, T, TRACK, input, tape, loop, reset, update, render, finish, start, watch, standings, gripOf, driveAI };
 })();
