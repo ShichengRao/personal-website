@@ -248,9 +248,15 @@
       try { watch(await LG.Tape.parse(await f.text())); say('Watching ' + f.name); } catch (e) { say('Not a replay: ' + e.message); }
       this.value = '';
     };
+    // reading the clipboard needs a permission some browsers never grant;
+    // when it is refused, ask for the text directly
     $('rep-paste').onclick = async function () {
-      try { const text = await navigator.clipboard.readText(); watch(await LG.Tape.parse(text)); say('Watching the pasted replay.'); }
-      catch (e) { say('Could not read a replay from the clipboard: ' + e.message); }
+      let text = '';
+      try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
+      if (!text.trim()) text = window.prompt('Paste the replay text (LGR1:… or the JSON):') || '';
+      if (!text.trim()) return say('Nothing to watch.');
+      try { watch(await LG.Tape.parse(text)); say('Watching the pasted replay.'); }
+      catch (e) { say('Not a replay: ' + e.message); }
     };
   };
 
