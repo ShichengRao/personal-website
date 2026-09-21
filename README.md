@@ -27,7 +27,7 @@ install is needed to build or serve the site.
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects |
-| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux level is well-formed. New test files must be added to the `test` script in `package.json` |
+| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
 
@@ -38,9 +38,18 @@ plain scripts with no build step. Each page is a `content/long-game/<game>.md` w
 `layout` front matter picks `layouts/long-game/<game>.html`; the shared chrome lives
 in `layouts/partials/long-game/style.html` and `static/games/common.js`. Every game
 exposes a `window.__lg.<game>` handle (state, `update(dt)`, `reset(seed)`) so it can
-be stepped headlessly from the console for tuning; the Crux wall in
-`static/games/crux.js` is generated from block definitions and should be edited as
-blocks rather than by hand.
+be stepped headlessly from the console for tuning.
+
+Crux's rules live in `static/games/crux-core.js` with no DOM in them: the seeded
+wall generator, the plan evaluator and the solver that computes par. It loads in
+Node as well as the browser, which is how the tests check every set wall and how
+new set walls get picked (generate a few hundred per tier, keep the ones where the
+best plan has to work around a hazard, bake the seeds into `WALLS` in `crux.js`).
+
+The design bar for these games is a delay test: replay a good run with every
+input shifted five seconds later. A game whose outcome is decided by planning
+should mostly survive that; one decided by reflexes dies. Bulwark and Crux are
+built to pass it; Slipstream currently does not.
 
 Every run is recorded as a **replay**: the seed plus the input at every fixed
 step, run-length encoded (`LG.Tape` in `common.js`). The games are deterministic on

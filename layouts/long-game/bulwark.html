@@ -13,7 +13,7 @@
 <!-- ananke's masthead already shows .Title and .Description above. The game
      comes first; the design notes in .Content sit underneath it. -->
 <div id="bulwark-app" class="lg-app">
-  <p class="lg-mobile">Bulwark needs a keyboard and a mouse; it doesn't have touch controls yet.</p>
+  <p class="lg-mobile">Bulwark needs a mouse with two buttons; it doesn't have touch controls yet.</p>
   <div class="lg-cols">
     <div class="lg-stage" id="bw-stage" aria-label="Bulwark game">
       <canvas id="bw-canvas" width="640" height="720"></canvas>
@@ -21,33 +21,33 @@
     </div>
     <div>
       <div class="lg-panel">
-        <div class="lg-k">Ship</div>
+        <div class="lg-k">Position</div>
         <div class="bw-bars">
-          <span>Hull</span><div class="lg-bar"><i class="lg-bar-fill good" id="bw-hull"></i></div>
-          <span>Shield</span><div class="lg-bar"><i class="lg-bar-fill" id="bw-shield"></i></div>
-          <span>Charge</span><div class="lg-bar"><i class="lg-bar-fill warn" id="bw-charge"></i><span class="lg-tick" style="left:30%"></span><span class="lg-tick" style="left:45%"></span></div>
+          <span>Integrity</span><div class="lg-bar"><i class="lg-bar-fill good" id="bw-integrity"></i></div>
+          <span>Heat</span><div class="lg-bar"><i class="lg-bar-fill cool" id="bw-heat"></i></div>
+          <span>Charge</span><div class="lg-bar"><i class="lg-bar-fill warn" id="bw-charge"></i><span class="lg-tick" style="left:10%"></span><span class="lg-tick" style="left:20%"></span></div>
           <span>Boss</span><div class="lg-bar"><i class="lg-bar-fill bad" id="bw-boss"></i></div>
         </div>
         <div class="bw-live">
           <span>Time <b class="lg-mono" id="bw-time">0:00.00</b></span>
           <span>Phase <b id="bw-phase">1</b></span>
           <span>Hits <b id="bw-hits">0</b></span>
+          <span>Beam <b id="bw-auto">auto</b></span>
           <span style="flex:1"></span>
           <button id="bw-restart" title="R">Restart</button>
         </div>
+        <div class="bw-live"><span>Charge from shield / walls <b class="lg-mono" id="bw-income">0 / 0</b></span></div>
         <div id="bw-style"></div>
       </div>
       <div class="lg-panel">
         <div class="lg-k">Controls</div>
         <div class="lg-keys">
-          <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="lg-keys-what">move (arrows work too)</span></div>
-          <div><kbd>Shift</kbd> <span class="lg-keys-what">focus: move at half speed</span></div>
-          <div><kbd>Mouse</kbd> <span class="lg-keys-what">aim the shield (or <kbd>Q</kbd>/<kbd>E</kbd> to rotate)</span></div>
-          <div><kbd>Click</kbd> / <kbd>J</kbd> <span class="lg-keys-what">hold to fire the beam whenever it's ready (30 charge)</span></div>
-          <div><kbd>Right click</kbd> / <kbd>K</kbd> <span class="lg-keys-what">barrier ahead of you (45 charge)</span></div>
-          <div><kbd>Space</kbd> <span class="lg-keys-what">dash: fast, shield down, wide graze ring</span></div>
+          <div><kbd>Click</kbd> <span class="lg-keys-what">walk there. The shield faces the boss on its own and pulls in what it can catch.</span></div>
+          <div><kbd>Right-drag</kbd> <span class="lg-keys-what">build a wall along the drag (30 charge, up to eight). Walls eat bullets from any side and pay 1 charge each; the shield pays 4 but heats up.</span></div>
+          <div><kbd>F</kbd> <span class="lg-keys-what">beam fires itself whenever it has 60 to spare above a 30 reserve (default), or only on <kbd>Space</kbd>, which fires at 60</span></div>
           <div><kbd>P</kbd> <span class="lg-keys-what">pause</span> <kbd>R</kbd> <span class="lg-keys-what">restart</span></div>
         </div>
+        <div class="lg-note">A hit costs 12 charge; only when you have none does it cost integrity, which never comes back. Heat drains the shield's absorbing: at 100 it drops for two and a half seconds. Streams announce their lane for 3.5 s and go for whichever wall earns you the most. Breakers crawl toward your walls and die to any beam that crosses them. Bastions rise between you and the boss and take the beam instead; walk out from behind them. After 4:00 the sky closes.</div>
       </div>
       <div class="lg-panel">
         <div class="lg-k">Replay</div>
@@ -63,8 +63,8 @@
         <div class="lg-k">Bests in this browser</div>
         <div class="lg-stat"><span>Fastest kill</span><b class="lg-mono" id="bw-best-time">—</b></div>
         <div class="lg-stat"><span>Fewest hits taken</span><b id="bw-best-clean">—</b></div>
-        <div class="lg-stat"><span>Fastest flawless</span><b class="lg-mono" id="bw-best-flawless">—</b></div>
-        <div class="lg-note">Three boards on purpose: one for the grazer, one for the wall, and one for the wall in a hurry.</div>
+        <div class="lg-stat"><span>Fastest engineer</span><b class="lg-mono" id="bw-best-walls">—</b></div>
+        <div class="lg-note">The engineer board is for kills where at least two thirds of the charge came from walls.</div>
       </div>
     </div>
   </div>

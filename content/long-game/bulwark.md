@@ -3,42 +3,47 @@ title: "Bulwark"
 layout: "bulwark"
 weight: 1
 genre: "Bullet hell"
-description: "A bullet hell where you don't dodge. Absorb, fortify, and grind the boss down."
-blurb: "You fly a slow, heavy ship with a directional shield. Bullets you catch on it charge your beam; charge also buys barriers that lock lanes shut for good."
-slow: "face the stream, build a wall, win the attrition war."
-fast: "dash through the bullets, graze for charge, burn the boss down."
+description: "A bullet hell rebuilt as a siege. The weather is slow and never aimed at you; the question is whether your structure holds."
+blurb: "Slow, dense, unaimed bullets; streams and bastions that announce themselves seconds ahead. Click where to stand, drag where to build, and let the beam fire itself. A hit costs charge, not life."
+slow: "build a canopy, stand in its shadow, let the walls pay for the beam."
+fast: "stand under the boss where the weather is thickest and ride the heat."
 date: 2026-09-19T20:00:00-04:00
 draft: false
 ---
 
-Bullet hells are about reading a pattern and then threading it with pixel-perfect
-movement. This one keeps the reading and drops the requirement to thread. Your ship
-is slow and tough, and its shield **absorbs** anything that lands on the arc you're
-facing. Every absorbed bullet charges your beam. Charge also buys **barriers**:
-fixed walls that eat bullets until they wear through, so a patient player can close
-the lanes the boss keeps using and turn an open screen into a closed one.
+The first Bulwark had walls and a shield and a boss that read your style, and it was
+still a bullet hell: delay every input in a good run by fifty milliseconds and the
+run died. Everything that decided the fight happened in under a second, so nothing
+built on top of that loop could outweigh it.
 
-The boss regenerates when it goes untouched for a few seconds, so pure turtling
-doesn't win; you have to keep trading. Your shield regenerates; your hull does not,
-and it takes four ordinary hits. It is an attrition duel, and the side that spends
-its resources more carefully wins it.
+This one moves the whole fight onto a slower clock. The boss doesn't aim. It makes
+**weather**: a steady drizzle of bullets that take eight to twelve seconds to cross
+the arena, a **sweep** that wipes the sky and shows its line two seconds early, a
+**stream** that marks its lane for three and a half seconds before it flows. From
+phase two it sends **breakers** that crawl toward your walls, and raises
+**bastions** between itself and wherever you stand, three seconds after showing you
+where. You give it positions: a click is where to stand, a right-drag is where a
+wall goes. The shield faces the boss on its own, and the beam fires itself.
 
-The boss also **reads you**. It keeps a running account of where your charge has
-been coming from over the last ten seconds, and when one source dominates it opens
-the next stretch with an answer: lead-aimed fans for a dasher, wall-seeking breakers
-for a builder, a heavy stream no shield can hold for a face-tanker. A pure style is
-never optimal here; the equilibrium is a mix, and the mix you choose is the style.
+**Charge** is the only economy. The shield pays four per bullet it absorbs but heats
+up, and at full heat it drops for two and a half seconds. Walls pay one per bullet
+from any side, never heat, and cost thirty to build. A hit costs charge; only when
+you have none does it cost **integrity**, which never comes back. The beam costs
+sixty and takes eight percent of the boss. After four minutes the sky closes and the
+drizzle doubles every thirty seconds, so the structure has to be paying for the beam
+by then.
 
-**The slow way.** Keep the shield pointed at the boss, absorb what comes, and spend
-charge on walls where the recurring patterns arrive: a right-click builds one where
-you point, and every wall casts a shadow from the boss that shows you the pocket it
-keeps safe. A wall harvests charge for you for as long as it lasts, so three or four
-of them turn the arena into a position you can hold and fire from. Watch shield
-integrity: it regenerates, but it breaks if you tank a whole stream point-blank.
+**The slow way.** Build a canopy above where you stand and let its shadow keep the
+drizzle off you. The boss's plan is to grind it: streams go for whichever wall earns
+you the most, breakers try to demolish one, bastions take your beam until you walk
+out from behind them. Whether the structure holds under that is the whole game, and
+none of it is decided in under a second.
 
-**The fast way.** Dash through the thick of it. The shield drops while you dash, but
-the graze ring widens and every bullet you skim mid-dash is worth almost as much as
-one absorbed. A grazer who threads the patterns the way the genre intends kills the
-boss faster than any wall will, with a four-hit hull and a boss that starts leading
-its shots. Standing on top of the boss is the fastest line of all, and dies to the
-shield overload more often than not.
+**The fast way.** Stand at the line under the boss, where the weather is thickest,
+and take it on the shield: four charge a bullet, no walls to buy. The heat bar is
+what you manage, and a stream you fail to step out of is twenty-five charge a hit.
+
+Scripted runs of both, with every input delayed by five seconds: the canopy still
+kills the boss in every run, the rusher dies in every run. Without the delay the
+rusher is about a minute faster when it lives. That is the trade the page promises
+on the hub, and this is the first version of the game that actually makes it.
