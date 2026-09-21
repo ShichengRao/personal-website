@@ -19,7 +19,7 @@ function fakeInput() {
 }
 function snapshot(i) {
   return [ [...i.keys].sort().join(','), [...i.pressed].sort().join(','), i.mx, i.my,
-    i.mouseDown.left, i.mouseDown.right, i.mousePressed.left, i.mousePressed.right ].join('|');
+    i.mouseDown.left, i.mouseDown.right, i.mousePressed.left, i.mousePressed.right, i.mouseMoved ].join('|');
 }
 
 test('a tape replays the exact input sequence it recorded', async () => {
@@ -34,6 +34,8 @@ test('a tape replays the exact input sequence it recorded', async () => {
     input.mx = 100 + Math.round(Math.sin(Math.floor(s / 10) / 2) * 50); input.my = 300 + Math.floor(s / 40);
     input.mouseDown.left = s % 120 < 40; input.mouseDown.right = false;
     input.mousePressed.left = s % 120 === 0; input.mousePressed.right = s % 200 === 5;
+    // a mouse event that lands on the same pixel still counts as movement
+    input.mouseMoved = s % 10 === 0 || s % 77 === 3;
     seen.push(snapshot(input));
     tape.capture(input);
   }
@@ -65,4 +67,17 @@ test('plain JSON tapes parse too', async () => {
   const rec = await LG.Tape.parse(tape.toJSON());
   assert.equal(rec.runs.length, 1);
   assert.equal(rec.runs[0][0], 2);
+});
+
+test('the loop rounds the mouse to whole pixels before the game sees it', () => {
+  const input = fakeInput();
+  input.mx = 12.6; input.my = 300.2; input.mouseMoved = true;
+  input.flush = () => { input.mouseMoved = false; input.pressed.clear(); };
+  const tape = new LG.Tape('test', 1);
+  tape.begin(1, {});
+  const seenByGame = [];
+  const loop = LG.loop(() => seenByGame.push([input.mx, input.my, input.mouseMoved]), () => {}, input, tape);
+  loop.step();
+  assert.deepEqual(seenByGame, [[13, 300, true]]);
+  assert.deepEqual([...tape.rec.runs[0]], [1, 0, 0, 13, 300, 16]);
 });

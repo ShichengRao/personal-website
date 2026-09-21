@@ -117,7 +117,13 @@
     const STEP = 1 / 120;
     let last = 0, acc = 0, running = false, raf = 0;
     function step() {
-      if (tape && tape.playing && !tape.apply(input)) { running = false; if (tape.onEnd) tape.onEnd(); return false; }
+      if (tape && tape.playing) {
+        if (!tape.apply(input)) { running = false; if (tape.onEnd) tape.onEnd(); return false; }
+      } else if (input) {
+        // the game only ever sees whole logical pixels: exactly what a tape
+        // stores, so a replay aims and builds where the live run did
+        input.mx = Math.round(input.mx); input.my = Math.round(input.my);
+      }
       update(STEP);
       if (tape && tape.recording) tape.capture(input);
       if (input) input.flush();
@@ -161,17 +167,22 @@
     let k = 0, p = 0;
     input.keys.forEach(function (c) { k |= KEYBIT[c] || 0; });
     input.pressed.forEach(function (c) { p |= KEYBIT[c] || 0; });
-    const x = Math.round(input.mx), y = Math.round(input.my);
-    const b = (input.mouseDown.left ? 1 : 0) | (input.mouseDown.right ? 2 : 0) | (input.mousePressed.left ? 4 : 0) | (input.mousePressed.right ? 8 : 0);
+    const x = input.mx, y = input.my;
+    // bits: 1 left held, 2 right held, 4 left pressed, 8 right pressed, 16 mouse moved
+    const b = (input.mouseDown.left ? 1 : 0) | (input.mouseDown.right ? 2 : 0) | (input.mousePressed.left ? 4 : 0) | (input.mousePressed.right ? 8 : 0) | (input.mouseMoved ? 16 : 0);
     const last = this.lastRun;
-    if (last && !p && !(b & 12) && last[1] === k && last[3] === x && last[4] === y && last[5] === (b & 3)) last[0]++;
+    // a step joins the previous run only when nothing edge-like happened in it
+    if (last && !p && !(b & 28) && last[1] === k && last[3] === x && last[4] === y && (last[5] & 3) === (b & 3)) last[0]++;
     else { const run = [1, k, p, x, y, b]; this.rec.runs.push(run); this.lastRun = run; }
     this.rec.steps++;
+    if (this.closing) { this.recording = false; this.closing = false; }
   };
-  LG.Tape.prototype.finish = function (result) { if (this.rec && this.recording) this.rec.result = result; this.recording = false; };
+  // finish() is called from inside the step that ends the game, so recording
+  // closes after that step has been captured, not before
+  LG.Tape.prototype.finish = function (result) { if (this.rec && this.recording) { this.rec.result = result; this.closing = true; } };
   LG.Tape.prototype.load = function (rec) {
     this.rec = rec; this.recording = false; this.playing = true;
-    this.pos = 0; this.left = rec.runs.length ? rec.runs[0][0] : 0; this.step = 0; this.px = null; this.py = null;
+    this.pos = 0; this.left = rec.runs.length ? rec.runs[0][0] : 0; this.step = 0;
   };
   // Supplies one step of input from the tape; false once it has run out.
   LG.Tape.prototype.apply = function (input) {
@@ -181,9 +192,9 @@
     input.keys.clear(); input.pressed.clear();
     LG.KEYS.forEach(function (c, i) { if (run[1] & (1 << i)) input.keys.add(c); if (first && (run[2] & (1 << i))) input.pressed.add(c); });
     input.mx = run[3]; input.my = run[4];
-    input.mouseMoved = this.px !== run[3] || this.py !== run[4]; this.px = run[3]; this.py = run[4];
     input.mouseDown.left = !!(run[5] & 1); input.mouseDown.right = !!(run[5] & 2);
     input.mousePressed.left = first && !!(run[5] & 4); input.mousePressed.right = first && !!(run[5] & 8);
+    input.mouseMoved = first && !!(run[5] & 16);
     this.left--; this.step++;
     if (this.left <= 0) { this.pos++; this.left = this.pos < runs.length ? runs[this.pos][0] : 0; }
     return true;
