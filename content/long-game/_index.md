@@ -24,4 +24,4 @@ still fails the test. The results screen tells you which style you actually
 played, and bests are kept in this browser for both the fast metric and the clean
 one. Every run is recorded and can be replayed.
 
-Keyboard recommended. Nothing is uploaded anywhere.
+Mouse and keyboard. Nothing is uploaded anywhere.
