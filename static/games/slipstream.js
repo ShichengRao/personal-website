@@ -437,7 +437,7 @@
   // ---- update -------------------------------------------------------------
   function update(dt) {
     if (S.state !== 'running' && S.state !== 'countdown') return;
-    if (input.hit('KeyP')) { pause(); return; }
+    if (!S.replay && input.hit('KeyP')) { pause(); return; }
     S.t += dt;
     if (S.state === 'countdown') {
       // the grid is frozen until GO: no physics at all, so nobody creeps

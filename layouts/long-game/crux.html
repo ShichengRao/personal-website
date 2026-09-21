@@ -11,6 +11,22 @@
 #crux-app .cx-legend{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12px;color:var(--soft);align-items:center;margin-top:6px}
 #crux-app .cx-legend i{display:inline-block;width:26px;height:10px;border-radius:3px}
 #crux-app .cx-legend b{color:var(--text);font-weight:600}
+#crux-app .cx-plan-head{font-size:12px;color:var(--soft);margin:2px 0 6px}
+#crux-app .cx-list{max-height:300px;overflow-y:auto;border:1px solid var(--ring);border-radius:8px;background:var(--bg)}
+#crux-app .cx-step{display:grid;grid-template-columns:24px 1fr 30px auto;gap:6px;align-items:center;padding:3px 6px;font-size:12px;color:var(--soft);cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)}
+#crux-app .cx-step:hover{background:var(--plane)}
+#crux-app .cx-step.sel{background:rgba(91,141,217,.18)}
+#crux-app .cx-step.wait .cx-what{color:var(--muted)}
+#crux-app .cx-step.dyno .cx-what{color:var(--warn)}
+#crux-app .cx-step.bad{color:var(--bad)}
+#crux-app .cx-step.bad .cx-what{color:var(--bad)}
+#crux-app .cx-step.tail{opacity:.45}
+#crux-app .cx-beat{font-family:ui-monospace,Menlo,monospace;color:var(--muted);text-align:right}
+#crux-app .cx-stam{font-family:ui-monospace,Menlo,monospace;color:var(--text);text-align:right}
+#crux-app .cx-acts{display:flex;gap:3px}
+#crux-app .cx-acts button{padding:0 6px;font-size:12px;line-height:18px;border-radius:5px}
+#crux-app .cx-step .cx-acts{visibility:hidden}
+#crux-app .cx-step:hover .cx-acts,#crux-app .cx-step.sel .cx-acts{visibility:visible}
 </style>
 {{ end }}
 
@@ -42,6 +58,12 @@
         </div>
         <div id="cx-style"></div>
         <div class="lg-note"><span id="cx-seed"></span> · <button id="cx-random" style="padding:2px 9px;font-size:12px">New random wall</button></div>
+      </div>
+      <div class="lg-panel">
+        <div class="lg-k">Route</div>
+        <div class="cx-plan-head" id="cx-plan-head">No route yet</div>
+        <div class="cx-list" id="cx-plan-list"></div>
+        <div class="lg-note">Click a beat to view the wall as it is on that beat. <b>+</b> slips a wait in after it (everything later moves a beat and is re-checked), <b>−</b> removes a wait, <b>✂</b> cuts the route after it.</div>
       </div>
       <div class="lg-panel">
         <div class="lg-k">How a beat works</div>

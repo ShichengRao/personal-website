@@ -14,12 +14,12 @@ vm.runInNewContext(src, sandbox);
 const LG = sandbox.window.LongGame;
 
 function fakeInput() {
-  return { keys: new Set(), pressed: new Set(), mx: 0, my: 0, mouseMoved: false,
+  return { keys: new Set(), pressed: new Set(), mx: 0, my: 0, mouseMoved: false, cmd: 0,
     mouseDown: { left: false, right: false }, mousePressed: { left: false, right: false } };
 }
 function snapshot(i) {
   return [ [...i.keys].sort().join(','), [...i.pressed].sort().join(','), i.mx, i.my,
-    i.mouseDown.left, i.mouseDown.right, i.mousePressed.left, i.mousePressed.right, i.mouseMoved ].join('|');
+    i.mouseDown.left, i.mouseDown.right, i.mousePressed.left, i.mousePressed.right, i.mouseMoved, i.cmd ].join('|');
 }
 
 test('a tape replays the exact input sequence it recorded', async () => {
@@ -36,6 +36,8 @@ test('a tape replays the exact input sequence it recorded', async () => {
     input.mousePressed.left = s % 120 === 0; input.mousePressed.right = s % 200 === 5;
     // a mouse event that lands on the same pixel still counts as movement
     input.mouseMoved = s % 10 === 0 || s % 77 === 3;
+    // page commands (panel buttons, list edits) ride along as a per-step code
+    input.cmd = s % 150 === 7 ? 5 * 1024 + (s % 30) : 0;
     seen.push(snapshot(input));
     tape.capture(input);
   }
@@ -49,6 +51,7 @@ test('a tape replays the exact input sequence it recorded', async () => {
   const rec = await LG.Tape.parse(compact);
   assert.equal(rec.seed, 12345);
   assert.equal(rec.result.ok, true);   // (deepEqual would trip on the sandbox's own Object.prototype)
+  assert.equal(rec.runs.filter((r) => r.length === 7).length, 4, 'only steps with a command carry the extra field');
 
   const back = new LG.Tape('test', 1);
   back.load(rec);

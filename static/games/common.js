@@ -42,6 +42,7 @@
     this.mouseMoved = false;    // set on every mousemove, cleared by flush()
     this.mouseDown = { left: false, right: false };
     this.mousePressed = { left: false, right: false };
+    this.cmd = 0;               // a page-level command (a panel button, a list edit), consumed by one step
     this.onBlur = null;
     this.el = el;
     el.tabIndex = 0;
@@ -101,8 +102,13 @@
     this.pressed.clear();
     this.mousePressed.left = this.mousePressed.right = false;
     this.mouseMoved = false;
+    this.cmd = 0;
   };
   LG.Input.prototype.focus = function () { this.el.focus(); };
+  // Anything the page does outside the canvas (a button, a list row) goes
+  // through here so the tape sees it. A small positive integer; the game
+  // decides what it means. One command per step.
+  LG.Input.prototype.command = function (code) { this.cmd = code | 0; };
 
   // Fixed-timestep simulation with a render per animation frame. update(dt)
   // runs at STEP; render() once per frame. Long stalls (tab hidden) are capped
@@ -167,13 +173,13 @@
     let k = 0, p = 0;
     input.keys.forEach(function (c) { k |= KEYBIT[c] || 0; });
     input.pressed.forEach(function (c) { p |= KEYBIT[c] || 0; });
-    const x = input.mx, y = input.my;
+    const x = input.mx, y = input.my, cmd = input.cmd | 0;
     // bits: 1 left held, 2 right held, 4 left pressed, 8 right pressed, 16 mouse moved
     const b = (input.mouseDown.left ? 1 : 0) | (input.mouseDown.right ? 2 : 0) | (input.mousePressed.left ? 4 : 0) | (input.mousePressed.right ? 8 : 0) | (input.mouseMoved ? 16 : 0);
     const last = this.lastRun;
     // a step joins the previous run only when nothing edge-like happened in it
-    if (last && !p && !(b & 28) && last[1] === k && last[3] === x && last[4] === y && (last[5] & 3) === (b & 3)) last[0]++;
-    else { const run = [1, k, p, x, y, b]; this.rec.runs.push(run); this.lastRun = run; }
+    if (last && !p && !cmd && !(b & 28) && last[1] === k && last[3] === x && last[4] === y && (last[5] & 3) === (b & 3)) last[0]++;
+    else { const run = cmd ? [1, k, p, x, y, b, cmd] : [1, k, p, x, y, b]; this.rec.runs.push(run); this.lastRun = run; }
     this.rec.steps++;
     if (this.closing) { this.recording = false; this.closing = false; }
   };
@@ -195,6 +201,7 @@
     input.mouseDown.left = !!(run[5] & 1); input.mouseDown.right = !!(run[5] & 2);
     input.mousePressed.left = first && !!(run[5] & 4); input.mousePressed.right = first && !!(run[5] & 8);
     input.mouseMoved = first && !!(run[5] & 16);
+    input.cmd = first ? (run[6] | 0) : 0;
     this.left--; this.step++;
     if (this.left <= 0) { this.pos++; this.left = this.pos < runs.length ? runs[this.pos][0] : 0; }
     return true;

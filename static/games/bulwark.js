@@ -219,7 +219,7 @@
   // ---- update -------------------------------------------------------------
   function update(dt) {
     if (S.state !== 'running') return;
-    if (input.hit('KeyP')) { pause(); return; }
+    if (!S.replay && input.hit('KeyP')) { pause(); return; }
     if (!S.replay && input.hit('KeyR')) { start(); return; }
     S.t += dt;
     const p = S.p, b = S.boss, st = S.stats;

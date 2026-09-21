@@ -24,9 +24,17 @@ where you'd be, when, and with how much left. The hazards run on the same clock:
 each rock chute drops on a published cadence, each wind band gusts on its own, and
 the wall always shows you the hazards of the beat your next click would take. A
 pocket is safe from rock. A crumbling hold can't be waited on and is gone once you
-leave it. Press **Climb** and the climber follows the plan exactly; if the plan
-falls, you see where and why, and the route is kept up to that point so you can
-trim it and try again.
+leave it. The wall only offers moves that survive the beat they'd be made on: a
+dyno a gust would blow off, or a step into a rock beat, is drawn greyed out with the
+reason on hover, so you can see the hold is there for another beat. Press **Climb**
+and the climber follows the plan exactly; if the plan falls, you see where and why,
+and the route is kept up to that point.
+
+The route is a list you can edit in place. Click a beat to see the wall as it is on
+that beat; slip a wait in after any beat and everything after it moves a beat later
+and is re-checked against the clock; remove a wait; or cut back to a beat and
+rebuild from there. Most fixes to a plan are one beat of timing somewhere in the
+middle, and that is a one-click edit rather than an undo of everything after it.
 
 **Par** is the fewest beats any plan can reach the anchor in; a solver computes it
 for every wall, including the random ones. The six set walls add one idea at a time
