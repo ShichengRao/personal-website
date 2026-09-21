@@ -42,6 +42,14 @@ be stepped headlessly from the console for tuning; the Crux wall in
 `static/games/crux.js` is generated from block definitions and should be edited as
 blocks rather than by hand.
 
+Every run is recorded as a **replay**: the seed plus the input at every fixed
+step, run-length encoded (`LG.Tape` in `common.js`). The games are deterministic on
+that input, so a replay reproduces a run exactly. Each page has Download / Copy /
+Load / Paste controls; Copy produces a pasteable `LGR1:` string (gzip + base64,
+roughly 10 KB per minute of play). Each game carries a `VERSION`; bump it when
+tuning changes enough that old replays would no longer match. A replay can also be
+stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
+
 ## CI and deployment
 
 - Every push to `main` deploys via Netlify: it runs `hugo` and publishes `public/`.

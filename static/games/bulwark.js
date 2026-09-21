@@ -20,6 +20,8 @@
     bestTime: $('bw-best-time'), bestClean: $('bw-best-clean'), bestFlawless: $('bw-best-flawless')
   };
   const BEST_KEY = 'lg-bulwark-best-v1';
+  const VERSION = 2;                          // bump when tuning changes enough to break old replays
+  const tape = new LG.Tape('bulwark', VERSION);
 
   // ---- tuning -------------------------------------------------------------
   const T = {
@@ -289,7 +291,7 @@
   function update(dt) {
     if (S.state !== 'running') return;
     if (input.hit('KeyP')) { pause(); return; }
-    if (input.hit('KeyR')) { start(); return; }
+    if (!S.replay && input.hit('KeyR')) { start(); return; }
     S.t += dt;
     const p = S.p, b = S.boss, st = S.stats;
 
@@ -587,6 +589,18 @@
     }
     ctx.globalAlpha = 1;
 
+    // compact HUD on the canvas itself, for replays and captures
+    if (S.replay || S.hud) {
+      const bars = [['hull', p.hull / T.hullMax, '#3fa860'], ['shield', p.shield / T.shieldMax, '#5b8dd9'], ['charge', p.charge / T.chargeMax, '#d9a23a']];
+      ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left';
+      bars.forEach(function (bar, i) {
+        const y = H - 62 + i * 18;
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillText(bar[0], 14, y + 9);
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(66, y, 120, 8);
+        ctx.fillStyle = bar[2]; ctx.fillRect(66, y, 120 * LG.clamp(bar[1], 0, 1), 8);
+      });
+      if (S.replay) { ctx.fillStyle = 'rgba(217,162,58,0.9)'; ctx.font = '700 12px sans-serif'; ctx.fillText('REPLAY' + (S.replayOld ? ' (older version)' : ''), 14, H - 70); }
+    }
     // boss bar
     ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(40, 14, W - 80, 8);
     ctx.fillStyle = b.regenPulse > 0 ? '#3fa860' : '#d1495b'; ctx.fillRect(40, 14, (W - 80) * b.hp / T.bossHP, 8);
@@ -626,9 +640,10 @@
   function finish(result) {
     S.state = result;
     const st = S.stats;
+    tape.finish({ result, t: +S.t.toFixed(2), hits: st.hits });
     const best = LG.store.get(BEST_KEY, {});
     let newTime = false, newClean = false, newFlawless = false;
-    if (result === 'won') {
+    if (result === 'won' && !S.replay) {
       if (best.time === undefined || S.t < best.time) { best.time = S.t; newTime = true; }
       if (best.hits === undefined || st.hits < best.hits) { best.hits = st.hits; newClean = true; }
       if (st.hits === 0 && (best.flawless === undefined || S.t < best.flawless)) { best.flawless = S.t; newFlawless = true; }
@@ -665,13 +680,30 @@
   }
 
   function start() {
-    reset();
+    const seed = LG.newSeed();
+    reset(seed);
+    tape.begin(seed, {});
     S.state = 'running';
     overlay.hide();
     input.focus();
     input.flush();
     loop.start();
   }
+  // Replays a parsed tape: same seed, same inputs, same fight.
+  function watch(rec) {
+    if (rec.game !== 'bulwark') throw new Error('that is a ' + rec.game + ' replay');
+    reset(rec.seed);
+    S.state = 'running'; S.replay = true; S.replayOld = rec.version !== VERSION;
+    tape.load(rec);
+    overlay.hide(); input.flush(); loop.start();
+  }
+  tape.onEnd = function () {
+    if (S.state !== 'running') return;
+    S.state = 'paused';
+    overlay.show('<div><h2>Replay ended</h2><p>The recording stopped here.</p><div class="lg-row" style="justify-content:center"><button class="primary" id="bw-back">Back</button></div></div>');
+    $('bw-back').onclick = function () { reset(); showReady(); render(); };
+    render();
+  };
   function pause() {
     if (S.state !== 'running') return;
     S.state = 'paused';
@@ -692,8 +724,9 @@
     $('bw-start').onclick = start;
   }
 
-  loop = LG.loop(update, render, input);
+  loop = LG.loop(update, render, input, tape);
   $('bw-restart').onclick = function () { start(); };
+  LG.replayPanel('bw-', tape, watch, $('bw-rep-status'));
   input.onBlur = function () { if (S.state === 'running') pause(); };
   stage.addEventListener('keydown', function (e) {
     if (e.repeat || (e.target && e.target.tagName === 'BUTTON')) return;   // held keys don't count; buttons handle their own Enter/Space
@@ -708,5 +741,5 @@
 
   // Headless hooks for tuning runs; not used by the page itself.
   window.__lg = window.__lg || {};
-  window.__lg.bulwark = { get S() { return S; }, T, input, reset, update, render, finish, KIND, SCRIPTS };
+  window.__lg.bulwark = { get S() { return S; }, T, input, tape, loop, reset, update, render, finish, start, watch, KIND, SCRIPTS };
 })();
