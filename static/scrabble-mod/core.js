@@ -13,7 +13,7 @@
   const N = 15, CENTER = 7, RACK = 7, BINGO = 40, VERSION = 1;
   const PASS_LIMIT = 4;   // consecutive passes (two each) that end a game early
 
-  // d/t: double/triple letter, D/T: double/triple word, *: the plain centre.
+  // d/t: double/triple letter, D/T: double/triple word, *: the plain center.
   const LAYOUT = [
     't..T...d...T..t',
     '.D....t.t....D.',
@@ -85,7 +85,7 @@
     const bag = shuffle(fullBag(), seededRandom(mix(seed, 0)));
     const state = {
       version: VERSION, seed, board: new Array(N * N).fill(null), racks: [[], []], bag,
-      scores: [0, 0], turn: 0, moves: [], history: [], passes: 0, finalTurns: null, over: false, endReason: null
+      scores: [0, 0], turn: 0, moves: [], history: [], passes: 0, finalTurns: null, over: false, endReason: null, resigned: null
     };
     draw(state, 0); draw(state, 1);
     return state;
@@ -119,7 +119,7 @@
     let empty = true;
     for (let i = 0; i < N * N; i++) if (board[i]) { empty = false; break; }
     if (empty) {
-      if (!placed.has(CENTER * N + CENTER)) return bad('The first word must cover the centre square.');
+      if (!placed.has(CENTER * N + CENTER)) return bad('The first word must cover the center square.');
     } else {
       let touch = false;
       for (const t of tiles) {
@@ -174,7 +174,7 @@
     if (state.over) return bad('The game is over.');
     if (!move || typeof move !== 'object') return bad('Not a move.');
     const rack = state.racks[state.turn];
-    if (move.t === 'pass') return { ok: true };
+    if (move.t === 'pass' || move.t === 'resign') return { ok: true };
     if (move.t === 'swap') {
       if (!Array.isArray(move.tiles) || !move.tiles.length) return bad('Pick the tiles to swap.');
       if (move.tiles.length > state.bag.length) return bad('The bag only has ' + state.bag.length + ' tiles left.');
@@ -216,6 +216,10 @@
       for (const t of move.tiles) s.bag.push(t);
       shuffle(s.bag, seededRandom(mix(s.seed, s.moves.length + 1)));
       s.history.push({ p, t: 'swap', n: move.tiles.length });
+      s.passes = 0;
+    } else if (move.t === 'resign') {
+      s.history.push({ p, t: 'resign' });
+      s.over = true; s.endReason = 'resign'; s.resigned = p;
     } else {
       s.passes++;
       s.history.push({ p, t: 'pass' });
@@ -235,6 +239,14 @@
     let s = newGame(seed);
     for (const m of moves) s = apply(s, m, dict);
     return s;
+  }
+
+  // 0 or 1 for the winner of a finished game, -1 for a tie, null while it runs.
+  function winner(state) {
+    if (!state.over) return null;
+    if (state.endReason === 'resign') return 1 - state.resigned;
+    if (state.scores[0] === state.scores[1]) return -1;
+    return state.scores[0] > state.scores[1] ? 0 : 1;
   }
 
   // What the side to move may do. A player with no tiles once the bag is
@@ -362,11 +374,14 @@
           const L = dict.letter(k);
           if (!(mask & (1 << L))) continue;
           const letter = String.fromCharCode(65 + L);
+          // both branches: a blank spent here can free the real letter for a
+          // better square later in the word
           if (cnt[L] > 0) {
             cnt[L]--; right.push({ c, l: letter, b: false });
             extendRight(r, c + 1, k, anchorCol);
             right.pop(); cnt[L]++;
-          } else if (cnt[26] > 0) {
+          }
+          if (cnt[26] > 0) {
             cnt[26]--; right.push({ c, l: letter, b: true });
             extendRight(r, c + 1, k, anchorCol);
             right.pop(); cnt[26]++;
@@ -387,7 +402,8 @@
           cnt[L]--; left.push({ l: letter, b: false });
           leftPart(r, anchorCol, k, limit - 1);
           left.pop(); cnt[L]++;
-        } else if (cnt[26] > 0) {
+        }
+        if (cnt[26] > 0) {
           cnt[26]--; left.push({ l: letter, b: true });
           leftPart(r, anchorCol, k, limit - 1);
           left.pop(); cnt[26]++;
@@ -431,5 +447,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, options, buildDict, generate, botMove, transpose };
+           newGame, analyze, check, apply, replay, options, winner, buildDict, generate, botMove, transpose };
 });

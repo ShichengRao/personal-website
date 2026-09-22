@@ -83,7 +83,10 @@ tests check it. `app.js` is the page: board and rack, the bot, pass-and-play,
 and online games.
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
-so online play only stores those two things. To turn online play on, create a
+so online play only stores those two things. Every game has a three-word id
+(`otter-slate-plum`) that is also its address, `/scrabble-mod/<id>`; the
+`netlify.toml` rewrite serves the page for any such path, and under `hugo
+server` the same game is `/scrabble-mod/?g=<id>`. To turn online play on, create a
 Supabase project, run `plans/scrabble-mod-supabase.sql` in its SQL editor and
 put the project URL and publishable key into `window.SM_CONFIG` in
 `layouts/scrabble-mod/list.html`. Until then the page offers the bot and

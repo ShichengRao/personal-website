@@ -18,7 +18,7 @@
 .sm-app .sm-player.turn{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,111,106,.18)}
 .sm-app .sm-player .sm-name{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sm-app .sm-player .sm-score{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
-.sm-app .sm-bag{text-align:center;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;min-width:48px}
+.sm-app button.sm-bag{text-align:center;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;min-width:56px;padding:4px 8px;line-height:1.2}
 .sm-app .sm-bag b{display:block;font-size:20px;color:var(--text);letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
 .sm-app .sm-msg{text-align:center;margin:10px 0 12px;font-size:15px;color:var(--soft);min-height:22px}
 .sm-app .sm-msg b{color:var(--text)}
@@ -28,13 +28,14 @@
 .sm-app .sm-board{display:grid;grid-template-columns:repeat(15,1fr);gap:2px;padding:4px;background:var(--plane);
  border:1px solid var(--ring);border-radius:8px;aspect-ratio:1;outline:none;user-select:none;-webkit-user-select:none;touch-action:manipulation}
 .sm-app .sm-board:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.sm-app .sm-board.valid{border-color:var(--good);box-shadow:0 0 0 3px rgba(46,139,87,.35)}
 .sm-app .sm-cell{position:relative;display:flex;align-items:center;justify-content:center;border-radius:3px;background:var(--surface);
  font-size:clamp(7px,1.6vw,11px);font-weight:700;color:var(--muted);cursor:pointer;overflow:hidden}
 .sm-app .sm-cell.b-2L{background:var(--dl);color:var(--dl-ink)}
 .sm-app .sm-cell.b-3L{background:var(--tl);color:var(--tl-ink)}
 .sm-app .sm-cell.b-2W{background:var(--dw);color:var(--dw-ink)}
 .sm-app .sm-cell.b-3W{background:var(--tw);color:var(--tw-ink)}
-.sm-app .sm-cell.b-c::before{content:"";width:34%;height:34%;border-radius:50%;background:var(--ring)}
+.sm-app .sm-cell.b-c:empty::before{content:"";width:34%;height:34%;border-radius:50%;background:var(--ring)}
 .sm-app .sm-cell.cursor{box-shadow:inset 0 0 0 2px var(--accent)}
 .sm-app .sm-cell.cursor::after{content:"\2192";position:absolute;right:2px;bottom:0;font-size:clamp(8px,1.8vw,12px);color:var(--accent)}
 .sm-app .sm-cell.cursor.down::after{content:"\2193"}
@@ -83,6 +84,14 @@
 .sm-app .sm-card .sm-choices button{padding:10px 12px;text-align:left}
 .sm-app .sm-card .sm-choices button small{display:block;color:var(--muted);font-weight:400;font-size:12px}
 .sm-app .sm-letters{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:12px 0}
+.sm-app .sm-unseen{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:12px 0}
+.sm-app .sm-unseen div{border:1px solid var(--ring);border-radius:6px;padding:6px 0;font-weight:700;font-size:15px}
+.sm-app .sm-unseen div small{display:block;font-weight:600;font-size:11px;color:var(--muted)}
+.sm-app .sm-unseen div.none{opacity:.3}
+.sm-app .sm-games{display:grid;gap:6px;margin:8px 0 4px;max-height:200px;overflow:auto;text-align:left}
+.sm-app .sm-games button{padding:7px 10px;text-align:left;font-size:13px}
+.sm-app .sm-games button small{display:block;color:var(--muted);font-size:12px}
+.sm-app .sm-games button b.now{color:var(--good)}
 .sm-app .sm-letters button{padding:8px 0;font-weight:700}
 .sm-app .sm-final{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin:12px 0;font-size:15px}
 .sm-app .sm-final b{font-size:26px;display:block;font-variant-numeric:tabular-nums}
@@ -107,7 +116,7 @@ window.SM_CONFIG = { url: "", key: "" };
 <div id="sm-app" class="sm-app">
   <div class="sm-top">
     <div class="sm-player" id="sm-p0"><span class="sm-name">You</span><b class="sm-score">0</b></div>
-    <div class="sm-bag"><b id="sm-bagn">—</b>bag</div>
+    <button class="sm-bag" id="sm-bag" title="Which tiles are still unseen"><b id="sm-bagn">—</b>bag</button>
     <div class="sm-player right" id="sm-p1"><span class="sm-name">Opponent</span><b class="sm-score">0</b></div>
   </div>
   <div class="sm-msg" id="sm-msg"></div>
@@ -132,15 +141,16 @@ window.SM_CONFIG = { url: "", key: "" };
       <div class="sm-panel" id="sm-online-panel" style="display:none"></div>
       <div class="sm-panel">
         <div class="sm-row" style="margin-top:0">
-          <button id="sm-new">New game</button>
+          <button id="sm-new">Games</button>
           <button id="sm-help">How to play</button>
+          <button id="sm-resign" class="danger">Resign</button>
         </div>
         <div class="sm-legend">
           <span><i style="background:var(--dl)"></i>2L</span><span><i style="background:var(--tl)"></i>3L</span>
           <span><i style="background:var(--dw)"></i>2W</span><span><i style="background:var(--tw)"></i>3W</span>
         </div>
         <div class="sm-keys" style="margin-top:8px">
-          <div><kbd>A</kbd>–<kbd>Z</kbd> type onto the cursor · <kbd>⌫</kbd> take back · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>
+          <div><kbd>A</kbd>–<kbd>Z</kbd> type onto the cursor · <kbd>→</kbd><kbd>↓</kbd> across or down · <kbd>⌫</kbd> take back · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>
         </div>
       </div>
     </aside>

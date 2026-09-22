@@ -13,7 +13,7 @@ const N = C.N;
 
 let fullDict = null;
 const dict = () => (fullDict ||= C.buildDict(readFileSync(join(dir, 'words.txt'), 'utf8')));
-const small = C.buildDict(['quilt', 'et', 'tailors', 'jump', 'aa', 'ab', 'ba', 'qi', 'ox', 'oxo', 'xu', 'flow', 'wolf', 'fowl', 'lo', 'of', 'ow', 'wo'].join('\n'));
+const small = C.buildDict(['quilt', 'et', 'tailors', 'jump', 'aa', 'ab', 'ba', 'qi', 'ox', 'oxo', 'xu', 'to', 'flow', 'wolf', 'fowl', 'lo', 'of', 'ow', 'wo'].join('\n'));
 
 const play = (word, r, c, down, blanks = []) => ({
   t: 'play',
@@ -92,7 +92,7 @@ test('cross words are scored and blanks are worth nothing', () => {
 
 test('placements fail for the right reasons', () => {
   let s = withRack(C.newGame(1), 'QUILTAB');
-  assert.match(C.check(s, play('QUILT', 0, 0, false), small).reason, /centre/);
+  assert.match(C.check(s, play('QUILT', 0, 0, false), small).reason, /center/);
   assert.match(C.check(s, play('QUILT', 7, 7, false), C.buildDict('aa')).reason, /QUILT is not in the word list/);
   assert.match(C.check(s, play('QUILTZ', 7, 7, false), small).reason, /not on your rack/);
   assert.match(C.check(s, play('T', 7, 7, false), small).reason, /two letters/);
@@ -132,12 +132,31 @@ test('the game ends the Crossplay way: one last turn each once the bag is empty,
   assert.match(C.check(t, { t: 'swap', tiles: ['A'] }, small).reason, /bag/);
 });
 
-test('four passes in a row end the game early', () => {
+test('four passes in a row end the game early, and a swap breaks the run', () => {
   let s = C.newGame(9);
   for (let i = 0; i < C.PASS_LIMIT - 1; i++) { s = C.apply(s, { t: 'pass' }, small); assert.equal(s.over, false); }
+  const t = C.apply(s, { t: 'swap', tiles: s.racks[s.turn].slice(0, 1) }, small);
+  assert.equal(t.passes, 0);
+  assert.equal(C.apply(t, { t: 'pass' }, small).over, false, 'pass, pass, pass, swap, pass is not four passes');
   s = C.apply(s, { t: 'pass' }, small);
   assert.equal(s.over, true);
   assert.equal(s.endReason, 'passes');
+  assert.equal(C.winner(s), s.scores[0] === s.scores[1] ? -1 : (s.scores[0] > s.scores[1] ? 0 : 1));
+});
+
+test('resigning ends the game and hands the win over regardless of score', () => {
+  let s = withRack(C.newGame(4), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), small);
+  assert.equal(s.scores[0], 34);
+  assert.equal(C.winner(s), null);
+  s = C.apply(s, { t: 'pass' }, small);
+  s = C.apply(s, { t: 'resign' }, small);
+  assert.equal(s.over, true);
+  assert.equal(s.endReason, 'resign');
+  assert.equal(s.resigned, 0);
+  assert.equal(C.winner(s), 1, 'the leader resigned, so the other player wins');
+  assert.equal(s.history[s.history.length - 1].t, 'resign');
+  assert.match(C.check(s, { t: 'pass' }, small).reason, /over/);
 });
 
 test('a swap is deterministic given the seed and the move list', () => {
@@ -208,6 +227,19 @@ test('the move generator finds exactly the legal plays', () => {
   const first = C.generate(C.newGame(1).board, ['Q', 'U', 'I', 'L', 'T', 'X', 'O'], small);
   assert.ok(first.some((m) => m.word === 'QUILT' && m.score === 34));
   assert.ok(first.every((m) => m.tiles.some((t) => t.r === 7 && t.c === 7)));
+});
+
+test('the generator will spend a blank early to save a real letter for a better square', () => {
+  // OXO along row 8 from column 11: the T of QUILT sits above the first O (TO),
+  // and the last O lands on a 3L. Blank first, real O on the 3L scores 12;
+  // the other way round scores 11.
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), small);
+  const moves = C.generate(s.board, ['O', 'X', '?'], small);
+  assert.equal(moves[0].score, 12, moves.slice(0, 3).map((m) => m.word + '=' + m.score).join(' '));
+  const oxo = moves.find((m) => m.word === 'OXO' && m.score === 12);
+  assert.ok(oxo);
+  assert.deepEqual(oxo.tiles.map((t) => [t.c, t.l, t.b]), [[11, 'O', true], [12, 'X', false], [13, 'O', false]]);
 });
 
 test('the generator uses blanks and every move it proposes is legal on the real list', () => {

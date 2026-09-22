@@ -13,7 +13,7 @@ instead of walling it off, and the ending is fairer. Nothing else from that game
 is here: not the app, not the look, not the name, and not its word list.
 
 **Rules.** Each player holds 7 tiles from a bag of 100, including three blanks.
-Words connect to what is on the board; the first covers the centre. Letter
+Words connect to what is on the board; the first covers the center. Letter
 values add up, the coloured squares double or triple a letter or the whole
 word, and playing all 7 tiles in one turn is a *sweep* worth 40 more. You can
 swap any of your tiles instead of playing, which uses the turn, or pass. Once
@@ -27,9 +27,14 @@ refuse. I am working on a licence for the NASPA list; when that lands it drops
 in as a file swap.
 
 **Playing.** Click a square and type, or click a rack tile and then a square;
-click the cursor square again to switch between across and down. The bot on
+the arrow keys (or a second click on the cursor square) switch between across
+and down. The score of what you have laid out shows as you go, and the board
+turns green when it is a legal play. The bag button shows which tiles are still
+unseen. The bot on
 *hard* always plays the highest-scoring move it can find, which is a fair
 picture of how much score is on the board each turn. The review at the end
-compares each of your turns with the best play that was available. Games
-against the bot and pass-and-play games are saved in this browser. Online games
-live on a small database and can be picked up from any device with the link.
+compares each of your turns with the best play that was available. Every game
+gets a three-word address like `/scrabble-mod/otter-slate-plum`. Games against
+the bot and pass-and-play games are saved in this browser under that address;
+online games live on a small database, and the private link in the side panel
+opens your seat from another device.
