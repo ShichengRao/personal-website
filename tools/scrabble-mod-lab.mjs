@@ -93,7 +93,7 @@ if (!isMainThread) {
 
 // ---- main side -------------------------------------------------------------
 function run(job, games, a, b) {
-  const workers = Math.max(1, Math.min(cpus().length - 2, games));   // leave two cores for the rest of the machine
+  const workers = Math.max(1, Math.min(+process.env.LAB_WORKERS || cpus().length - 2, games));   // leave two cores for the rest of the machine; LAB_WORKERS overrides
   const per = Math.ceil(games / workers);
   return Promise.all(Array.from({ length: workers }, (_, i) => new Promise((resolve, reject) => {
     const w = new Worker(fileURLToPath(import.meta.url), { workerData: { job, seed: 1000 + i * 7919, games: Math.min(per, games - i * per), offset: i * per, a, b } });

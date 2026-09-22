@@ -295,8 +295,11 @@ test('a stored game replays without the word list, so a list change cannot stran
 });
 
 test('equity counts the rack you keep, not just the score', () => {
-  assert.ok(C.leaveValue(['S', '?']) > 30);
-  assert.ok(C.leaveValue(['Q', 'U', 'U', 'V']) < -20);
+  assert.ok(C.leaveValue(['S', '?']) > 15, 'S and a blank are the best keep');
+  assert.ok(C.leaveValue(['Q', 'U', 'U', 'V']) < 0, 'Q with doubled U and a V is a liability');
+  assert.ok(C.leaveValue(['Q', 'V', 'W']) < -7, 'Q without a U, plus V and W, is worse still');
+  assert.ok(C.leaveValue(['Q', 'U']) > C.leaveValue(['Q']) + C.leaveValue(['U']), 'QU is worth more together');
+  assert.ok(C.leaveValue(['S', 'S']) < 2 * C.leaveValue(['S']), 'a second S is worth less than the first');
   assert.ok(C.leaveValue(['A', 'E', 'I', 'O', 'U']) < C.leaveValue(['A', 'E', 'R', 'S', 'T']), 'all vowels is a bad leave');
   assert.equal(C.leaveValue([]), 0);
   // With QUILT on the board and a rack of S ? Q A: dumping the Q for a small
@@ -371,8 +374,8 @@ test('the lookahead charges each candidate its sampled best reply', () => {
   assert.equal(f.pairs.length, 15, 'every unordered pair of the six tiles');
   assert.ok(f.pairs.includes('AA') && f.pairs.includes('??') && f.pairs.includes('?X') && f.pairs.includes('AE'));
   // pair synergies add on top of the singles
-  const before = C.leaveValue(['E', 'R']);
-  C.LEAVE2.ER = 2.5;
+  const before = C.leaveValue(['E', 'R']), had = C.LEAVE2.ER || 0;
+  C.LEAVE2.ER = had + 2.5;
   assert.equal(C.leaveValue(['E', 'R']), Math.round((before + 2.5) * 10) / 10);
-  delete C.LEAVE2.ER;
+  C.LEAVE2.ER = had;
 });

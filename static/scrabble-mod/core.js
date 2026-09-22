@@ -441,18 +441,55 @@
   // a penalty for duplicates and for a lopsided vowel/consonant mix. A rough
   // heuristic, but it is what separates "the highest score" from "the best
   // play": dumping a Q for 11 beats a 14 that keeps the Q.
-  // A next-score regression from 9,000 self-play games (tools/scrabble-mod-lab.mjs
-  // leaves) produced a table that played this one to a coin flip (49.8%),
-  // and scaling this table by 0.5 or the fitted one by 2 both lost, so these
-  // values stay.
-  const LEAVE = { A: 1, B: -3.5, C: -0.5, D: 0, E: 4, F: -2, G: -2, H: 0.5, I: -0.5, J: -3, K: -2.5, L: -1, M: -0.5,
-                  N: 0.5, O: -1.5, P: -1.5, Q: -11.5, R: 1.5, S: 8, T: 0, U: -4.5, V: -5.5, W: -4, X: 3.5, Y: -2, Z: 2, '?': 25 };
-  // per extra copy of a letter, per extra blank, per point of vowel/consonant skew beyond one
-  const LEAVE_TUNE = { dup: -3, blankDup: -12, skew: -1.5 };
+  // Fitted to leave values that MAGPIE's leavegen produced for this exact
+  // board and tile set (825,000 self-play games, generation 1), by least
+  // squares over singles, pairs and skew: tools/scrabble-mod-lab.mjs fitklv.
+  // In a 600-game arena this table beat the hand-written one 55.3% (+4.9 a
+  // game), and it lifts agreement with MAGPIE's static top play from 63% to
+  // 70% (top three: 80% to 98%). Duplicates are handled by the pair terms.
+  const LEAVE = { '?': 16.2, A: -0.4, B: -0.7, C: -1, D: -1.1, E: 0.6, F: -2.6, G: -0.6, H: -2.1, I: -1.2, J: 2, K: 1.1, L: 0.1, M: -1.1, N: -1, O: -1.6, P: -1.6, Q: -4.9, R: -0.4, S: 3.3, T: -1.5, U: -1.6, V: -1.8, W: -1.1, X: 1.3, Y: -0.5, Z: 3.1 };
+  const LEAVE_TUNE = { dup: 0, blankDup: 0, skew: 0.3 };
   // Pair synergies, keyed by the two tiles in order ('?' first, then A-Z):
-  // what holding both is worth beyond the two singles. Empty until fitted
-  // from a proper leave file (tools/scrabble-mod-lab.mjs fitklv).
-  const LEAVE2 = {};
+  // what holding both is worth beyond the two singles (QU is the classic;
+  // doubled letters are the big negatives).
+  const LEAVE2 = {
+    '??': -0.5, '?A': 0.7, '?B': -1.3, '?C': -0.6, '?D': -0.8, '?E': 1.4, '?F': -2.1, '?G': -0.8, '?H': -1.5,
+    '?I': 0.9, '?J': -2.4, '?K': -1.3, '?L': 0.4, '?M': -1.2, '?P': -1.5, '?Q': -3.1, '?S': 0.9, '?T': -0.4,
+    '?U': -0.7, '?V': -2.6, '?W': -2.5, '?X': -3.5, '?Y': -1.4, '?Z': -1, 'AA': -4.1, 'AB': 1.1, 'AC': 1,
+    'AD': 0.7, 'AE': -0.6, 'AF': 0.5, 'AG': 1, 'AH': 0.9, 'AI': -0.7, 'AJ': 1.7, 'AK': 0.9, 'AL': 1.4, 'AM': 1.3,
+    'AN': 0.9, 'AO': -1.3, 'AP': 0.8, 'AQ': 1, 'AR': 1.2, 'AS': 0.9, 'AT': 0.9, 'AU': -0.7, 'AV': 1.2, 'AW': 1.1,
+    'AX': 1.1, 'AY': 0.3, 'AZ': 1.5, 'BB': -2, 'BC': -0.8, 'BD': -0.6, 'BE': 0.7, 'BF': -0.7, 'BG': -0.9,
+    'BH': -0.6, 'BI': 0.6, 'BK': -0.3, 'BM': -0.4, 'BN': -0.8, 'BO': 1.4, 'BP': -1.5, 'BS': -0.8, 'BT': -0.7,
+    'BU': 1.1, 'BV': -1, 'BW': -0.6, 'BX': -0.6, 'BY': 0.3, 'BZ': -0.7, 'CC': -3.5, 'CD': -0.9, 'CE': 0.5,
+    'CF': -0.6, 'CG': -1.6, 'CH': 0.9, 'CI': 0.8, 'CJ': -1.1, 'CK': 1.8, 'CL': -0.6, 'CM': -0.6, 'CN': -0.7,
+    'CO': 1, 'CP': -0.6, 'CQ': -0.6, 'CR': -0.6, 'CS': -0.8, 'CT': -0.5, 'CU': 0.5, 'CV': -0.8, 'CW': -0.8,
+    'CX': -0.5, 'CZ': -1.2, 'DD': -2.6, 'DE': 1.9, 'DF': -0.4, 'DG': -0.6, 'DH': -0.5, 'DI': 0.7, 'DJ': -0.4,
+    'DK': -0.7, 'DL': -0.9, 'DM': -0.7, 'DN': -0.7, 'DO': 0.9, 'DP': -0.7, 'DQ': -0.3, 'DR': -0.8, 'DS': -1.2,
+    'DT': -1, 'DU': 0.5, 'DV': -0.6, 'DX': -0.3, 'DZ': -0.6, 'EE': -3.9, 'EF': 0.3, 'EG': 0.3, 'EI': -0.4,
+    'EJ': 0.8, 'EK': 0.7, 'EL': 1.1, 'EM': 0.3, 'EN': 0.6, 'EO': -0.8, 'EP': 0.6, 'EQ': -0.3, 'ER': 1.7,
+    'ES': 1.5, 'ET': 0.9, 'EU': -0.6, 'EV': 1.3, 'EW': 0.6, 'EX': 1.3, 'EY': -0.4, 'EZ': 1.4, 'FF': 0.8,
+    'FG': -0.5, 'FI': 0.9, 'FJ': -0.3, 'FK': -0.6, 'FM': -0.7, 'FN': -0.6, 'FO': 0.8, 'FP': -0.8, 'FQ': 0.5,
+    'FS': -0.9, 'FU': 1.2, 'FV': -0.6, 'FX': 0.6, 'FY': 0.4, 'GG': -2, 'GH': -0.3, 'GI': 1.3, 'GK': -1.7,
+    'GL': -0.5, 'GM': -0.6, 'GN': 0.8, 'GO': 0.8, 'GP': -0.9, 'GQ': -0.4, 'GR': -0.5, 'GS': -0.9, 'GT': -0.9,
+    'GU': 0.9, 'GV': -0.5, 'GW': -0.4, 'GX': -1.3, 'GY': 0.4, 'GZ': -0.9, 'HH': -2.6, 'HI': 0.3, 'HL': -0.8,
+    'HN': -0.6, 'HO': 0.7, 'HR': -0.6, 'HU': 0.3, 'HV': -0.5, 'HW': 0.9, 'HX': -0.3, 'HY': 0.4, 'HZ': -0.6,
+    'II': -4, 'IJ': 0.3, 'IK': 0.6, 'IL': 0.8, 'IM': 0.9, 'IN': 1.7, 'IO': -0.9, 'IP': 0.7, 'IQ': 0.5, 'IR': 0.3,
+    'IS': 1.1, 'IT': 0.8, 'IU': -1, 'IV': 1.2, 'IX': 1.3, 'IY': -0.4, 'IZ': 1.5, 'JK': -0.3, 'JL': -1.2,
+    'JM': -0.3, 'JO': 1.8, 'JP': -0.5, 'JR': -0.9, 'JS': -1.1, 'JT': -0.3, 'JU': 2, 'JV': -0.4, 'JX': -1.6,
+    'JZ': -2.9, 'KL': -0.5, 'KM': -0.9, 'KO': 0.9, 'KP': -0.4, 'KR': -0.3, 'KT': -0.9, 'KU': 0.7, 'KV': -1.3,
+    'KX': -2.2, 'KY': 0.4, 'KZ': -2, 'LL': -3.3, 'LM': -0.9, 'LN': -1.2, 'LO': 0.8, 'LP': -0.5, 'LQ': -0.9,
+    'LR': -1.5, 'LS': -0.7, 'LT': -0.9, 'LU': 0.6, 'LV': -0.5, 'LW': -0.3, 'LX': -0.5, 'LY': 1.1, 'LZ': -1.4,
+    'MM': -2.6, 'MN': -0.7, 'MO': 1.1, 'MP': -0.3, 'MQ': -0.3, 'MR': -0.6, 'MS': -0.5, 'MT': -0.7, 'MU': 0.9,
+    'MV': -0.9, 'MW': -0.6, 'MY': 0.6, 'MZ': -0.7, 'NN': -3.1, 'NO': 0.9, 'NP': -0.8, 'NQ': -0.7, 'NR': -1.2,
+    'NS': -0.8, 'NT': -0.7, 'NU': 0.4, 'NV': -0.7, 'NX': -0.3, 'NZ': -0.6, 'OO': -3, 'OP': 0.9, 'OR': 0.8,
+    'OS': 0.8, 'OT': 0.7, 'OU': -0.7, 'OV': 0.7, 'OW': 1.4, 'OX': 1.6, 'OY': 0.7, 'OZ': 1.8, 'PP': -2.2,
+    'PR': -0.3, 'PS': -0.3, 'PT': -0.4, 'PU': 0.7, 'PV': -0.9, 'PW': -0.4, 'PX': 0.3, 'PY': 1, 'PZ': -0.6,
+    'QR': -0.8, 'QS': -0.9, 'QU': 5.5, 'QW': 0.4, 'QX': 0.8, 'QY': 0.6, 'RR': -3.5, 'RS': -0.6, 'RT': -0.5,
+    'RU': 0.3, 'RV': -0.4, 'RX': -0.9, 'RZ': -0.8, 'SS': -5.1, 'SU': 0.9, 'SV': -1.1, 'SW': -0.5, 'SX': -1.8,
+    'SY': -0.6, 'SZ': -2, 'TT': -2.6, 'TU': 0.7, 'TV': -0.7, 'TW': -0.4, 'TZ': -0.5, 'UU': -4.2, 'UW': -0.7,
+    'UX': 0.6, 'UZ': -0.4, 'VV': -1.7, 'VY': 0.3, 'VZ': -1.4, 'WW': -3.4, 'WX': -0.5, 'WY': 0.5, 'WZ': -1.2,
+    'XY': 0.3, 'XZ': -2.1, 'YY': -5.6
+  };
   const pairKey = (a, b) => (a <= b ? a + b : b + a);
   // The features leaveValue scores: letter counts, pairs, duplicates, skew.
   // Shared with the tuning script so a fitted table means the same thing here.
