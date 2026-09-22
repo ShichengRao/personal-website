@@ -4,6 +4,7 @@
    node tools/scrabble-mod-lab.mjs arena <A> <B> [games]   A vs B, alternating first move
    node tools/scrabble-mod-lab.mjs leaves [games] [out.json] fit leave values from self-play
    node tools/scrabble-mod-lab.mjs bench [games]             moves per second
+   node tools/scrabble-mod-lab.mjs fitklv <leaves.csv> [out]  fit singles + pairs to a MAGPIE leave csv
 
    A profile is a level (easy, medium, hard) with options after colons:
      hard:noendgame          skip the exact endgame search
@@ -23,8 +24,8 @@ import { cpus } from 'node:os';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
 const C = require(join(root, 'static', 'scrabble-mod', 'core.js'));
-const BASE = { table: Object.assign({}, C.LEAVE), tune: Object.assign({}, C.LEAVE_TUNE) };
-const ZERO = { table: Object.fromEntries(Object.keys(C.LEAVE).map((k) => [k, 0])), tune: { dup: 0, blankDup: 0, skew: 0 } };
+const BASE = { table: Object.assign({}, C.LEAVE), pairs: Object.assign({}, C.LEAVE2), tune: Object.assign({}, C.LEAVE_TUNE) };
+const ZERO = { table: Object.fromEntries(Object.keys(C.LEAVE).map((k) => [k, 0])), pairs: {}, tune: { dup: 0, blankDup: 0, skew: 0 } };
 
 function parseProfile(spec) {
   const [level, ...opts] = spec.split(':');
@@ -33,13 +34,17 @@ function parseProfile(spec) {
     if (o === 'noendgame') p.noEndgame = true;
     else if (o === 'score') p.leaves = ZERO;
     else if (o.startsWith('leaves=')) p.leaves = JSON.parse(readFileSync(o.slice(7), 'utf8'));
-    else if (o.startsWith('scale=')) { const k = Number(o.slice(6)); p.leaves = { table: Object.fromEntries(Object.entries(p.leaves.table).map(([a, v]) => [a, v * k])), tune: Object.fromEntries(Object.entries(p.leaves.tune).map(([a, v]) => [a, v * k])) }; }
+    else if (o.startsWith('scale=')) { const k = Number(o.slice(6)); const sc = (obj) => Object.fromEntries(Object.entries(obj || {}).map(([a, v]) => [a, v * k])); p.leaves = { table: sc(p.leaves.table), pairs: sc(p.leaves.pairs), tune: sc(p.leaves.tune) }; }
     else if (o.startsWith('sim=')) { const [c, n, w] = o.slice(4).split('x').map(Number); p.sim = { cands: c, samples: n, weight: w || 1 }; }
     else throw new Error('unknown option ' + o);
   }
   return p;
 }
-function useLeaves(l) { Object.assign(C.LEAVE, l.table); Object.assign(C.LEAVE_TUNE, l.tune); }
+function useLeaves(l) {
+  Object.assign(C.LEAVE, l.table); Object.assign(C.LEAVE_TUNE, l.tune);
+  for (const k in C.LEAVE2) delete C.LEAVE2[k];
+  Object.assign(C.LEAVE2, l.pairs || {});
+}
 
 // ---- worker side -----------------------------------------------------------
 if (!isMainThread) {
@@ -165,6 +170,80 @@ async function leaves(games, outFile, rounds) {
   console.log('wrote', outFile);
 }
 
+// Fit our leave model (singles, pairs, skew) to a MAGPIE leave file: a CSV of
+// "leave,value" lines (leaves as tile strings, '?' for the blank), optionally
+// with a third count column used as the weight. Least squares on all rows.
+function fitKlv(file, outFile) {
+  const letters = Object.keys(C.LEAVE);
+  const pairKeys = [];
+  for (let i = 0; i < letters.length; i++) for (let j = i; j < letters.length; j++) pairKeys.push(C.pairKey(letters[i], letters[j]));
+  const idx = {};
+  letters.forEach((k, i) => { idx[k] = i; });
+  const pidx = {};
+  pairKeys.forEach((k, i) => { pidx[k] = letters.length + i; });
+  const D = letters.length + pairKeys.length + 1;   // + skew
+  const XtX = Array.from({ length: D }, () => new Float64Array(D)), Xty = new Float64Array(D);
+  let rows = 0, wsum = 0;
+  const cols = new Int32Array(32), vals = new Float64Array(32);
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const parts = line.trim().split(',');
+    if (parts.length < 2) continue;
+    const leave = parts[0].trim().toUpperCase().replace(/[^A-Z?]/g, '');
+    const y = Number(parts[1]);
+    if (!leave || !Number.isFinite(y) || leave.length > 6) continue;
+    const w = parts.length > 2 && Number.isFinite(Number(parts[2])) ? Math.max(1, Number(parts[2])) : 1;
+    const tiles = leave.split('');
+    if (tiles.some((t) => idx[t] === undefined)) continue;
+    const f = C.leaveFeatures(tiles);
+    let n = 0;
+    const seen = {};
+    for (const t in f.counts) { cols[n] = idx[t]; vals[n++] = f.counts[t]; }
+    for (const k of f.pairs) seen[k] = (seen[k] || 0) + 1;
+    for (const k in seen) { cols[n] = pidx[k]; vals[n++] = seen[k]; }
+    if (f.skew) { cols[n] = D - 1; vals[n++] = f.skew; }
+    for (let a = 0; a < n; a++) { Xty[cols[a]] += w * vals[a] * y; const row = XtX[cols[a]]; for (let b = 0; b < n; b++) row[cols[b]] += w * vals[a] * vals[b]; }
+    rows++; wsum += w;
+  }
+  for (let i = 0; i < D; i++) XtX[i][i] += 0.5;   // a little ridge
+  const M = XtX.map((row, i) => [...row, Xty[i]]);
+  for (let c = 0; c < D; c++) {
+    let piv = c;
+    for (let r = c + 1; r < D; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    if (Math.abs(M[c][c]) < 1e-9) continue;
+    const inv = 1 / M[c][c];
+    for (let r = 0; r < D; r++) {
+      if (r === c || !M[r][c]) continue;
+      const k = M[r][c] * inv;
+      for (let j = c; j <= D; j++) M[r][j] -= k * M[c][j];
+    }
+  }
+  const coef = M.map((row, i) => row[D] / (row[i] || 1));
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const table = Object.fromEntries(letters.map((k) => [k, r1(coef[idx[k]])]));
+  const pairs = {};
+  for (const k of pairKeys) { const v = r1(coef[pidx[k]]); if (Math.abs(v) >= 0.3) pairs[k] = v; }
+  const out = { table, pairs, tune: { dup: 0, blankDup: 0, skew: r1(coef[D - 1]) } };
+  // how well the model reproduces the file
+  useLeaves(out);
+  let se = 0, n = 0, worst = null;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const parts = line.trim().split(',');
+    if (parts.length < 2) continue;
+    const leave = parts[0].trim().toUpperCase().replace(/[^A-Z?]/g, ''), y = Number(parts[1]);
+    if (!leave || !Number.isFinite(y) || leave.length > 6 || leave.split('').some((t) => idx[t] === undefined)) continue;
+    const e = C.leaveValue(leave.split('')) - y;
+    se += e * e; n++;
+    if (!worst || Math.abs(e) > Math.abs(worst.e)) worst = { leave, y, e: r1(e) };
+  }
+  console.log(`${rows} leaves (weight ${Math.round(wsum)}), ${Object.keys(pairs).length} pair terms kept, rmse ${Math.sqrt(se / n).toFixed(2)}, worst ${JSON.stringify(worst)}`);
+  console.log('  letters:', Object.entries(table).map(([k, v]) => k + ' ' + v).join('  '));
+  console.log('  skew:', out.tune.skew, ' top pairs:', Object.entries(pairs).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => k + ' ' + v).join('  '));
+  console.log('  bottom pairs:', Object.entries(pairs).sort((a, b) => a[1] - b[1]).slice(0, 8).map(([k, v]) => k + ' ' + v).join('  '));
+  writeFileSync(outFile, JSON.stringify(out, null, 1));
+  console.log('wrote', outFile);
+}
+
 async function bench(games) {
   const res = await run('arena', games, 'hard', 'hard');
   const moves = res.reduce((a, r) => a + r.moves, 0), ms = Math.max(...res.map((r) => r.ms));
@@ -176,5 +255,6 @@ if (isMainThread) {
   if (cmd === 'arena') await arena(args[0] || 'hard', args[1] || 'hard:score', +(args[2] || 200));
   else if (cmd === 'leaves') await leaves(+(args[0] || 400), args[1] || join(root, 'tools', 'leaves.json'), +(args[2] || 2));
   else if (cmd === 'bench') await bench(+(args[0] || 28));
+  else if (cmd === 'fitklv') fitKlv(args[0], args[1] || join(root, 'tools', 'leaves.json'));
   else console.log('usage: arena <A> <B> [games] | leaves [games] [out.json] [rounds] | bench [games]');
 }

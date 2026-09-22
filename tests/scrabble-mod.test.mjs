@@ -366,5 +366,13 @@ test('the lookahead charges each candidate its sampled best reply', () => {
     assert.ok(pick.value >= m.value);
   }
   const f = C.leaveFeatures(['A', 'A', 'E', '?', '?', 'X']);
-  assert.deepEqual(f, { counts: { A: 2, E: 1, '?': 2, X: 1 }, dup: 1, blankDup: 1, skew: 1 });
+  assert.deepEqual(f.counts, { A: 2, E: 1, '?': 2, X: 1 });
+  assert.deepEqual([f.dup, f.blankDup, f.skew], [1, 1, 1]);
+  assert.equal(f.pairs.length, 15, 'every unordered pair of the six tiles');
+  assert.ok(f.pairs.includes('AA') && f.pairs.includes('??') && f.pairs.includes('?X') && f.pairs.includes('AE'));
+  // pair synergies add on top of the singles
+  const before = C.leaveValue(['E', 'R']);
+  C.LEAVE2.ER = 2.5;
+  assert.equal(C.leaveValue(['E', 'R']), Math.round((before + 2.5) * 10) / 10);
+  delete C.LEAVE2.ER;
 });

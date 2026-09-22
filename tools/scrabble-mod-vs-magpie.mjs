@@ -26,11 +26,22 @@ const require = createRequire(import.meta.url);
 const C = require(join(root, 'static', 'scrabble-mod', 'core.js'));
 const N = C.N;
 const [magpieDir, nPos = '40', iters = '1000'] = process.argv.slice(2);
+// MAGPIE_LEAVES names the leave file MAGPIE ranks with (CSW24 by default, or
+// a CSWMOD_gen_N made by leavegen); OUR_LEAVES points at a fitted table for
+// our engine (from the lab's leaves or fitklv commands).
+const MAGPIE_LEAVES = process.env.MAGPIE_LEAVES || 'CSW24';
+const OUR_LEAVES = process.env.OUR_LEAVES || null;
 if (!magpieDir || !existsSync(join(magpieDir, 'bin', 'magpie'))) {
   console.error('usage: node tools/scrabble-mod-vs-magpie.mjs <magpie dir> [positions] [iterations]');
   process.exit(1);
 }
 const dict = C.buildDict(readFileSync(join(root, 'static', 'scrabble-mod', 'words.txt'), 'utf8'));
+if (OUR_LEAVES) {
+  const l = JSON.parse(readFileSync(OUR_LEAVES, 'utf8'));
+  Object.assign(C.LEAVE, l.table); Object.assign(C.LEAVE_TUNE, l.tune);
+  for (const k in C.LEAVE2) delete C.LEAVE2[k];
+  Object.assign(C.LEAVE2, l.pairs || {});
+}
 
 // ---- positions from self-play ------------------------------------------------
 function samplePositions(count, seed) {
@@ -93,7 +104,7 @@ function parseMove(pos, word) {
 const MOVE_RE = /(\d+):\s+([A-O]\d+|\d+[A-O])\s+(\S+)\s+(.*)$/;
 function askMagpie(state) {
   const script = [
-    `set -lex CSWMOD -ld english_mod -bdn crossplay15 -bb 40 -wmp false -threads 4 -numplays 40 -hr false -leaves CSW24 -plies 2 -iterations ${iters}`,
+    `set -lex CSWMOD -ld english_mod -bdn crossplay15 -bb 40 -wmp false -threads 4 -numplays 40 -hr false -leaves ${MAGPIE_LEAVES} -plies 2 -iterations ${iters}`,
     'cgp ' + cgp(state), 'generate', 'shmoves 40', 'set -numplays 15', 'simulate', 'quit', ''
   ].join('\n');
   const r = spawnSync(join(magpieDir, 'bin', 'magpie'), ['set', '-mode', 'sync'], { cwd: magpieDir, input: script, encoding: 'utf8', maxBuffer: 64 << 20 });
@@ -147,7 +158,7 @@ for (const s of positions) {
 }
 console.table(rows);
 const pct = (a) => (100 * a / tally.n).toFixed(0) + '%';
-console.log(`${tally.n} positions, sim ${iters} iterations, 2 plies, MAGPIE leaves CSW24`);
+console.log(`${tally.n} positions, sim ${iters} iterations, 2 plies, MAGPIE leaves ${MAGPIE_LEAVES}, our leaves ${OUR_LEAVES || 'built in'}`);
 console.log(`generator/scoring: our best score equals MAGPIE's best score in ${pct(tally.maxScoreAgree)}; matched plays score the same in ${tally.scoreAgree}/${tally.scoreChecked}`);
 console.log(`static (MAGPIE equity): our top play is MAGPIE's #1 in ${pct(tally.statTop1)}, in its top 3 in ${pct(tally.statTop3)}, in its top 40 in ${pct(tally.statListed)}`);
 console.log(`sim (win%):             our top play is MAGPIE's #1 in ${pct(tally.simTop1)}, in its top 3 in ${pct(tally.simTop3)}, among the 15 simmed in ${pct(tally.simListed)}`);

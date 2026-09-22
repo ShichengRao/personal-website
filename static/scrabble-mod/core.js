@@ -449,25 +449,34 @@
                   N: 0.5, O: -1.5, P: -1.5, Q: -11.5, R: 1.5, S: 8, T: 0, U: -4.5, V: -5.5, W: -4, X: 3.5, Y: -2, Z: 2, '?': 25 };
   // per extra copy of a letter, per extra blank, per point of vowel/consonant skew beyond one
   const LEAVE_TUNE = { dup: -3, blankDup: -12, skew: -1.5 };
-  // The features leaveValue scores: letter counts, duplicates, skew. Shared
-  // with the tuning script so a fitted table means the same thing here.
+  // Pair synergies, keyed by the two tiles in order ('?' first, then A-Z):
+  // what holding both is worth beyond the two singles. Empty until fitted
+  // from a proper leave file (tools/scrabble-mod-lab.mjs fitklv).
+  const LEAVE2 = {};
+  const pairKey = (a, b) => (a <= b ? a + b : b + a);
+  // The features leaveValue scores: letter counts, pairs, duplicates, skew.
+  // Shared with the tuning script so a fitted table means the same thing here.
   function leaveFeatures(tiles) {
     const counts = {};
+    const pairs = [];
     let vowels = 0, cons = 0, dup = 0, blankDup = 0;
-    for (const t of tiles) {
+    for (let i = 0; i < tiles.length; i++) {
+      const t = tiles[i];
       counts[t] = (counts[t] || 0) + 1;
       if (counts[t] > 1) { if (t === '?') blankDup++; else dup++; }
+      for (let j = i + 1; j < tiles.length; j++) pairs.push(pairKey(t, tiles[j]));
       if (t === '?') continue;
       if ('AEIOU'.includes(t)) vowels++; else cons++;
     }
     const skew = tiles.length >= 3 ? Math.max(0, Math.abs(vowels - cons) - 1) : 0;
-    return { counts, dup, blankDup, skew };
+    return { counts, pairs, dup, blankDup, skew };
   }
   function leaveValue(tiles) {
     if (!tiles.length) return 0;
     const f = leaveFeatures(tiles);
     let v = 0;
     for (const t in f.counts) v += LEAVE[t] * f.counts[t];
+    for (const k of f.pairs) v += LEAVE2[k] || 0;
     v += LEAVE_TUNE.dup * f.dup + LEAVE_TUNE.blankDup * f.blankDup + LEAVE_TUNE.skew * f.skew;
     return Math.round(v * 10) / 10;
   }
@@ -565,5 +574,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE_TUNE, endgameMove, lookahead, botMove, transpose };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, endgameMove, lookahead, botMove, transpose };
 });
