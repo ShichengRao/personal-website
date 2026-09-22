@@ -2,6 +2,6 @@
   "name": "personal-website",
   "private": true,
   "scripts": {
-    "test": "node --test tests/smoke.test.mjs tests/long-game.test.mjs tests/replay.test.mjs"
+    "test": "node --test tests/smoke.test.mjs tests/long-game.test.mjs tests/replay.test.mjs tests/scrabble-mod.test.mjs"
   }
 }

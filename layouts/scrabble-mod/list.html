@@ -1,0 +1,157 @@
+{{ define "head" }}
+<style>
+/* Scrabble Mod. Everything is scoped to .sm-app so the palette and the generic
+   class names never leak into the theme. */
+.sm-app{
+ --bg:#f6f4ee;--surface:#fffdf8;--plane:#ece9e0;--ring:#d8d3c6;
+ --text:#1d2126;--muted:#6e7480;--soft:#454b55;
+ --accent:#1f6f6a;--accent-ink:#fff;--tile:#22515a;--tile-ink:#fbf6e9;--pend:#3f8f86;--recent:#c99a2e;
+ --dl:#dce8f6;--dl-ink:#2f5d8f;--tl:#d6ead9;--tl-ink:#2b6b45;--dw:#f6e3b7;--dw-ink:#8a5f0c;--tw:#f4cccc;--tw-ink:#a13333;
+ --good:#2e8b57;--bad:#c0392b;
+ box-sizing:border-box;margin:0 auto;max-width:1080px;padding:14px 16px 36px;
+ background:var(--bg);color:var(--text);border-radius:12px;
+ font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;position:relative}
+.sm-app *{box-sizing:border-box}
+.sm-app .sm-top{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center}
+.sm-app .sm-player{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;border:1px solid var(--ring);background:var(--surface)}
+.sm-app .sm-player.right{flex-direction:row-reverse;text-align:right}
+.sm-app .sm-player.turn{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,111,106,.18)}
+.sm-app .sm-player .sm-name{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sm-app .sm-player .sm-score{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.sm-app .sm-bag{text-align:center;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;min-width:48px}
+.sm-app .sm-bag b{display:block;font-size:20px;color:var(--text);letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
+.sm-app .sm-msg{text-align:center;margin:10px 0 12px;font-size:15px;color:var(--soft);min-height:22px}
+.sm-app .sm-msg b{color:var(--text)}
+.sm-app .sm-cols{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px;align-items:start}
+@media(max-width:860px){.sm-app .sm-cols{grid-template-columns:1fr}}
+.sm-app .sm-main{max-width:600px;margin:0 auto;width:100%}
+.sm-app .sm-board{display:grid;grid-template-columns:repeat(15,1fr);gap:2px;padding:4px;background:var(--plane);
+ border:1px solid var(--ring);border-radius:8px;aspect-ratio:1;outline:none;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.sm-app .sm-board:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.sm-app .sm-cell{position:relative;display:flex;align-items:center;justify-content:center;border-radius:3px;background:var(--surface);
+ font-size:clamp(7px,1.6vw,11px);font-weight:700;color:var(--muted);cursor:pointer;overflow:hidden}
+.sm-app .sm-cell.b-2L{background:var(--dl);color:var(--dl-ink)}
+.sm-app .sm-cell.b-3L{background:var(--tl);color:var(--tl-ink)}
+.sm-app .sm-cell.b-2W{background:var(--dw);color:var(--dw-ink)}
+.sm-app .sm-cell.b-3W{background:var(--tw);color:var(--tw-ink)}
+.sm-app .sm-cell.b-c::before{content:"";width:34%;height:34%;border-radius:50%;background:var(--ring)}
+.sm-app .sm-cell.cursor{box-shadow:inset 0 0 0 2px var(--accent)}
+.sm-app .sm-cell.cursor::after{content:"\2192";position:absolute;right:2px;bottom:0;font-size:clamp(8px,1.8vw,12px);color:var(--accent)}
+.sm-app .sm-cell.cursor.down::after{content:"\2193"}
+.sm-app .sm-tile{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:3px;
+ background:var(--tile);color:var(--tile-ink);font-weight:700;font-size:clamp(11px,2.6vw,20px);line-height:1}
+.sm-app .sm-tile i{position:absolute;top:1px;right:2px;font-style:normal;font-size:clamp(6px,1.2vw,9px);font-weight:600;opacity:.85}
+.sm-app .sm-tile.blank span{opacity:.75;text-decoration:underline dotted}
+.sm-app .sm-cell .sm-tile.pending{background:var(--pend);box-shadow:0 0 0 2px var(--accent-ink),0 0 0 3px var(--pend)}
+.sm-app .sm-cell .sm-tile.recent{box-shadow:inset 0 0 0 2px var(--recent)}
+.sm-app .sm-rack{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-width:400px;margin:14px auto 0;padding:8px;border-radius:10px;
+ background:var(--plane);border:1px solid var(--ring)}
+.sm-app .sm-slot{aspect-ratio:1;border-radius:6px;background:rgba(0,0,0,.05);cursor:pointer}
+.sm-app .sm-slot .sm-tile{border-radius:6px;font-size:clamp(18px,5vw,26px)}
+.sm-app .sm-slot .sm-tile i{font-size:clamp(9px,2vw,11px);top:3px;right:4px}
+.sm-app .sm-slot.sel .sm-tile{transform:translateY(-4px);box-shadow:0 4px 0 var(--accent)}
+.sm-app .sm-slot.mark .sm-tile{background:var(--bad);opacity:.85}
+.sm-app .sm-slot.hidden .sm-tile{background:var(--ring);color:transparent}
+.sm-app .sm-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.sm-app button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--ring);background:var(--surface);color:var(--text);cursor:pointer}
+.sm-app button:hover{border-color:var(--muted)}
+.sm-app button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;min-width:96px}
+.sm-app button.danger{border-color:var(--bad);color:var(--bad)}
+.sm-app button:disabled{opacity:.4;cursor:default}
+.sm-app input[type=text]{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--ring);background:#fff;color:var(--text);width:100%}
+.sm-app .sm-status{text-align:center;font-size:13px;color:var(--soft);margin-top:10px;min-height:20px}
+.sm-app .sm-status.bad{color:var(--bad)}
+.sm-app .sm-status.good{color:var(--good)}
+.sm-app .sm-panel{background:var(--surface);border:1px solid var(--ring);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.sm-app .sm-k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px}
+.sm-app .sm-log{list-style:none;margin:0;padding:0;font-size:13px;max-height:340px;overflow:auto;color:var(--soft)}
+.sm-app .sm-log li{padding:3px 0;border-bottom:1px dashed var(--ring);display:flex;justify-content:space-between;gap:8px}
+.sm-app .sm-log li:last-child{border-bottom:0}
+.sm-app .sm-log li b{color:var(--text);font-variant-numeric:tabular-nums}
+.sm-app .sm-log li .who{color:var(--muted);margin-right:4px}
+.sm-app .sm-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.sm-app .sm-note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px}
+.sm-app .sm-code{font-family:ui-monospace,Menlo,monospace;font-size:14px;letter-spacing:.1em;background:var(--plane);padding:2px 8px;border-radius:6px}
+.sm-app .sm-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:20px;
+ background:rgba(246,244,238,.88);backdrop-filter:blur(3px);border-radius:12px;z-index:5}
+.sm-app .sm-overlay.is-open{display:flex}
+.sm-app .sm-card{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:20px 22px;max-width:460px;width:100%;
+ box-shadow:0 10px 30px rgba(0,0,0,.08);text-align:center;max-height:100%;overflow:auto}
+.sm-app .sm-card h2{margin:0 0 6px;font-size:22px;letter-spacing:-.01em}
+.sm-app .sm-card p{margin:0 0 12px;color:var(--soft);font-size:14px;line-height:1.5}
+.sm-app .sm-card .sm-choices{display:grid;gap:8px;margin:12px 0}
+.sm-app .sm-card .sm-choices button{padding:10px 12px;text-align:left}
+.sm-app .sm-card .sm-choices button small{display:block;color:var(--muted);font-weight:400;font-size:12px}
+.sm-app .sm-letters{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:12px 0}
+.sm-app .sm-letters button{padding:8px 0;font-weight:700}
+.sm-app .sm-final{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin:12px 0;font-size:15px}
+.sm-app .sm-final b{font-size:26px;display:block;font-variant-numeric:tabular-nums}
+.sm-app .sm-review{text-align:left;font-size:13px;color:var(--soft);margin:10px 0;max-height:220px;overflow:auto}
+.sm-app .sm-review div{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--ring)}
+.sm-app .sm-review b{color:var(--text);font-variant-numeric:tabular-nums}
+.sm-app .sm-review .miss{color:var(--bad)}
+.sm-app .sm-keys{font-size:13px;color:var(--soft);line-height:1.7}
+.sm-app .sm-keys kbd{display:inline-block;min-width:22px;padding:0 6px;border-radius:5px;border:1px solid var(--ring);border-bottom-width:2px;
+ background:var(--plane);font:12px/20px ui-monospace,Menlo,monospace;color:var(--text);text-align:center}
+.sm-app .sm-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.sm-app .sm-legend i{display:inline-block;width:22px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:4px}
+</style>
+<script>
+/* Online play needs a Supabase project (see plans/scrabble-mod-supabase.sql).
+   Leave both blank and the page offers the bot and pass-and-play only. */
+window.SM_CONFIG = { url: "", key: "" };
+</script>
+{{ end }}
+
+{{ define "main" }}
+<div id="sm-app" class="sm-app">
+  <div class="sm-top">
+    <div class="sm-player" id="sm-p0"><span class="sm-name">You</span><b class="sm-score">0</b></div>
+    <div class="sm-bag"><b id="sm-bagn">—</b>bag</div>
+    <div class="sm-player right" id="sm-p1"><span class="sm-name">Opponent</span><b class="sm-score">0</b></div>
+  </div>
+  <div class="sm-msg" id="sm-msg"></div>
+  <div class="sm-cols">
+    <div class="sm-main">
+      <div class="sm-board" id="sm-board" tabindex="0" aria-label="Board: click a square, then type, or click a rack tile and then a square"></div>
+      <div class="sm-rack" id="sm-rack" aria-label="Your rack"></div>
+      <div class="sm-actions">
+        <button id="sm-recall" title="Escape">Recall</button>
+        <button id="sm-shuffle">Shuffle</button>
+        <button id="sm-swap">Swap</button>
+        <button id="sm-pass">Pass</button>
+        <button class="primary" id="sm-play" title="Enter">Play</button>
+      </div>
+      <div class="sm-status" id="sm-status" aria-live="polite"></div>
+    </div>
+    <aside class="sm-side">
+      <div class="sm-panel">
+        <div class="sm-k">Moves</div>
+        <ol class="sm-log" id="sm-log"></ol>
+      </div>
+      <div class="sm-panel" id="sm-online-panel" style="display:none"></div>
+      <div class="sm-panel">
+        <div class="sm-row" style="margin-top:0">
+          <button id="sm-new">New game</button>
+          <button id="sm-help">How to play</button>
+        </div>
+        <div class="sm-legend">
+          <span><i style="background:var(--dl)"></i>2L</span><span><i style="background:var(--tl)"></i>3L</span>
+          <span><i style="background:var(--dw)"></i>2W</span><span><i style="background:var(--tw)"></i>3W</span>
+        </div>
+        <div class="sm-keys" style="margin-top:8px">
+          <div><kbd>A</kbd>–<kbd>Z</kbd> type onto the cursor · <kbd>⌫</kbd> take back · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <div class="sm-overlay" id="sm-overlay"></div>
+</div>
+
+<article class="ph3 ph4-ns pv4">
+  <div style="max-width:42rem;margin:0 auto" class="nested-copy-line-height nested-links">{{ .Content }}</div>
+</article>
+
+<script src="/scrabble-mod/core.js"></script>
+<script src="/scrabble-mod/app.js"></script>
+{{ end }}

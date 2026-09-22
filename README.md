@@ -21,13 +21,13 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: homepage projects grid, the self-contained Hangul practice app, the Blunder Drill page, the Long Game hub and game pages, favicon partial |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`) |
+| `layouts/` | Custom templates: homepage projects grid, the self-contained Hangul practice app, the Blunder Drill page, the Long Game hub and game pages, the Scrabble Mod page, favicon partial |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`), the Scrabble Mod engine and word list (`static/scrabble-mod/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
-| `plans/` | Product notes for side projects |
-| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip. New test files must be added to the `test` script in `package.json` |
+| `plans/` | Product notes for side projects, and the Supabase schema for Scrabble Mod's online games |
+| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Scrabble Mod scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
 
@@ -69,3 +69,22 @@ stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
 - Old URLs (`/church/`, `/vine/`, `/deskbooks/`, `/livestream/`, the dated resume
   filename) are 301-redirected in `netlify.toml`; add a redirect there before
   removing or renaming any public path.
+
+## Scrabble Mod
+
+`/scrabble-mod/` is a two-player word game with the board, tile values and
+ending of the New York Times' Crossplay, none of its branding, and the
+public-domain ENABLE word list (`static/scrabble-mod/words.txt`, one word per
+line; swap the file to change lists). `static/scrabble-mod/core.js` holds the
+rules with no DOM in them: the layout, the seeded bag, placement checks,
+scoring, a trie over the word list and an Appel–Jacobson move generator that
+powers the bot and the end-of-game review. It loads in Node, which is how the
+tests check it. `app.js` is the page: board and rack, the bot, pass-and-play,
+and online games.
+
+A game is its seed plus its move list; `core.replay` rebuilds everything else,
+so online play only stores those two things. To turn online play on, create a
+Supabase project, run `plans/scrabble-mod-supabase.sql` in its SQL editor and
+put the project URL and publishable key into `window.SM_CONFIG` in
+`layouts/scrabble-mod/list.html`. Until then the page offers the bot and
+pass-and-play only.

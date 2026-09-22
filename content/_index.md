@@ -16,6 +16,9 @@ projects:
   - name: "The Long Game"
     url: "/long-game/"
     blurb: "A bullet hell, a racing game and a platformer rebuilt so that patience and position win. The fast way still exists in each."
+  - name: "Scrabble Mod"
+    url: "/scrabble-mod/"
+    blurb: "A two-player word game with rebalanced tile values and a fairer ending. Play the bot, pass the device, or send a friend a link."
 ---
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)
