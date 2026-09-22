@@ -172,9 +172,11 @@
     const used = new Set(pending.map((t) => t.ri));
     let html = '';
     for (let i = 0; i < C.RACK; i++) {
-      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : ''].join(' ').trim();
+      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : '', drag && drag.active && drag.src.kind === 'rack' && drag.src.i === i ? 'lifted' : ''].join(' ').trim();
       const t = rack[i];
-      html += '<div class="' + cls + '" data-i="' + i + '">' + (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '') + '</div>';
+      // while hidden between pass-and-play turns, show anonymous backs: the letters must not reach the page at all
+      const inner = G.hidden ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
+      html += '<div class="' + cls + '" data-i="' + i + '">' + inner + '</div>';
     }
     ui.rack.innerHTML = html;
   }
@@ -336,28 +338,69 @@
   });
 
   // ---- dragging tiles ---------------------------------------------------------
-  let drag = null;   // { src: {kind:'rack', i} | {kind:'pending', pi}, x, y, active, ghost, over }
+  // A tile lifted from the rack (or a placed tile) follows the finger. While
+  // it is over the rack band the other tiles slide out of its way live, so
+  // dropping anywhere in the band reorders the rack; over an empty square it
+  // is placed. The band is generous above and below the rack.
+  let drag = null;   // { src: {kind:'rack', i} | {kind:'pending', pi}, x, y, active, ghost, over, pointerId }
+  const BAND = 70;
+  function rackBand(x, y) {
+    const r = ui.rack.getBoundingClientRect();
+    return y >= r.top - BAND && y <= r.bottom + BAND && x >= r.left - 20 && x <= r.right + 20;
+  }
+  function slotIndexAt(x, count) {
+    const r = ui.rack.getBoundingClientRect();
+    const w = r.width / C.RACK;
+    return Math.max(0, Math.min(count - 1, Math.floor((x - r.left) / w)));
+  }
   function dropTarget(x, y) {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
-    const slot = el.closest('.sm-slot');
-    if (slot && ui.rack.contains(slot)) return { kind: 'slot', el: slot, i: +slot.dataset.i };
     const cell = el.closest('.sm-cell');
     if (cell && ui.board.contains(cell)) return { kind: 'cell', el: cell, i: +cell.dataset.i };
     return null;
   }
+  // Slide the rack's tiles from where they were to where they are now.
+  function animateRack(order) {
+    const slots = [...ui.rack.querySelectorAll('.sm-slot')];
+    slots.forEach((slot, j) => {
+      const tile = slot.querySelector('.sm-tile');
+      if (!tile || order[j] === undefined || order[j] === j) return;
+      const from = slots[order[j]].getBoundingClientRect(), to = slot.getBoundingClientRect();
+      const dx = from.left - to.left;
+      if (!dx) return;
+      tile.style.transition = 'none';
+      tile.style.transform = 'translateX(' + dx + 'px)';
+      tile.getBoundingClientRect();
+      tile.style.transition = 'transform .16s ease-out';
+      tile.style.transform = '';
+    });
+  }
+  function liveReorder(rack, from, to) {
+    const order = rack.map((_, i) => i);
+    const [m] = order.splice(from, 1);
+    order.splice(to, 0, m);
+    reorderRack(rack, from, to);
+    renderRack();
+    animateRack(order);   // order[newIndex] = oldIndex
+  }
+  function endDrag(d) {
+    if (d.ghost) d.ghost.remove();
+    if (d.over) d.over.el.classList.remove('drop');
+    drag = null;
+  }
   function onPointerDown(e) {
-    if (!G || R || G.hidden || viewer() === null || swapMode || e.button !== 0) return;
+    if (!G || R || G.hidden || viewer() === null || swapMode || e.button !== 0 || pinch.size) return;
     const tile = e.target.closest('.sm-tile');
     if (!tile) return;
     const slot = tile.closest('.sm-slot');
     let src = null;
-    if (slot && ui.rack.contains(slot)) src = { kind: 'rack', i: +slot.dataset.i, el: slot };
+    if (slot && ui.rack.contains(slot)) src = { kind: 'rack', i: +slot.dataset.i };
     else if (tile.classList.contains('pending')) {
       const cell = tile.closest('.sm-cell');
       const pi = pending.findIndex((t) => t.r * N + t.c === +cell.dataset.i);
       if (pi < 0 || !myTurn()) return;
-      src = { kind: 'pending', pi, el: cell };
+      src = { kind: 'pending', pi };
     }
     if (!src) return;
     if (src.kind === 'rack' && pending.some((t) => t.ri === src.i)) return;
@@ -365,10 +408,11 @@
   }
   function onPointerMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
+    if (pinch.size > 1) { endDrag(drag); render(); return; }
+    const rack = G.state.racks[viewer()];
     if (!drag.active) {
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
       drag.active = true;
-      const rack = G.state.racks[viewer()];
       const t = drag.src.kind === 'rack' ? rack[drag.src.i] : pending[drag.src.pi].l;
       const b = drag.src.kind === 'rack' ? t === '?' : pending[drag.src.pi].b;
       const ghost = document.createElement('div');
@@ -376,39 +420,51 @@
       ghost.innerHTML = tileHtml(t === '?' ? '?' : t, b, '');
       ui.app.appendChild(ghost);
       drag.ghost = ghost;
-      drag.src.el.classList.add('lifted');
       try { e.target.setPointerCapture(drag.pointerId); } catch (err) { /* fine */ }
+      render();
     }
     e.preventDefault();
     drag.ghost.style.left = e.clientX + 'px';
     drag.ghost.style.top = e.clientY + 'px';
+    if (rackBand(e.clientX, e.clientY)) {
+      if (drag.over) { drag.over.el.classList.remove('drop'); drag.over = null; }
+      if (drag.src.kind === 'pending') {
+        // back into the rack: it becomes a rack tile and slides in where the finger is
+        const t = pending[drag.src.pi];
+        pending.splice(drag.src.pi, 1);
+        cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false };
+        draftChanged();
+        drag.src = { kind: 'rack', i: t.ri };
+        render();
+      }
+      const idx = slotIndexAt(e.clientX, rack.length);
+      if (idx !== drag.src.i) { const from = drag.src.i; drag.src.i = idx; liveReorder(rack, from, idx); }
+      return;
+    }
     const target = dropTarget(e.clientX, e.clientY);
     if (drag.over && (!target || drag.over.el !== target.el)) drag.over.el.classList.remove('drop');
     if (target && (!drag.over || drag.over.el !== target.el)) {
-      const ok = target.kind === 'slot' || (myTurn() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i));
+      const ok = myTurn() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i);
       if (ok) target.el.classList.add('drop');
     }
     drag.over = target;
   }
-  function onPointerUp(e) {
+  async function onPointerUp(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
-    const d = drag; drag = null;
-    if (!d.active) return;   // a plain click; the click handlers take it
+    const d = drag;
+    if (!d.active && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) { drag = null; return; }   // a plain click; the click handlers take it
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
-    d.ghost.remove();
-    d.src.el.classList.remove('lifted');
-    if (d.over) d.over.el.classList.remove('drop');
-    const target = dropTarget(e.clientX, e.clientY);
+    endDrag(d);
     const rack = G.state.racks[viewer()];
-    if (!target) { render(); return; }
-    if (target.kind === 'slot') {
-      const to = Math.min(target.i, rack.length - 1);
-      if (d.src.kind === 'rack') reorderRack(rack, d.src.i, to);
-      else { const t = pending[d.src.pi]; pending.splice(d.src.pi, 1); reorderRack(rack, t.ri, to); cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false }; draftChanged(); }
-      render();
-      return;
+    if (rackBand(e.clientX, e.clientY)) {
+      // a press-and-release jump with no moves in between (some pointers do that): settle it here
+      if (d.src.kind === 'pending') { const t = pending[d.src.pi]; pending.splice(d.src.pi, 1); cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false }; draftChanged(); d.src = { kind: 'rack', i: t.ri }; }
+      const idx = slotIndexAt(e.clientX, rack.length);
+      if (idx !== d.src.i) reorderRack(rack, d.src.i, idx);
+      render(); return;
     }
-    if (!myTurn()) { render(); return; }
+    const target = dropTarget(e.clientX, e.clientY);
+    if (!target || !myTurn()) { render(); return; }
     const r = Math.floor(target.i / N), c = target.i % N;
     if (G.state.board[target.i] || pending.some((t) => t.r === r && t.c === c)) { render(); return; }
     if (d.src.kind === 'rack') { place(r, c, d.src.i, rack[d.src.i] === '?'); return; }
@@ -418,12 +474,47 @@
     advance();
     draftChanged();
     render();
+    if (t.b) {   // a blank moved to a new square: ask again which letter it is
+      const l = await pickLetter();
+      if (l && pending.includes(t)) { t.l = l; render(); }
+    }
   }
   ui.rack.addEventListener('pointerdown', onPointerDown);
   ui.board.addEventListener('pointerdown', onPointerDown);
   document.addEventListener('pointermove', onPointerMove, { passive: false });
   document.addEventListener('pointerup', onPointerUp);
-  document.addEventListener('pointercancel', (e) => { if (drag && drag.active) { drag.ghost.remove(); drag.src.el.classList.remove('lifted'); if (drag.over) drag.over.el.classList.remove('drop'); } drag = null; });
+  document.addEventListener('pointercancel', () => { if (drag) { endDrag(drag); render(); } });
+
+  // ---- pinch to zoom the board ---------------------------------------------------
+  // Two fingers on the board frame scale it between 1x and 3x around the
+  // pinch midpoint; the frame's touch-action leaves single-finger scrolling
+  // to the browser and keeps its page zoom out of it.
+  const pinch = new Map();
+  let pinchStart = null;
+  ui.wrap.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.size === 2) {
+      const [a, b] = [...pinch.values()];
+      pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+      if (drag) { endDrag(drag); render(); }
+    }
+  }, true);
+  ui.wrap.addEventListener('pointermove', (e) => {
+    if (!pinch.has(e.pointerId)) return;
+    pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.size !== 2 || !pinchStart) return;
+    e.preventDefault();
+    const [a, b] = [...pinch.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const next = Math.max(1, Math.min(3, pinchStart.zoom * dist / pinchStart.dist));
+    const wr = ui.wrap.getBoundingClientRect();
+    const mx = (a.x + b.x) / 2 - wr.left, my = (a.y + b.y) / 2 - wr.top;
+    setZoom(next, mx, my, false);
+  }, { passive: false });
+  const pinchEnd = (e) => { if (!pinch.has(e.pointerId)) return; pinch.delete(e.pointerId); if (pinch.size < 2) { pinchStart = null; store.set('sm.zoom', zoom); } };
+  ui.wrap.addEventListener('pointerup', pinchEnd, true);
+  ui.wrap.addEventListener('pointercancel', pinchEnd, true);
 
   // ---- keyboard ------------------------------------------------------------------
   document.addEventListener('keydown', (e) => {
@@ -537,8 +628,18 @@
     setStatus('');
     integrate(moves, null);
   }
+  // A move arrived while a review snapshot exists: extend it rather than
+  // leaving navigation pointing at positions it does not have.
+  function extendReview() {
+    if (!R) return;
+    while (R.states.length < G.state.moves.length + 1) {
+      const k = R.states.length - 1;
+      R.states.push(C.apply(R.states[k], G.state.moves[k], null));
+    }
+  }
   function applyLocal(move) {
     G.state = C.apply(G.state, move, dict);
+    extendReview();
     resetTurnUi();
     setStatus('');
     if (G.kind === 'hotseat' && !G.state.over) G.hidden = true;
@@ -659,8 +760,11 @@
       playedLabel = 'passed';
     }
     const best = list[0] || null;
-    const gap = best ? Math.round((best.equity - playedEquity) * 10) / 10 : 0;
-    const a = { list, played, playedEquity, playedLabel, best, gap, grade: !best || gap <= 0.5 ? 'best' : gap >= 8 ? 'miss' : 'ok' };
+    // Ratings: the best play is 100, every other play its share of that.
+    const rate = (eq) => !best ? 100 : best.equity > 0 ? Math.max(0, Math.round(100 * eq / best.equity)) : Math.max(0, Math.round(100 - 4 * (best.equity - eq)));
+    for (const m of list) m.rating = rate(m.equity);
+    const rating = rate(playedEquity);
+    const a = { list, played, playedEquity, playedLabel, best, rating, grade: !best || rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
     R.cands.set(k, a);
     return a;
   }
@@ -672,7 +776,7 @@
       if (!alive(session) || !R || R.states !== states) return;
       const t0 = Date.now();
       while (k <= G.state.moves.length && Date.now() - t0 < 40) {
-        if (canAnalyze(k) && G.state.moves[k - 1].t !== 'resign') { const a = analysis(k); rows.push({ k, p: states[k - 1].turn, grade: a.grade, gap: a.gap, label: a.playedLabel, best: a.best }); }
+        if (canAnalyze(k) && G.state.moves[k - 1].t !== 'resign') { const a = analysis(k); rows.push({ k, p: states[k - 1].turn, grade: a.grade, rating: a.rating, label: a.playedLabel, best: a.best }); }
         k++;
       }
       R.summary = { rows, done: k > G.state.moves.length };
@@ -707,25 +811,36 @@
       const rankTxt = an.played === null ? '' : an.played < 0 ? '' : ' (#' + (an.played + 1) + ' of ' + an.list.length + ')';
       if (!an.best) a += '<div class="sm-verdict">No play was available; ' + esc(who.toLowerCase() === 'you' ? 'you' : who) + ' ' + esc(an.playedLabel) + '.</div>';
       else if (an.grade === 'best') a += '<div class="sm-verdict best"><b>' + esc(who) + ' found the best play.</b> ' + esc(an.playedLabel) + rankTxt + '.</div>';
-      else a += '<div class="sm-verdict ' + (an.grade === 'miss' ? 'miss' : '') + '"><b>' + esc(who) + ': ' + esc(an.playedLabel) + rankTxt + '.</b> ' + esc(an.best.word) + ' for ' + an.best.score + ' was worth <b>' + an.gap + '</b> more once the rack it keeps is counted.</div>';
-      const top = an.list.slice(0, 5);
-      if (an.played >= 5) top.push(an.list[an.played]);
+      else a += '<div class="sm-verdict ' + (an.grade === 'miss' ? 'miss' : '') + '"><b>' + esc(who) + ': ' + esc(an.playedLabel) + rankTxt + ', rated <b>' + an.rating + '</b>.</b> The best play was ' + esc(an.best.word) + ' for ' + an.best.score + '.</div>';
+      // the same word in several spots with the same score is one line, unless one of them is the played spot
+      const top = [];
+      const seenKey = new Set();
+      for (const m of an.list) {
+        const key = m.word + '|' + m.score + '|' + m.keeps;
+        const idx = an.list.indexOf(m);
+        if (idx === an.played) { top.push(m); seenKey.add(key); continue; }
+        if (seenKey.has(key)) continue;
+        if (top.length >= 5) break;
+        seenKey.add(key); top.push(m);
+      }
+      if (an.played >= 0 && !top.includes(an.list[an.played])) top.push(an.list[an.played]);
       if (top.length) {
-        a += '<div class="sm-cands"><div class="head"><span>Top plays</span><span>score</span><span>keep</span><span>total</span></div>';
+        a += '<div class="sm-cands"><div class="head"><span>Top plays</span><span>score</span><span></span><span>rating</span></div>';
         top.forEach((m) => {
           const idx = an.list.indexOf(m);
-          a += '<div data-c="' + idx + '" class="' + (idx === an.played ? 'played' : '') + (R.ghost === m ? ' ghost' : '') + '"><span><b>' + esc(m.word) + '</b> <small>' + (m.keeps ? 'keeps ' + esc(m.keeps) : 'plays out') + '</small></span><span>' + m.score + '</span><span>' + (m.leave >= 0 ? '+' : '') + m.leave + '</span><b>' + m.equity + '</b></div>';
+          a += '<div data-c="' + idx + '" class="' + (idx === an.played ? 'played' : '') + (R.ghost === m ? ' ghost' : '') + '"><span><b>' + esc(m.word) + '</b> <small>' + (m.keeps ? 'keeps ' + esc(m.keeps) : 'plays out') + '</small></span><span>' + m.score + '</span><span></span><b>' + m.rating + '</b></div>';
         });
-        a += '</div><div class="sm-note" style="margin:-4px 0 10px">Click a play to see it on the board; click again to go back.</div>';
+        a += '</div><div class="sm-note" style="margin:-4px 0 10px">The best play rates 100; the rest by how they compare, counting the tiles each keeps. Click a play to see it on the board; click again to go back.</div>';
       }
     } else if (R.k > 0) a += '<div class="sm-verdict">' + esc(nameOf(s.history[R.k - 1].p)) + '’s turn. Their rack and options stay hidden until the game is over.</div>';
     if (R.summary) {
-      const misses = R.summary.rows.filter((r) => r.grade === 'miss').sort((x, y) => y.gap - x.gap);
+      const misses = R.summary.rows.filter((r) => r.grade === 'miss').sort((x, y) => x.rating - y.rating);
       const bests = R.summary.rows.filter((r) => r.grade === 'best');
       const rated = R.summary.rows.length;
       a += '<div class="sm-k">Summary' + (R.summary.done ? '' : ' (working…)') + '</div><div class="sm-summary">';
-      a += '<div class="sm-note" style="margin:0 0 4px">' + rated + ' turn' + (rated === 1 ? '' : 's') + ' rated · ' + bests.length + ' best · ' + misses.length + ' miss' + (misses.length === 1 ? '' : 'es') + '</div>';
-      if (misses.length) { a += '<div class="sm-k" style="margin-top:6px">Mistakes</div>'; misses.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--bad)">−' + r.gap + '</b> <small>(' + esc(r.best.word) + ' ' + r.best.score + ')</small></div>'; }); }
+      const avg = rated ? Math.round(R.summary.rows.reduce((t, r) => t + r.rating, 0) / rated) : 0;
+      a += '<div class="sm-note" style="margin:0 0 4px">' + rated + ' turn' + (rated === 1 ? '' : 's') + ' rated · average <b>' + avg + '</b> · ' + bests.length + ' best · ' + misses.length + ' miss' + (misses.length === 1 ? '' : 'es') + '</div>';
+      if (misses.length) { a += '<div class="sm-k" style="margin-top:6px">Mistakes</div>'; misses.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--bad)">' + r.rating + '</b> <small>(best ' + esc(r.best.word) + ' ' + r.best.score + ')</small></div>'; }); }
       if (bests.length) { a += '<div class="sm-k" style="margin-top:6px">Best plays</div>'; bests.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--good)">★</b></div>'; }); }
       a += '</div>';
     }
@@ -848,7 +963,7 @@
     let html = '<h2>Unseen tiles</h2><p>' + s.bag.length + ' in the bag' + (opp === null ? '' : ' and ' + s.racks[opp].length + ' on ' + esc(nameOf(opp)) + '’s rack') + ': ' + total + ' in all.</p><div class="sm-unseen">';
     for (const k of Object.keys(C.TILES)) {
       const n = counts[k] || 0;
-      html += '<div class="' + (n ? '' : 'none') + '">' + k + '<small>' + n + ' of ' + C.TILES[k][0] + '</small></div>';
+      html += '<div class="' + (n ? '' : 'none') + '">' + k + '<small>' + n + '</small></div>';
     }
     html += '</div><button class="primary" id="sm-unseen-ok">Close</button>';
     openOverlay(html);
@@ -999,7 +1114,7 @@
     try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, moves[i], null); }
     catch (e) { setStatus('The game record no longer matches this page: ' + e.message, 'bad'); return; }
     const changed = s !== G.state;
-    if (changed) { G.state = s; resetTurnUi(); R = null; }
+    if (changed) { G.state = s; extendReview(); resetTurnUi(); }
     persist();
     render();
     if (changed) afterMove();
@@ -1037,19 +1152,25 @@
   }
 
   // ---- zoom ------------------------------------------------------------------------
-  const ZOOMS = [1, 1.5, 2, 2.5];
-  let zoom = store.get('sm.zoom', 1);
-  if (!ZOOMS.includes(zoom)) zoom = 1;
-  function applyZoom() {
+  let zoom = Number(store.get('sm.zoom', 1)) || 1;
+  if (!(zoom >= 1 && zoom <= 3)) zoom = 1;
+  // Scale the board, keeping the point (fx, fy) in the frame where it was.
+  function setZoom(z, fx, fy, save) {
+    const old = zoom;
+    zoom = Math.round(Math.max(1, Math.min(3, z)) * 100) / 100;
+    if (fx === undefined) { fx = ui.wrap.clientWidth / 2; fy = ui.wrap.clientHeight / 2; }
+    const sx = ui.wrap.scrollLeft, sy = ui.wrap.scrollTop;
     ui.board.style.setProperty('--zoom', zoom);
-    ui.zoomLabel.textContent = zoom + '×';
-    ui.zoomOut.disabled = zoom === ZOOMS[0];
-    ui.zoomIn.disabled = zoom === ZOOMS[ZOOMS.length - 1];
-    store.set('sm.zoom', zoom);
+    ui.wrap.scrollLeft = (sx + fx) * (zoom / old) - fx;
+    ui.wrap.scrollTop = (sy + fy) * (zoom / old) - fy;
+    ui.zoomLabel.textContent = (Math.round(zoom * 10) / 10) + '×';
+    ui.zoomOut.disabled = zoom <= 1;
+    ui.zoomIn.disabled = zoom >= 3;
+    if (save !== false) store.set('sm.zoom', zoom);
   }
-  ui.zoomIn.addEventListener('click', () => { zoom = ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(zoom) + 1)]; applyZoom(); });
-  ui.zoomOut.addEventListener('click', () => { zoom = ZOOMS[Math.max(0, ZOOMS.indexOf(zoom) - 1)]; applyZoom(); });
-  applyZoom();
+  ui.zoomIn.addEventListener('click', () => setZoom(zoom + 0.5));
+  ui.zoomOut.addEventListener('click', () => setZoom(zoom - 0.5));
+  setZoom(zoom);
 
   // ---- boot ----------------------------------------------------------------------
   ui.newBtn.addEventListener('click', showMenu);
