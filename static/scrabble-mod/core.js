@@ -82,6 +82,7 @@
   }
 
   function newGame(seed) {
+    if (!Number.isInteger(seed)) throw new Error('bad seed');
     const bag = shuffle(fullBag(), seededRandom(mix(seed, 0)));
     const state = {
       version: VERSION, seed, board: new Array(N * N).fill(null), racks: [[], []], bag,
@@ -204,8 +205,10 @@
     const s = clone(state);
     const p = s.turn, rack = s.racks[p];
     const wasFinal = s.finalTurns !== null;
-    const take = (tile) => rack.splice(rack.indexOf(tile), 1);
+    const take = (tile) => { const i = rack.indexOf(tile); if (i < 0) throw new Error('Tile not on the rack.'); rack.splice(i, 1); };
+    let kept;   // the record's own copy of the move: the caller's object is not shared with the state
     if (move.t === 'play') {
+      kept = { t: 'play', tiles: move.tiles.map((t) => ({ r: t.r, c: t.c, l: t.l, b: !!t.b })) };
       for (const t of move.tiles) { take(t.b ? '?' : t.l); s.board[t.r * N + t.c] = { l: t.l, b: !!t.b }; }
       s.scores[p] += res.score;
       s.history.push({ p, t: 'play', word: res.main, words: res.words.map((w) => ({ word: w.word, score: w.score })),
@@ -227,7 +230,7 @@
       s.history.push({ p, t: 'pass' });
       if (s.passes >= PASS_LIMIT) { s.over = true; s.endReason = 'passes'; }
     }
-    s.moves.push(move);
+    s.moves.push(kept || (move.t === 'swap' ? { t: 'swap', tiles: move.tiles.slice() } : { t: move.t }));
     if (wasFinal && !s.over) {
       s.finalTurns--;
       if (s.finalTurns === 0) { s.over = true; s.endReason = 'bag'; }
@@ -263,6 +266,7 @@
 
   // What the side to move may do. A player with no tiles once the bag is
   // empty can only pass, which is how the other side gets their last turn.
+  // mustPass is kept for safety only: a rack empties during the final turns, and the game ends before that player moves again.
   function options(state) {
     const rack = state.racks[state.turn];
     return { play: !state.over && rack.length > 0, swap: !state.over && rack.length > 0 && state.bag.length > 0, pass: !state.over, mustPass: !state.over && rack.length === 0 };
@@ -281,13 +285,15 @@
     return k;
   }
   function pack(id, value) {
-    const bytes = new TextEncoder().encode(JSON.stringify(value)), k = packKey(id);
+    const json = JSON.stringify(value);
+    if (json === undefined) throw new Error('nothing to pack');
+    const bytes = new TextEncoder().encode(json), k = packKey(String(id));
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ^ k[i % k.length]);
     return btoa(bin);
   }
   function unpack(id, str) {
-    const bin = atob(str), k = packKey(id), bytes = new Uint8Array(bin.length);
+    const bin = atob(str), k = packKey(String(id)), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) ^ k[i % k.length];
     return JSON.parse(new TextDecoder().decode(bytes));
   }
@@ -546,11 +552,13 @@
     for (const t in f.counts) v += LEAVE[t] * f.counts[t];
     for (const k of f.pairs) v += LEAVE2[k] || 0;
     v += LEAVE_TUNE.dup * f.dup + LEAVE_TUNE.blankDup * f.blankDup + LEAVE_TUNE.skew * f.skew;
+    // the fit never saw three blanks in one leave (the pair terms cover two); a third is worth little more than a tile
+    if (f.counts['?'] > 2) v -= (f.counts['?'] - 2) * (LEAVE['?'] - 5);
     return Math.round(v * 10) / 10;
   }
   function leaveAfter(rack, tiles) {
     const left = rack.slice();
-    for (const t of tiles) left.splice(left.indexOf(t.b ? '?' : t.l), 1);
+    for (const t of tiles) { const i = left.indexOf(t.b ? '?' : t.l); if (i >= 0) left.splice(i, 1); }
     return left;
   }
   // Adds leave and equity to generated moves and sorts by equity. Once the
@@ -667,14 +675,14 @@
       if (played >= 0) playedEquity = list[played].equity;
       else {   // not in the generated list (a word since dropped from the list): rate it like any other play
         const kept = rack.slice();
-        for (const t of move.tiles) kept.splice(kept.indexOf(t.b ? '?' : t.l), 1);
+        for (const t of move.tiles) { const i = kept.indexOf(t.b ? '?' : t.l); if (i >= 0) kept.splice(i, 1); }
         if (endgame) { const after = apply(before, move, null); const reply = generate(after.board, before.racks[1 - p], dict)[0]; playedEquity = h.score - (reply ? reply.score : 0); }
         else playedEquity = h.score + (bagEmpty ? 0 : leaveValue(kept));
       }
       playedLabel = h.word + ' for ' + h.score;
     } else if (move.t === 'swap') {
       const kept = rack.slice();
-      for (const t of move.tiles) kept.splice(kept.indexOf(t), 1);
+      for (const t of move.tiles) { const i = kept.indexOf(t); if (i >= 0) kept.splice(i, 1); }
       playedEquity = bagEmpty ? 0 : leaveValue(kept);
       playedLabel = 'exchanged ' + move.tiles.join('') + ', kept ' + (kept.join('') || 'nothing');
       playedSwap = true;
@@ -685,6 +693,8 @@
     let ref = commonList[0] || null;
     // the exchange is the yardstick only when it clearly beats playing, the bot's own rule
     if (exch && (!ref || exch.equity > ref.equity + 1)) ref = exch;
+    // nothing common and nothing to exchange: the best play there is stands in, so a pass cannot rate as best
+    if (!ref && list[0]) ref = list[0];
     // the expert play: a rare-word play better than the yardstick, unless the player found it themselves
     const expert = list[0] && !list[0].common && played !== 0 && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
     // ratings: the yardstick is 100 and every point of equity above or below it is worth three,

@@ -346,7 +346,8 @@ test('with the bag empty the hard bot searches the last turns exactly', () => {
   assert.equal(s.finalTurns, 2, 'the mover has one turn, then the opponent has the last');
   const e = C.endgameMove(s, d);
   assert.ok(e && e.move);
-  if (e.move.t === 'play') {
+  assert.equal(e.move.t, 'play', 'fixture assumption: the endgame opens with a play');
+  {
     // margin is this move's score minus the opponent's best reply, and no other candidate does better
     const after = C.apply(s, e.move, d);
     const reply = C.generate(after.board, after.racks[after.turn], d)[0];
@@ -361,10 +362,12 @@ test('with the bag empty the hard bot searches the last turns exactly', () => {
   assert.deepEqual(move, e.move);
   // and on the very last move it just takes the points
   const last = C.apply(s, e.move, d);
-  if (!last.over && last.racks[last.turn].length) {
+  assert.ok(!last.over && last.racks[last.turn].length, 'fixture assumption: the opponent has the last turn');
+  {
     const e2 = C.endgameMove(last, d);
     const best = C.generate(last.board, last.racks[last.turn], d)[0];
-    if (best) assert.equal(e2.score, best.score);
+    assert.ok(best, 'fixture assumption: the last player has a play');
+    assert.equal(e2.score, best.score);
   }
 });
 
@@ -438,7 +441,7 @@ test('easy and medium bots stay inside their vocabulary; hard uses everything', 
   for (const level of ['easy', 'medium']) {
     for (let i = 0; i < 5; i++) {
       const m = C.botMove(s, level, rnd, d, { vocab: tiny });
-      if (m.t !== 'play') continue;
+      assert.equal(m.t, 'play', 'fixture assumption: ' + level + ' plays from NTIUSEA on the opening');
       const r = C.check(s, m, d);
       assert.equal(r.ok, true);
       for (const w of r.words) assert.equal(tiny.has(w.word), true, level + ' played ' + w.word + ', outside its vocabulary');
@@ -483,10 +486,9 @@ test('a turn is rated against the best common play, and rare words can beat it',
   assert.equal(a.playedLabel, best.word + ' for ' + best.score);
   assert.ok(a.ref, 'a common yardstick exists');
   assert.ok(a.commonList.every((m) => m.common));
-  if (!best.words.every((w) => tiny.has(w.word))) {
-    assert.ok(a.rating >= 100, 'the best full-list play rates at least the best common play');
-    assert.equal(a.expert, null, 'no expert note when the player found the rare word');
-  }
+  assert.ok(!best.words.every((w) => tiny.has(w.word)), 'fixture assumption: the best play uses a word outside the tiny list');
+  assert.ok(a.rating >= 100, 'the best full-list play rates at least the best common play');
+  assert.equal(a.expert, null, 'no expert note when the player found the rare word');
   // without a common list every play is common and the best play is exactly 100
   const b = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, null);
   assert.equal(b.rating, 100);
@@ -567,5 +569,41 @@ test('a brilliancy needs a rare word with a clear edge, and a malformed move is 
   assert.equal(a.rating, 100);
   // and the rating scale is one straight line: three points per point of equity, best at 100
   const r2 = a.list[1];
-  if (r2) assert.equal(r2.rating, Math.max(0, Math.round(100 + 3 * (r2.equity - a.ref.equity))));
+  assert.ok(r2, 'fixture assumption: more than one play');
+  assert.equal(r2.rating, Math.max(0, Math.round(100 + 3 * (r2.equity - a.ref.equity))));
+});
+
+test('a move object handed to apply is copied, not shared, and a seed must be an integer', () => {
+  const d = dict();
+  let s = C.newGame(11);
+  s = withRack(s, 'QUILTAX');
+  const m = { t: 'play', tiles: [{ r: 7, c: 7, l: 'Q' }, { r: 7, c: 8, l: 'U' }, { r: 7, c: 9, l: 'I' }, { r: 7, c: 10, l: 'L' }, { r: 7, c: 11, l: 'T' }], extra: 1 };
+  const after = C.apply(s, m, d);
+  m.tiles[0].l = 'Z'; m.tiles.push({ r: 0, c: 0, l: 'A' });
+  assert.equal(after.moves[0].tiles.length, 5);
+  assert.equal(after.moves[0].tiles[0].l, 'Q');
+  assert.equal('extra' in after.moves[0], false);
+  assert.deepEqual(C.apply(s, after.moves[0], d).scores, after.scores, 'the stored copy replays to the same position');
+  assert.throws(() => C.newGame('abc'), /bad seed/);
+  assert.throws(() => C.newGame(0.5), /bad seed/);
+  assert.throws(() => C.pack('id', undefined), /nothing to pack/);
+  assert.notEqual(C.pack(123, 'x'), C.pack(124, 'x'));
+});
+
+test('three blanks are not worth three times one, and a rare-only position still has a yardstick', () => {
+  const d = dict();
+  assert.ok(C.leaveValue(['?', '?', '?']) < C.leaveValue(['?', '?']) + 10, 'a third blank is worth little');
+  let s = C.newGame(12);
+  s = withRack(s, '???EAIS');
+  const m = C.botMove(s, 'hard', C.seededRandom(1), d);
+  assert.equal(m.t, 'play');
+  assert.equal(m.tiles.length, 7, 'with three blanks the bot plays a bingo, not a two-tile word');
+  // a position where no common play exists and the bag is empty: the best play is the yardstick
+  const empty = C.newGame(13);
+  const tiny = new Set(['ZZZZ']);
+  let e = withRack(empty, 'QUILTAX'); e = { ...e, bag: [], racks: [e.racks[0], ['A', 'B']] };
+  const after = C.apply(e, { t: 'pass' }, d);
+  const a = C.evaluateTurn(e, { t: 'pass' }, after.history[after.history.length - 1], d, tiny);
+  assert.ok(a.ref, 'a yardstick exists');
+  assert.ok(a.rating < 100, 'a pass does not rate best when a play was available');
 });
