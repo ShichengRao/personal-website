@@ -746,8 +746,12 @@
     if (G.kind === 'hotseat') return !G.hidden && p === G.state.turn;
     return p === G.me;
   }
+  // Against a person the review waits for the end of the game: past best
+  // plays are hints about the board that is still in play. Against a bot it
+  // is open at any time.
+  const reviewAllowed = () => !!G && (G.kind === 'bot' || G.state.over);
   function enterReview(k) {
-    if (!G || !dict) return;
+    if (!G || !dict || !reviewAllowed()) return;
     R = { k: 0, states: C.positions(G.state.seed, G.state.moves), cands: new Map(), ghost: null, summary: null };
     resetTurnUi();
     ui.board.classList.remove('valid');
@@ -829,7 +833,8 @@
   function renderMoves() {
     const s = G.state, M = s.moves.length;
     ui.review.textContent = R ? 'Live' : 'Review';
-    ui.review.disabled = !R && (M === 0 || !dict);
+    ui.review.disabled = !R && (M === 0 || !dict || !reviewAllowed());
+    ui.review.title = !R && G && !reviewAllowed() ? 'Against a person, the review opens when the game is over' : '';
     ui.movesTitle.textContent = R ? 'Review' : 'Moves';
     ui.nav.hidden = !R;
     let html = '';
@@ -840,7 +845,8 @@
         '<b>' + (e.t === 'play' ? '+' + e.score : '') + (grade === 'miss' ? ' <span style="color:var(--bad)">?</span>' : grade === 'brilliant' ? ' <span style="color:var(--good)">‼</span>' : grade === 'best' ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
     });
     ui.log.innerHTML = html || '<li><span class="who">No moves yet.</span></li>';
-    ui.log.querySelectorAll('li[data-k]').forEach((li) => li.addEventListener('click', () => { if (!dict) return; if (R) reviewGo(+li.dataset.k); else enterReview(+li.dataset.k); }));
+    ui.log.querySelectorAll('li[data-k]').forEach((li) => li.addEventListener('click', () => { if (!dict || !reviewAllowed()) return; if (R) reviewGo(+li.dataset.k); else enterReview(+li.dataset.k); }));
+    ui.log.classList.toggle('locked', !reviewAllowed());
     if (!R) { ui.analysis.hidden = true; return; }
     ui.navLabel.textContent = R.k === 0 ? 'Start' : 'Move ' + R.k + ' of ' + M;
     $('sm-nav-first').disabled = R.k === 0; $('sm-nav-prev').disabled = R.k === 0;
@@ -995,7 +1001,7 @@
       '<div class="sm-keys">' +
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
-      '<div><b>Review:</b> click any move in the list to step through the game. <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
+      '<div><b>Review:</b> click any move in the list to step through the game (against a person, once the game is over). <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
       '<div><b>Word lists:</b> plays are checked against ENABLE, the public-domain list. The easy and medium bots, and the ratings, use only its common words.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
