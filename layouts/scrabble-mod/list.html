@@ -175,6 +175,10 @@
 .sm-app .sm-confetti i{position:absolute;top:35%;width:8px;height:13px;border-radius:2px;animation:sm-fall 1.9s ease-in forwards}
 @keyframes sm-fall{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),70vh) rotate(720deg);opacity:0}}
 @media(prefers-reduced-motion:reduce){.sm-app .sm-bingo,.sm-app .sm-tile.bounce,.sm-app .sm-confetti i{animation-duration:.01s}}
+.sm-hdr-slim{display:none;align-items:center;justify-content:space-between;padding:10px 16px;background:#111;color:#ddd;font:14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.sm-hdr-slim a{color:#fff;text-decoration:none;font-weight:600}
+.sm-hdr-slim span{color:#aaa}
+@media (max-width:860px){.sm-hdr-full{display:none}.sm-hdr-slim{display:flex}}
 </style>
 <link rel="manifest" href="/scrabble-mod/manifest.webmanifest">
 <meta name="theme-color" content="#1f6f6a">
@@ -189,6 +193,13 @@
    Leave both blank and the page offers the bot and pass-and-play only. */
 window.SM_CONFIG = { url: "https://ebbgvdomzqsmecryepon.supabase.co", key: "sb_publishable_OL6TD1hxZosugdW-IntbYQ_dKZSGH22" };
 </script>
+{{ end }}
+
+{{ define "header" }}
+{{/* On a phone the board should be the first thing on screen: a one-line bar
+     with the way home replaces the theme's header there; wider screens keep it. */}}
+<div class="sm-hdr-full">{{ partials.Include "site-header.html" . }}</div>
+<header class="sm-hdr-slim"><a href="{{ "/" | relURL }}">{{ .Site.Title }}</a><span>{{ .Title }}</span></header>
 {{ end }}
 
 {{ define "main" }}
