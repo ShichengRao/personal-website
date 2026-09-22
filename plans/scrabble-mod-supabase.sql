@@ -79,6 +79,9 @@ create table if not exists game_results (
 );
 alter table game_results drop constraint if exists game_results_game_id_fkey;
 alter table game_results add constraint game_results_game_id_fkey foreign key (game_id) references games(id);
+alter table game_results drop constraint if exists game_results_winner_check;
+alter table game_results add constraint game_results_winner_check check (winner in (-1, 0, 1));
+create index if not exists games_created on games (created_at);
 create index if not exists game_results_p0 on game_results (p0_user);
 create index if not exists game_results_p1 on game_results (p1_user);
 
@@ -140,14 +143,36 @@ begin
 end $$;
 
 -- Everything a client needs to rebuild a game. Null when there is no such id.
-create or replace function get_game(p_code text)
-returns jsonb language sql security definer set search_path = public stable as $$
-  select jsonb_build_object('id', id, 'seed', seed, 'moves', moves, 'p1_name', p1_name, 'p2_name', p2_name, 'next_game', next_game,
-                            'full', exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1),
-                            'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1),
-                            'handles', (select jsonb_object_agg(k.player, p.handle) from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id))
-  from games g where id = p_code;
-$$;
+-- The record (seed and moves) goes to a seat holder, to anyone opening a game
+-- that is over or still waiting for its second player (the invite link), and
+-- otherwise only when one of the seats' owners lets people watch. Anyone
+-- else gets the names and nothing to replay ('private': true). The rematch
+-- id is for seat holders only, so a finished game is not a way into a live one.
+drop function if exists get_game(text);
+create or replace function get_game(p_code text, p_token text default null)
+returns jsonb language plpgsql security definer set search_path = public stable as $$
+declare
+  g games%rowtype;
+  who smallint;
+  is_full boolean;
+  finished boolean;
+  visible boolean;
+  base jsonb;
+begin
+  select * into g from games where id = p_code;
+  if g.id is null then return null; end if;
+  who := seat_of(p_code, p_token);
+  is_full := exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1);
+  finished := exists (select 1 from game_results r where r.game_id = g.id) or coalesce(game_over(g.moves), false);
+  visible := who is not null or finished or not is_full
+    or exists (select 1 from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id and p.public_games);
+  base := jsonb_build_object('id', g.id, 'p1_name', g.p1_name, 'p2_name', g.p2_name, 'full', is_full,
+    'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1),
+    'handles', (select jsonb_object_agg(k.player, p.handle) from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id));
+  if not visible then return base || jsonb_build_object('private', true); end if;
+  return base || jsonb_build_object('seed', g.seed, 'moves', g.moves)
+    || case when who is not null and g.next_game is not null then jsonb_build_object('next_game', g.next_game) else '{}'::jsonb end;
+end $$;
 
 -- The signed-in caller's games, newest first. Empty when not signed in.
 create or replace function my_games()
@@ -161,18 +186,29 @@ returns jsonb language sql security definer set search_path = public stable as $
   where auth.uid() is not null and k.user_id = auth.uid();
 $$;
 
+-- A brake on how fast games can be created at all: the id space is small
+-- (three words from a short list), so one script must not be able to fill it.
+create or replace function game_brake()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if (select count(*) from games where created_at > now() - interval '1 hour') >= 300 then
+    raise exception 'too many new games right now; try again in a while';
+  end if;
+end $$;
+
 create or replace function create_game(p_code text, p_seed text, p_name text, p_token text)
 returns text language plpgsql security definer set search_path = public as $$
 begin
   if p_code is null or p_code !~ '^[a-z]+(-[a-z]+){2}$' or length(p_code) > 40 then
     raise exception 'bad game id';
   end if;
-  if p_seed is null or length(p_seed) = 0 or length(p_seed) > 200 then raise exception 'bad seed'; end if;
+  if p_seed is null or p_seed !~ '^[A-Za-z0-9+/]+={0,2}$' or length(p_seed) > 200 then raise exception 'bad seed'; end if;
   if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 24 then
     raise exception 'name must be 1-24 characters';
   end if;
   if p_token is null or length(p_token) < 16 then raise exception 'bad token'; end if;
   if exists (select 1 from games where id = p_code) then raise exception 'that id is taken'; end if;
+  perform game_brake();
   insert into games (id, seed, p1_name) values (p_code, p_seed, trim(p_name));
   insert into game_keys (game_id, player, token, user_id) values (p_code, 0, p_token, auth.uid());
   return p_code;
@@ -209,7 +245,9 @@ begin
   if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 24 then
     raise exception 'name must be 1-24 characters';
   end if;
-  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, p_token, auth.uid());
+  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, p_token, auth.uid())
+    on conflict (game_id, player) do nothing;   -- two visitors at the same moment: the first is seated
+  if not found then raise exception 'this game already has two players'; end if;
   update games set p2_name = trim(p_name), updated_at = now() where id = p_code;
   return jsonb_build_object('player', 1, 'token', p_token);
 end $$;
@@ -231,7 +269,7 @@ begin
   end if;
   kind := p_move->>'t';
   if kind is null or kind not in ('play', 'swap', 'pass', 'resign') then raise exception 'bad move'; end if;
-  if p_move->>'d' is null or length(p_move->>'d') > 4000 then raise exception 'bad move'; end if;
+  if p_move->>'d' is null or p_move->>'d' !~ '^[A-Za-z0-9+/]+={0,2}$' or length(p_move->>'d') > 4000 then raise exception 'bad move'; end if;
   if kind = 'play' and ((p_move->>'n') is null or (p_move->>'n')::int < 1 or (p_move->>'n')::int > 7) then raise exception 'bad move'; end if;
   if length(p_move::text) > 4200 then raise exception 'move too large'; end if;
   who := seat_of(p_code, p_token);
@@ -239,7 +277,7 @@ begin
   select moves into cur from games where id = p_code for update;
   if cur is null then raise exception 'no such game'; end if;
   n := jsonb_array_length(cur);
-  if coalesce(game_over(cur), false) then raise exception 'the game is over'; end if;
+  if coalesce(game_over(cur), false) or exists (select 1 from game_results r where r.game_id = p_code) then raise exception 'the game is over'; end if;
   if kind = 'resign' and not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody to resign to'; end if;
   if n >= 400 and kind <> 'resign' then raise exception 'game too long: resign to end it'; end if;
   if n <> p_index then raise exception 'out of date: the game has moved on'; end if;
@@ -292,7 +330,7 @@ declare
   h text;
   nm text;
 begin
-  select user_id, handle, name into u, h, nm from profiles where upper(handle) = upper(trim(p_handle));
+  select user_id, handle, name into u, h, nm from profiles where handle = upper(trim(p_handle));
   if u is null then return null; end if;
   return jsonb_build_object(
     'handle', h, 'name', nm, 'mine', auth.uid() = u,
@@ -336,7 +374,7 @@ declare
   other uuid;
 begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
-  select user_id into other from profiles where upper(handle) = upper(trim(p_handle));
+  select user_id into other from profiles where handle = upper(trim(p_handle));
   if other is null then raise exception 'no player has that code'; end if;
   if other = auth.uid() then raise exception 'that is your own code'; end if;
   insert into friends (user_id, friend_id) values (auth.uid(), other), (other, auth.uid()) on conflict do nothing;
@@ -349,7 +387,7 @@ declare
   other uuid;
 begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
-  select user_id into other from profiles where upper(handle) = upper(trim(p_handle));
+  select user_id into other from profiles where handle = upper(trim(p_handle));
   delete from friends where (user_id = auth.uid() and friend_id = other) or (user_id = other and friend_id = auth.uid());
 end $$;
 
@@ -381,6 +419,7 @@ returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   who smallint;
   g games%rowtype;
+  resign_at int;
 begin
   who := seat_of(p_code, p_token);
   if who is null then raise exception 'not a player in this game'; end if;
@@ -389,9 +428,22 @@ begin
   end if;
   select * into g from games where id = p_code;
   if not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody joined this game'; end if;
-  if (p_result->>'moves') is null or (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
-  if game_over(g.moves) is false then raise exception 'the game is not over'; end if;
   if length(p_result::text) > 4000 then raise exception 'report too large'; end if;
+  if (p_result->>'moves') !~ '^\d{1,4}$' or (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
+  if coalesce(game_over(g.moves), false) is not true then raise exception 'the game is not over'; end if;
+  -- what the record itself says about the ending; the report has to agree with it
+  if (p_result->>'p0_score') !~ '^\d{1,4}$' or (p_result->>'p1_score') !~ '^\d{1,4}$' or (p_result->>'p0_score')::int > 1500 or (p_result->>'p1_score')::int > 1500
+     or (p_result->>'winner') !~ '^(-1|0|1)$' or (p_result->>'end_reason') is null then raise exception 'bad report'; end if;
+  select min(k) - 1 into resign_at from jsonb_array_elements(g.moves) with ordinality o(x, k) where x->>'t' = 'resign';
+  if resign_at is not null then
+    if p_result->>'end_reason' <> 'resign' or (p_result->>'winner')::int <> 1 - (resign_at % 2) then raise exception 'the report does not match the game'; end if;
+  else
+    if p_result->>'end_reason' not in ('passes', 'bag') then raise exception 'bad report'; end if;
+    if (p_result->>'winner')::int <> (case when (p_result->>'p0_score')::int > (p_result->>'p1_score')::int then 0
+                                           when (p_result->>'p1_score')::int > (p_result->>'p0_score')::int then 1 else -1 end) then
+      raise exception 'the report does not match the game';
+    end if;
+  end if;
   insert into game_results (game_id, p0_user, p1_user, p0_name, p1_name, p0_score, p1_score, winner, end_reason, moves, stats)
   values (p_code,
           (select user_id from game_keys where game_id = p_code and player = 0),
@@ -420,7 +472,8 @@ begin
   if not coalesce(game_over(g.moves), false) and not exists (select 1 from game_results r where r.game_id = p_old) then raise exception 'the game is not over yet'; end if;
   if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or length(p_new) > 40 then raise exception 'bad game id'; end if;
   if exists (select 1 from games where id = p_new) then raise exception 'that id is taken'; end if;
-  if p_seed is null or length(p_seed) = 0 or length(p_seed) > 200 then raise exception 'bad seed'; end if;
+  if p_seed is null or p_seed !~ '^[A-Za-z0-9+/]+={0,2}$' or length(p_seed) > 200 then raise exception 'bad seed'; end if;
+  perform game_brake();
   insert into games (id, seed, p1_name, p2_name) values (p_new, p_seed, g.p2_name, g.p1_name);
   insert into game_keys (game_id, player, token, user_id)
     select p_new, 1 - player, token, user_id from game_keys where game_id = p_old;
@@ -437,29 +490,34 @@ declare
   other_name text;
 begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
-  select user_id, name into other, other_name from profiles where upper(handle) = upper(trim(p_handle));
+  select user_id, name into other, other_name from profiles where handle = upper(trim(p_handle));
   if other is null then raise exception 'no player has that code'; end if;
   if other = auth.uid() then raise exception 'that is your own code'; end if;
   if not exists (select 1 from friends where user_id = auth.uid() and friend_id = other) then raise exception 'you can only challenge a friend'; end if;
+  if (select count(*) from game_keys a join game_keys b on b.game_id = a.game_id join games g on g.id = a.game_id
+      where a.user_id = auth.uid() and b.user_id = other and jsonb_array_length(g.moves) < 2) >= 3 then
+    raise exception 'you already have three games waiting on this player';
+  end if;
   perform create_game(p_code, p_seed, p_name, p_token);
-  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, md5(random()::text || p_code), other);
+  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), other);
   update games set p2_name = other_name, updated_at = now() where id = p_code;
   return p_code;
 end $$;
 
 revoke all on function seat_of(text, text) from public;
+revoke all on function game_brake() from public;
 revoke all on function stat_int(text) from public;
 revoke all on function seat_stats(jsonb) from public;
 revoke all on function stats_shape(jsonb) from public;
 revoke all on function my_seat(text, text) from public;
 revoke all on function game_over(jsonb) from public;
-revoke all on function get_game(text) from public;
+revoke all on function get_game(text, text) from public;
 revoke all on function my_games() from public;
 revoke all on function create_game(text, text, text, text) from public;
 revoke all on function join_game(text, text, text) from public;
 revoke all on function play_move(text, text, integer, jsonb) from public;
 grant execute on function my_seat(text, text) to anon, authenticated;
-grant execute on function get_game(text) to anon, authenticated;
+grant execute on function get_game(text, text) to anon, authenticated;
 grant execute on function my_games() to anon, authenticated;
 grant execute on function create_game(text, text, text, text) to anon, authenticated;
 grant execute on function join_game(text, text, text) to anon, authenticated;
