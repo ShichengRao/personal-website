@@ -1563,25 +1563,25 @@
       '<div style="grid-column:span 2"><b>' + (st.bestWord ? esc(st.bestWord) + ' ' + st.bestWordScore : '–') + '</b><small>best word</small></div></div>';
     const recs = Object.values(records).sort((a, b) => (b.w + b.l + b.t) - (a.w + a.l + a.t));
     if (recs.length) {
-      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Against</div><div class="sm-summary">';
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Against</div><div class="sm-summary sm-list">';
       for (const r of recs) html += '<div' + (r.handle ? ' data-u="' + esc(r.handle) + '"' : '') + '><span>' + esc(r.name || 'a guest') + '</span> <b>' + r.w + '–' + r.l + (r.t ? '–' + r.t : '') + '</b></div>';
       html += '</div>';
     }
     if (pr.live) {
-      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Games in progress</div><div class="sm-summary">';
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Games in progress</div><div class="sm-summary sm-list">';
       if (!pr.live.length) html += '<div class="sm-note">None right now.</div>';
       for (const g of pr.live) html += '<div data-g="' + esc(g.id) + '"><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span><small>' + plural(num(g.moves), 'move') + (pr.mine ? '' : ' · watch') + '</small></div>';
       html += '</div>';
     }
     if (pr.mine) {
       html += '<div class="sm-row" style="margin-top:8px"><label class="sm-note" style="margin:0"><input type="checkbox" id="sm-pr-public"' + (pr.public_games ? ' checked' : '') + '> Let anyone watch my games in progress from this page</label></div>';
-      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Friends</div><div class="sm-summary" id="sm-pr-friends">';
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Friends</div><div class="sm-summary sm-list" id="sm-pr-friends">';
       if (!pr.friends.length) html += '<div class="sm-note">No friends yet. Add one by their code, or send them yours.</div>';
-      for (const f of pr.friends) html += '<div data-u="' + esc(f.handle) + '"><span>' + esc(f.name) + ' <small>' + esc(f.handle) + '</small></span><b>›</b></div>';
+      for (const f of pr.friends) html += '<div data-u="' + esc(f.handle) + '"><span>' + esc(f.name) + '<small>' + esc(f.handle) + '</small></span><span class="sm-actions"><button class="small" data-ch="' + esc(f.handle) + '" data-n="' + esc(f.name) + '">Challenge</button><b>›</b></span></div>';
       html += '</div><div class="sm-row"><input type="text" id="sm-pr-code" placeholder="Friend code" maxlength="8" style="width:140px"><button class="small" id="sm-pr-add">Add friend</button></div>';
     }
     if (pr.results.length) {
-      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Past games</div><div class="sm-summary">';
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Past games</div><div class="sm-summary sm-list">';
       for (const r of pr.results.slice(0, 30)) html += '<div data-g="' + esc(r.game_id) + '"><span>' + (r.end_reason === 'disputed' ? 'Disputed' : (r.won === true ? 'Won' : r.won === false ? 'Lost' : 'Tied') + ' ' + num(r.my_score) + '–' + num(r.their_score)) + ' vs ' + esc(r.their_name || 'a guest') + '</span><small>' + esc(new Date(r.finished_at).toLocaleDateString()) + '</small></div>';
       html += '</div>';
     }
@@ -1590,6 +1590,7 @@
     $('sm-pr-close').addEventListener('click', back);
     if (!user && !pr.mine) bindAuth(ui.overlay);
     ui.overlay.querySelectorAll('[data-u]').forEach((d) => d.addEventListener('click', () => showProfile(d.dataset.u)));
+    ui.overlay.querySelectorAll('button[data-ch]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); closeOverlay(); challengeFriend(b.dataset.ch, b.dataset.n); }));
     ui.overlay.querySelectorAll('[data-g]').forEach((d) => d.addEventListener('click', () => { closeOverlay(); openGame(d.dataset.g); }));
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
     on('sm-pr-qr', () => showQr(pr));
