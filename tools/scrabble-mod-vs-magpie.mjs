@@ -17,7 +17,7 @@
    lands in each. */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { readFileSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -80,10 +80,13 @@ function cgp(state) {
   const p = state.turn;
   return rows.join('/') + ' ' + state.racks[p].join('') + '/ ' + state.scores[p] + '/' + state.scores[1 - p] + ' 0';
 }
-// The placed cells with their letters: the same play however it is written.
-const keyOf = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l.toUpperCase()).sort().join('|');
+// The placed cells with their letters and which of them are blanks: the same
+// play however it is written. OXO with the blank first and OXO with the blank
+// last are different plays with different scores.
+const keyOf = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l.toUpperCase() + (t.b ? '*' : '')).sort().join('|');
 // MAGPIE writes "K7 F(L)OWAGE": column letter first for a vertical play,
-// "7K" for a horizontal one; letters in parentheses were already on the board.
+// "7K" for a horizontal one; letters in parentheses were already on the
+// board, and a blank is written as a lowercase letter.
 function parseMove(pos, word) {
   const vertical = /^[A-O]\d+$/.test(pos);
   let r, c;
@@ -94,7 +97,7 @@ function parseMove(pos, word) {
   for (const ch of word) {
     if (ch === '(') { inParen = true; continue; }
     if (ch === ')') { inParen = false; continue; }
-    if (!inParen) tiles.push({ r, c, l: ch.toUpperCase() });
+    if (!inParen) tiles.push({ r, c, l: ch.toUpperCase(), b: ch !== ch.toUpperCase() });
     if (vertical) r++; else c++;
   }
   return tiles;
@@ -104,7 +107,8 @@ function parseMove(pos, word) {
 const MOVE_RE = /(\d+):\s+([A-O]\d+|\d+[A-O])\s+(\S+)\s+(.*)$/;
 function askMagpie(state) {
   const script = [
-    `set -lex CSWMOD -ld english_mod -bdn crossplay15 -bb 40 -wmp false -threads 4 -numplays 40 -hr false -leaves ${MAGPIE_LEAVES} -plies 2 -iterations ${iters}`,
+    // -savesettings false: MAGPIE otherwise writes every setting to settings.txt in its directory; that file is the caller's
+    `set -savesettings false -lex CSWMOD -ld english_mod -bdn crossplay15 -bb 40 -wmp false -threads 4 -numplays 40 -hr false -leaves ${MAGPIE_LEAVES} -plies 2 -iterations ${iters}`,
     'cgp ' + cgp(state), 'generate', 'shmoves 40', 'set -numplays 15', 'simulate', 'quit', ''
   ].join('\n');
   const r = spawnSync(join(magpieDir, 'bin', 'magpie'), ['set', '-mode', 'sync'], { cwd: magpieDir, input: script, encoding: 'utf8', maxBuffer: 64 << 20 });
@@ -164,4 +168,3 @@ console.log(`static (MAGPIE equity): our top play is MAGPIE's #1 in ${pct(tally.
 console.log(`sim (win%):             our top play is MAGPIE's #1 in ${pct(tally.simTop1)}, in its top 3 in ${pct(tally.simTop3)}, among the 15 simmed in ${pct(tally.simListed)}`);
 console.log(`                        when simmed, our play trails MAGPIE's best by ${(tally.winGap / Math.max(1, tally.winGapN)).toFixed(2)} win% on average`);
 console.log(`MAGPIE's own static #1 is also its sim #1 in ${pct(tally.simBestIsStatBest)} (how much the sim changes MAGPIE's mind)`);
-rmSync(join(magpieDir, 'settings.txt'), { force: true });
