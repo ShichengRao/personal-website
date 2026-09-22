@@ -108,7 +108,8 @@ const MOVE_RE = /(\d+):\s+([A-O]\d+|\d+[A-O])\s+(\S+)\s+(.*)$/;
 function askMagpie(state) {
   const script = [
     // -savesettings false: MAGPIE otherwise writes every setting to settings.txt in its directory; that file is the caller's
-    `set -savesettings false -lex CSWMOD -ld english_mod -bdn crossplay15 -bb 40 -wmp false -threads 4 -numplays 40 -hr false -leaves ${MAGPIE_LEAVES} -plies 2 -iterations ${iters}`,
+    // -r1/-r2 all: record every generated move, in case a settings.txt from a leavegen run (which records only the best) is being loaded
+    `set -savesettings false -r1 all -r2 all -lex CSWMOD -ld english_mod -bdn crossplay15 -bb 40 -wmp false -threads 4 -numplays 40 -hr false -leaves ${MAGPIE_LEAVES} -plies 2 -iterations ${iters}`,
     'cgp ' + cgp(state), 'generate', 'shmoves 40', 'set -numplays 15', 'simulate', 'quit', ''
   ].join('\n');
   const r = spawnSync(join(magpieDir, 'bin', 'magpie'), ['set', '-mode', 'sync'], { cwd: magpieDir, input: script, encoding: 'utf8', maxBuffer: 64 << 20 });

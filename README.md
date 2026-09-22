@@ -90,7 +90,9 @@ The hard bot plays by equity (score plus leave), and once the bag is empty it
 searches the last turns exactly, since the opponent's rack is then known. The
 leave values (singles and pair synergies in `core.js`) were fitted to a leave
 file that MAGPIE's leavegen produced for this board and tile set; the fit is
-`tools/scrabble-mod-lab.mjs fitklv`.
+`tools/scrabble-mod-lab.mjs fitklv` and its output is `tools/leaves-gen3.json`.
+With it, our top play is MAGPIE's static top play on 85% of sampled positions
+and in its top three on 97%.
 `node tools/scrabble-mod-lab.mjs arena hard hard:score 400` pits two bot
 profiles against each other over 400 games on all but two cores and reports the
 win rate; `leaves` fits a leave table from self-play; `bench` times the
