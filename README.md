@@ -27,7 +27,7 @@ install is needed to build or serve the site.
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Scrabble Mod's online games |
-| `tools/` | `scrabble-mod-lab.mjs`: self-play across the cores to measure the Scrabble Mod bot (arena between two bot profiles, leave-value fitting, a benchmark) |
+| `tools/` | `scrabble-mod-lab.mjs`: self-play across the cores to measure the Scrabble Mod bot (arena between two bot profiles, leave-value fitting, a benchmark); `scrabble-mod-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
 | `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Scrabble Mod scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
@@ -92,6 +92,10 @@ searches the last turns exactly, since the opponent's rack is then known.
 profiles against each other over 400 games on all but two cores and reports the
 win rate; `leaves` fits a leave table from self-play; `bench` times the
 generator. Changes to the bot should come with an arena result.
+`tools/scrabble-mod-vs-magpie.mjs` compares our top play with MAGPIE's static
+ranking and Monte Carlo sim on positions sampled from self-play; its header
+says what MAGPIE needs (a layout file for this board, a letter distribution
+for these tiles, a KWG built from words.txt, and `-bb 40`).
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id
