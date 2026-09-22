@@ -360,7 +360,9 @@ begin
   if u is null then return null; end if;
   -- a lone report the other side never answered becomes the record after a day
   for gid in select r.game_id from game_reports r join game_keys k on k.game_id = r.game_id and k.user_id = u
-             where r.reported_at < now() - interval '1 day' and not exists (select 1 from game_results x where x.game_id = r.game_id) limit 50 loop
+             where r.reported_at < now() - interval '1 day' and not exists (select 1 from game_results x where x.game_id = r.game_id)
+               and not exists (select 1 from game_reports o where o.game_id = r.game_id and o.seat <> r.seat)
+             order by r.reported_at limit 50 loop
     perform settle_game(gid);
   end loop;
   return jsonb_build_object(
@@ -466,7 +468,15 @@ begin
   select * into r0 from game_reports where game_id = p_code and seat = 0;
   select * into r1 from game_reports where game_id = p_code and seat = 1;
   if r0.game_id is not null and r1.game_id is not null then
-    if r0.p0_score <> r1.p0_score or r0.p1_score <> r1.p1_score or r0.winner <> r1.winner or r0.moves <> r1.moves then return; end if;   -- disputed: no record
+    if r0.p0_score <> r1.p0_score or r0.p1_score <> r1.p1_score or r0.winner <> r1.winner or r0.moves <> r1.moves then
+      -- disputed: recorded as a game with no winner and no stats, so it is not lost and not counted either way
+      select * into g from games where id = p_code;
+      insert into game_results (game_id, p0_user, p1_user, p0_name, p1_name, p0_score, p1_score, winner, end_reason, moves, stats)
+      values (p_code, (select user_id from game_keys where game_id = p_code and player = 0), (select user_id from game_keys where game_id = p_code and player = 1),
+              g.p1_name, g.p2_name, 0, 0, -1, 'disputed', r0.moves, stats_shape('{}'::jsonb))
+      on conflict (game_id) do nothing;
+      return;
+    end if;
     src := r0;
     st := jsonb_build_object('p0', r0.stats->'p0', 'p1', r1.stats->'p1');   -- each player's stats from their own report
   elsif r0.game_id is not null and r0.reported_at < now() - interval '1 day' then src := r0; st := r0.stats;
@@ -491,12 +501,18 @@ declare
   who smallint;
   g games%rowtype;
   resign_at int;
+  n int;
+  reason text;
+  st jsonb;
+  sst jsonb;
+  si int;
 begin
   who := seat_of(p_code, p_token);
   if who is null then raise exception 'not a player in this game'; end if;
+  select * into g from games where id = p_code for update;   -- two reports at once are filed one after the other, so the second sees the first
+  if g.id is null then raise exception 'no such game'; end if;
   if exists (select 1 from game_results where game_id = p_code) then return result_view(p_code); end if;
   if exists (select 1 from game_reports where game_id = p_code and seat = who) then perform settle_game(p_code); return result_view(p_code); end if;
-  select * into g from games where id = p_code;
   if not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody joined this game'; end if;
   if length(p_result::text) > 4000 then raise exception 'report too large'; end if;
   if (p_result->>'moves') !~ '^\d{1,4}$' or (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
@@ -505,18 +521,32 @@ begin
   if (p_result->>'p0_score') !~ '^\d{1,4}$' or (p_result->>'p1_score') !~ '^\d{1,4}$' or (p_result->>'p0_score')::int > 1500 or (p_result->>'p1_score')::int > 1500
      or (p_result->>'winner') !~ '^(-1|0|1)$' or (p_result->>'end_reason') is null then raise exception 'bad report'; end if;
   select min(k) - 1 into resign_at from jsonb_array_elements(g.moves) with ordinality o(x, k) where x->>'t' = 'resign';
+  n := jsonb_array_length(g.moves);
+  reason := case when resign_at is not null then 'resign'
+                 when n >= 4 and (select bool_and(x->>'t' = 'pass') from jsonb_array_elements(g.moves) with ordinality o(x, k) where k > n - 4) then 'passes'
+                 else 'bag' end;
+  if p_result->>'end_reason' <> reason then raise exception 'the report does not match the game'; end if;
   if resign_at is not null then
-    if p_result->>'end_reason' <> 'resign' or (p_result->>'winner')::int <> 1 - (resign_at % 2) then raise exception 'the report does not match the game'; end if;
-  else
-    if p_result->>'end_reason' not in ('passes', 'bag') then raise exception 'bad report'; end if;
-    if (p_result->>'winner')::int <> (case when (p_result->>'p0_score')::int > (p_result->>'p1_score')::int then 0
-                                           when (p_result->>'p1_score')::int > (p_result->>'p0_score')::int then 1 else -1 end) then
+    if (p_result->>'winner')::int <> 1 - (resign_at % 2) then raise exception 'the report does not match the game'; end if;
+  elsif (p_result->>'winner')::int <> (case when (p_result->>'p0_score')::int > (p_result->>'p1_score')::int then 0
+                                            when (p_result->>'p1_score')::int > (p_result->>'p0_score')::int then 1 else -1 end) then
+    raise exception 'the report does not match the game';
+  end if;
+  -- a seat's stats must fit the record: its points are its score, its plays are the plays at its turns,
+  -- and nothing is more than the plays allow (a single play never scores 400)
+  st := stats_shape(p_result->'stats');
+  for si in 0..1 loop
+    sst := st -> ('p' || si);
+    if (sst->>'points')::int <> (p_result->>('p' || si || '_score'))::int
+       or (sst->>'plays')::int <> (select count(*) from jsonb_array_elements(g.moves) with ordinality o(x, k) where x->>'t' = 'play' and (k - 1) % 2 = si)
+       or (sst->>'bingos')::int > (sst->>'plays')::int or (sst->>'brilliancies')::int > (sst->>'plays')::int
+       or (sst->>'best_score')::int > (sst->>'points')::int or (sst->>'points')::int > (sst->>'plays')::int * 400 then
       raise exception 'the report does not match the game';
     end if;
-  end if;
+  end loop;
   insert into game_reports (game_id, seat, p0_score, p1_score, winner, end_reason, moves, stats)
-  values (p_code, who, (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, p_result->>'end_reason',
-          (p_result->>'moves')::int, stats_shape(p_result->'stats'))
+  values (p_code, who, (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, reason,
+          (p_result->>'moves')::int, st)
   on conflict (game_id, seat) do nothing;
   perform settle_game(p_code);
   return result_view(p_code);
@@ -535,6 +565,11 @@ begin
   if who is null then raise exception 'not a player in this game'; end if;
   select * into g from games where id = p_old for update;
   if g.next_game is not null then return g.next_game; end if;
+  -- the seat's own budget: both seats travel down a rematch chain, so the count climbs by one per game
+  if (select count(*) from games x join game_keys k on k.game_id = x.id
+      where x.created_at > now() - interval '1 hour' and ((p_token is not null and k.token = p_token) or (auth.uid() is not null and k.user_id = auth.uid()))) >= 30 then
+    raise exception 'too many rematches this hour; try again in a while';
+  end if;
   if not exists (select 1 from game_keys where game_id = p_old and player = 1) then raise exception 'nobody to rematch'; end if;
   if not coalesce(game_over(g.moves), false) and not exists (select 1 from game_results r where r.game_id = p_old) then raise exception 'the game is not over yet'; end if;
   if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or length(p_new) > 40 then raise exception 'bad game id'; end if;

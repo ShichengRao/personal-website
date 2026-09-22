@@ -114,13 +114,13 @@
 .sm-app .sm-code{font-family:ui-monospace,Menlo,monospace;font-size:14px;letter-spacing:.1em;background:var(--plane);padding:2px 8px;border-radius:6px}
 .sm-app .sm-zoom{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
 .sm-app .sm-zoom button{padding:3px 9px}
-.sm-app .sm-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:20px;
+.sm-app .sm-overlay{position:fixed;inset:0;display:none;align-items:safe center;justify-content:center;padding:20px;overflow:auto;
  background:rgba(246,244,238,.88);backdrop-filter:blur(3px);z-index:50}
 .sm-app .sm-overlay.is-open{display:flex}
 .sm-app .sm-card:focus{outline:none}
 .sm-app .sm-card-note{color:var(--bad);font-weight:600}
 .sm-app .sm-card{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:20px 22px;max-width:460px;width:100%;
- box-shadow:0 10px 30px rgba(0,0,0,.08);text-align:center;max-height:calc(100dvh - 40px);overflow:auto}
+ box-shadow:0 10px 30px rgba(0,0,0,.08);text-align:center;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto}
 .sm-app .sm-card h2{margin:0 0 6px;font-size:22px;letter-spacing:-.01em}
 .sm-app .sm-card p{margin:0 0 12px;color:var(--soft);font-size:14px;line-height:1.5}
 .sm-app .sm-card p.left{text-align:left}

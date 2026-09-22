@@ -48,10 +48,15 @@
     const m = location.pathname.match(/\/scrabble-mod\/([a-z0-9-]+)\/?$/i);
     return m ? m[1].toLowerCase() : null;
   }
+  // The private link's token, read once: whatever happens to the address while the
+  // game loads (the menu, a sign-in round trip), the token is still here until a seat is settled.
+  let linkToken = (location.hash.match(/[#&]k=([0-9a-f]{32,64})(?![0-9a-f])/) || [])[1] || null;
   function tokenFromUrl() {
     const m = location.hash.match(/[#&]k=([0-9a-f]{32,64})(?![0-9a-f])/);
-    return m ? m[1] : null;
+    if (m) linkToken = m[1];
+    return linkToken;
   }
+  function dropLinkToken() { linkToken = null; if (/[#&]k=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); }
   const setUrl = (id) => history.replaceState(null, '', pathFor(id));
 
   // Saved games, by id. { id, kind, level, names, seed, moves, over, updated, online?: {token, player} }
@@ -583,14 +588,14 @@
   // ---- keyboard ------------------------------------------------------------------
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.repeat && (e.key === 'Enter' || e.key === 'Escape')) return;
     if (ui.overlay.classList.contains('is-open')) {
-      if (e.key === 'Escape' && !cancelPicker) {
-        const out = [...ui.overlay.querySelectorAll('button')].find((b) => /^(Cancel|Close|Back|Back to the board|Not now)$/.test(b.textContent.trim()));
+      if (e.key === 'Escape' && !cancelPicker && !cancelAsk) {
+        const out = [...ui.overlay.querySelectorAll('button')].find((b) => /^(Cancel|Close|Back|Back to the board|Not now|Look at the board|Got it)$/.test(b.textContent.trim()));
         if (out) { e.preventDefault(); out.click(); }
       }
       return;
     }
-    if (e.repeat && e.key === 'Enter') return;
     if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     if (R) {
       if (e.key === 'ArrowLeft') { e.preventDefault(); reviewGo(R.k - 1); }
@@ -765,8 +770,9 @@
   }
   function persist() {
     if (!G || (G.kind === 'online' && G.me === null)) return;
+    const was = games.get(G.id);
     games.put({ id: G.id, kind: G.kind, level: G.level, names: G.names, seed: G.state.seed, moves: G.state.moves, over: G.state.over,
-                online: G.kind === 'online' ? { token: G.online.token, player: G.me } : undefined });
+                online: G.kind === 'online' ? { token: G.online.token, player: G.me } : undefined, attached: !!(was && was.attached) });
   }
   // A bingo just landed on the board: say so.
   function celebrateNew() {
@@ -949,7 +955,7 @@
   $('sm-nav-last').addEventListener('click', () => reviewGo(G.state.moves.length));
 
   // ---- overlays ---------------------------------------------------------------
-  let cancelPicker = null, focusBefore = null;
+  let cancelPicker = null, cancelAsk = null, focusBefore = null;
   const behindOverlay = () => {
     const out = [];
     for (let el = ui.overlay; el && el.parentElement && el !== document.body; el = el.parentElement) {
@@ -959,6 +965,7 @@
   };
   function openOverlay(html) {
     if (cancelPicker) cancelPicker();   // a picker still waiting is over: whatever replaces it wins
+    if (cancelAsk) cancelAsk();
     if (!ui.overlay.classList.contains('is-open')) focusBefore = document.activeElement;
     ui.overlay.innerHTML = '<div class="sm-card" role="dialog" aria-modal="true" tabindex="-1">' + html + '</div>';
     ui.overlay.classList.add('is-open');
@@ -967,6 +974,7 @@
   }
   function closeOverlay() {
     if (cancelPicker) cancelPicker();
+    if (cancelAsk) cancelAsk();
     ui.overlay.classList.remove('is-open'); ui.overlay.innerHTML = '';
     for (const el of behindOverlay()) el.inert = false;
     if (focusBefore && focusBefore.isConnected && typeof focusBefore.focus === 'function') focusBefore.focus({ preventScroll: true });
@@ -1004,7 +1012,9 @@
         '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-ask-cancel">Cancel</button><button class="primary" id="sm-ask-ok">Continue</button></div>');
       const inp = $('sm-ask');
       inp.focus(); inp.select();
-      const done = (v) => { closeOverlay(); resolve(v); };
+      let settled = false;
+      cancelAsk = () => { if (settled) return; settled = true; cancelAsk = null; resolve(null); };
+      const done = (v) => { if (settled) return; settled = true; cancelAsk = null; closeOverlay(); resolve(v); };
       $('sm-ask-ok').addEventListener('click', () => done(inp.value.trim() || null));
       $('sm-ask-cancel').addEventListener('click', () => done(null));
       inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') done(inp.value.trim() || null); if (e.key === 'Escape') done(null); });
@@ -1020,11 +1030,15 @@
     else when = plural(n, 'move') + ' in';
     return { kind, when };
   }
+  let menuNote = null;
+  // a navigation that failed: the message goes on the status line and into the menu card that follows
+  function failToMenu(msg) { setStatus(msg, 'bad'); menuNote = msg; showMenu(); }
   function showMenu() {
-    setUrl(null);
+    if (G) setUrl(null);   // with no game open the address is the one still loading, or the home page already
     const list = games.list();
     const noDict = dictFailed ? ' disabled' : '';
-    const note = ui.status.classList.contains('bad') && ui.status.textContent ? '<p class="sm-card-note">' + esc(ui.status.textContent) + '</p>' : '';
+    const note = menuNote ? '<p class="sm-card-note">' + esc(menuNote) + '</p>' : '';
+    menuNote = null;
     let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p>' + note + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
       '<button data-bot="easy"' + noDict + '><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
       '<button data-bot="medium"' + noDict + '><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
@@ -1139,7 +1153,7 @@
     leaveGame();
     let state;
     try { state = C.replay(rec.seed, rec.moves); }
-    catch (e) { setStatus('The saved game ' + rec.id + ' could not be restored.', 'bad'); showMenu(); return; }
+    catch (e) { failToMenu('The saved game ' + rec.id + ' could not be restored.'); return; }
     G = { id: rec.id, kind: rec.kind, level: rec.level, names: rec.names, state, me: 0, hidden: rec.kind === 'hotseat' && !state.over && !!dict, session: ++sessions };
     seenMoves = state.history.length;
     setUrl(rec.id);
@@ -1166,7 +1180,7 @@
     if (my !== navGen) return;
     leaveGame();
     let state;
-    try { state = C.replay(rec.seed, rec.moves); } catch (e) { setStatus('The saved copy of ' + rec.id + ' could not be read.', 'bad'); showMenu(); return; }
+    try { state = C.replay(rec.seed, rec.moves); } catch (e) { failToMenu('The saved copy of ' + rec.id + ' could not be read.'); return; }
     G = { id: rec.id, kind: 'online', level: null, names: rec.names || ['Player 1', 'Player 2'], handles: {}, nextGame: null, state, me: null, online: { token: null }, hidden: false, session: ++sessions, offline: true };
     seenMoves = state.history.length;
     setUrl(rec.id);
@@ -1207,11 +1221,14 @@
     const held = games.list().filter((r) => r.kind === 'online' && r.online && r.online.token && !r.attached).slice(0, 30);
     if (!held.length) return;
     // a shared device: the games in this browser may be someone else's, so they are attached only on a yes
-    if (!window.confirm('Attach the ' + plural(held.length, 'online game') + ' saved in this browser to this account? They will follow it to your other devices.')) return;
+    if (store.get('sm.attachDeclined', null) === user.id) return;
+    if (!window.confirm('Attach the ' + plural(held.length, 'online game') + ' saved in this browser to this account? They will follow it to your other devices.')) { store.set('sm.attachDeclined', user.id); return; }
     for (const rec of held) {
+      let ok = false;
+      try { await Net.rpc('join_game', { p_code: rec.id, p_name: name, p_token: rec.online.token }); ok = true; }
+      catch (e) { ok = /over|no such game/.test(e.message); }   // finished or gone: nothing to attach, and nothing to ask about again
       const cur = games.get(rec.id);
-      if (cur) { cur.attached = true; games.put(cur); }
-      try { await Net.rpc('join_game', { p_code: rec.id, p_name: name, p_token: rec.online.token }); } catch (e) { /* finished or gone: nothing to attach */ }
+      if (ok && cur) { cur.attached = true; games.put(cur); }
     }
   }
   function loadProfile() {
@@ -1226,7 +1243,7 @@
       : '<div class="sm-auth-row"><button class="small" id="sm-google">Sign in with Google</button><button class="small" id="sm-email">Email me a link</button></div><div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>';
     const g = $('sm-google'), e = $('sm-email'), o = $('sm-signout'), pr = $('sm-profile');
     if (pr) pr.addEventListener('click', () => { if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } });
-    if (g) g.addEventListener('click', () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } }));
+    if (g) g.addEventListener('click', () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search + (linkToken ? '#k=' + linkToken : '') } }));
     if (e) e.addEventListener('click', async () => {
       const email = await askText('Email me a sign-in link', 'A one-time link to sign in here. No password.', 'you@example.com', '');
       if (!email) return;
@@ -1273,16 +1290,16 @@
       try {
         await Net.rpc('create_game', { p_code: id, p_seed: C.pack(id, randomSeed()), p_name: name, p_token: token });
         if (my !== navGen) return;
-        games.put({ id, kind: 'online', names: [name, null], seed: null, moves: [], over: false, online: { token, player: 0 } });
+        games.put({ id, kind: 'online', names: [name, null], seed: null, moves: [], over: false, online: { token, player: 0 }, attached: !!user });
         await openOnline(id);
         return;
       } catch (e) {
         if (my !== navGen) return;
         if (/taken/.test(e.message)) continue;
-        setStatus('Could not create the game: ' + e.message, 'bad'); showMenu(); return;
+        failToMenu('Could not create the game: ' + e.message); return;
       }
     }
-    setStatus('Could not find a free game id; try again.', 'bad'); showMenu();
+    failToMenu('Could not find a free game id; try again.');
   }
   // Claim or recover a seat: from this browser's record, or from a private
   // link's token, or by joining the empty second seat.
@@ -1294,7 +1311,7 @@
       // It is only dropped from the address once the server has answered.
       let seat;
       try { seat = await Net.rpc('my_seat', { p_code: id, p_token: urlToken }); } catch (e) { throw new Error('could not check the private link (' + e.message + ')'); }
-      if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; history.replaceState(null, '', location.pathname + location.search); }
+      if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; dropLinkToken(); }
     }
     // a valid private link wins over whatever this browser remembered
     const token = urlToken || (rec && rec.online && rec.online.token) || randomToken();
@@ -1314,7 +1331,7 @@
       const seat = typeof r === 'number' ? { token, player: r } : { token: r.token || token, player: r.player };
       // kept at once, before anything else can interrupt: the server has already given this token the seat
       if (!(rec && rec.online && rec.online.token === seat.token)) {
-        games.put({ id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', seat.player === 1 ? (name || 'Player') : row.p2_name || null], seed: null, moves: [], over: false, online: { token: seat.token, player: seat.player } });
+        games.put({ id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', seat.player === 1 ? (name || 'Player') : row.p2_name || null], seed: null, moves: [], over: false, online: { token: seat.token, player: seat.player }, attached: !!user });
       }
       return seat;
     } catch (e) {
@@ -1326,7 +1343,7 @@
     const my = ++navGen;
     await dictReady;
     if (my !== navGen) return;
-    if (!dict) { setStatus('The word list did not load. Reload to try again.', 'bad'); showMenu(); return; }
+    if (!dict) { failToMenu('The word list did not load. Reload to try again.'); return; }
     const rec = games.get(id);
     // offline: the copy this browser has, read-only
     if (navigator.onLine === false && rec && rec.seed) { showCachedOnline(rec); return; }
@@ -1335,22 +1352,22 @@
     catch (e) {
       if (my !== navGen) return;
       if (rec && rec.seed) { showCachedOnline(rec); return; }
-      setStatus('Could not load game ' + id + ': ' + e.message, 'bad'); showMenu(); return;
+      failToMenu('Could not load game ' + id + ': ' + e.message); return;
     }
     if (my !== navGen) return;
-    if (!row) { setStatus('There is no game called ' + id + '.', 'bad'); showMenu(); return; }
+    if (!row) { failToMenu('There is no game called ' + id + '.'); return; }
     let seat;
-    try { seat = await seatFor(id, row); } catch (e) { if (my !== navGen) return; setStatus('Could not join: ' + e.message, 'bad'); showMenu(); return; }
+    try { seat = await seatFor(id, row); } catch (e) { if (my !== navGen) return; failToMenu('Could not join: ' + e.message); return; }
     if (my !== navGen) return;
-    if (tokenFromUrl()) history.replaceState(null, '', location.pathname + location.search);   // the seat is held (or refused) now; the link's token has done its work
+    dropLinkToken();   // the seat is held (or refused) now; the link's token has done its work
     if (!seat) { showMenu(); return; }
     if (seat.player !== null) {
       try { row = await Net.rpc('get_game', { p_code: id, p_token: seat.token }); } catch (e) { /* keep what we have */ }
       if (my !== navGen) return;
     }
-    if (!row.seed) { setStatus(row.private ? 'This game is private: its players have not opened it to watchers.' : 'Could not load game ' + id + '.', 'bad'); showMenu(); return; }
+    if (!row.seed) { failToMenu(row.private ? 'This game is private: its players have not opened it to watchers.' : 'Could not load game ' + id + '.'); return; }
     let state;
-    try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { setStatus('This game’s record is corrupt: ' + e.message, 'bad'); showMenu(); return; }
+    try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { failToMenu('This game’s record is corrupt: ' + e.message); return; }
     leaveGame();
     G = { id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', row.p2_name || null], handles: row.handles || {}, nextGame: row.next_game || null, state, me: seat.player, online: { token: seat.token }, hidden: false, session: ++sessions };
     seenMoves = state.history.length;
@@ -1414,7 +1431,7 @@
       try {
         await Net.rpc('challenge', { p_code: id, p_seed: C.pack(id, randomSeed()), p_name: store.get('sm.name', '') || (user && user.name) || 'Player', p_token: token, p_handle: handle });
         if (my !== navGen) return;
-        games.put({ id, kind: 'online', names: [store.get('sm.name', '') || user.name, name], seed: null, moves: [], over: false, online: { token, player: 0 } });
+        games.put({ id, kind: 'online', names: [store.get('sm.name', '') || user.name, name], seed: null, moves: [], over: false, online: { token, player: 0 }, attached: true });
         await openOnline(id);
         return;
       } catch (e) {
@@ -1462,6 +1479,7 @@
     const st = { games: results.length, wins: 0, losses: 0, ties: 0, best: 0, total: 0, plays: 0, points: 0, bingos: 0, brilliancies: 0, bestWord: null, bestWordScore: 0 };
     const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);   // whatever the server holds, only a number is ever shown
     for (const r of results) {
+      if (r.end_reason === 'disputed') continue;   // the two sides disagreed on the score: played, counted for nothing
       if (r.won === true) st.wins++; else if (r.won === false) st.losses++; else st.ties++;
       st.total += num(r.my_score); st.best = Math.max(st.best, num(r.my_score));
       const x = r.stats || {};
@@ -1485,6 +1503,7 @@
     const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : 0).toString();
     const records = {};
     for (const r of pr.results) {
+      if (r.end_reason === 'disputed') continue;
       const k = r.their_handle || ('~' + r.their_name);
       const rec = records[k] || (records[k] = { name: String(r.their_name || ''), handle: r.their_handle ? String(r.their_handle) : null, w: 0, l: 0, t: 0 });
       if (r.won === true) rec.w++; else if (r.won === false) rec.l++; else rec.t++;
@@ -1523,7 +1542,7 @@
     }
     if (pr.results.length) {
       html += '<div class="sm-k" style="text-align:left;margin-top:12px">Past games</div><div class="sm-summary">';
-      for (const r of pr.results.slice(0, 30)) html += '<div data-g="' + esc(r.game_id) + '"><span>' + (r.won === true ? 'Won' : r.won === false ? 'Lost' : 'Tied') + ' ' + num(r.my_score) + '–' + num(r.their_score) + ' vs ' + esc(r.their_name || 'a guest') + '</span><small>' + esc(new Date(r.finished_at).toLocaleDateString()) + '</small></div>';
+      for (const r of pr.results.slice(0, 30)) html += '<div data-g="' + esc(r.game_id) + '"><span>' + (r.end_reason === 'disputed' ? 'Disputed' : (r.won === true ? 'Won' : r.won === false ? 'Lost' : 'Tied') + ' ' + num(r.my_score) + '–' + num(r.their_score)) + ' vs ' + esc(r.their_name || 'a guest') + '</span><small>' + esc(new Date(r.finished_at).toLocaleDateString()) + '</small></div>';
       html += '</div>';
     }
     html += '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-pr-close">Close</button></div>';
