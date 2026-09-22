@@ -4,7 +4,7 @@
    version shows up on the next open. Online play and sign-in requests go to
    Supabase and are never cached; the Supabase browser library is, so a
    cached online game can still be shown offline. */
-const CACHE = 'scrabble-mod-v4';
+const CACHE = 'scrabble-mod-v5';
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
 const SHELL = ['/scrabble-mod/', '/scrabble-mod/core.js', '/scrabble-mod/app.js', '/scrabble-mod/words.txt',
   '/scrabble-mod/common.txt', '/scrabble-mod/manifest.webmanifest', '/scrabble-mod/icon-192.png', '/scrabble-mod/icon-512.png',

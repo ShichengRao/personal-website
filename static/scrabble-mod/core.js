@@ -547,13 +547,16 @@
   }
   function leaveValue(tiles) {
     if (!tiles.length) return 0;
+    // the fit never saw three blanks in one leave (the pair terms cover two): a third is priced as
+    // two points on top of the two-blank leave, less than an S, so a bingo in hand is played now
+    let nb = 0;
+    for (const t of tiles) if (t === '?') nb++;
+    if (nb > 2) { let drop = nb - 2; return leaveValue(tiles.filter((t) => t !== '?' || drop-- <= 0)) + 2 * (nb - 2); }
     const f = leaveFeatures(tiles);
     let v = 0;
     for (const t in f.counts) v += LEAVE[t] * f.counts[t];
     for (const k of f.pairs) v += LEAVE2[k] || 0;
     v += LEAVE_TUNE.dup * f.dup + LEAVE_TUNE.blankDup * f.blankDup + LEAVE_TUNE.skew * f.skew;
-    // the fit never saw three blanks in one leave (the pair terms cover two); a third is worth little more than a tile
-    if (f.counts['?'] > 2) v -= (f.counts['?'] - 2) * (LEAVE['?'] - 5);
     return Math.round(v * 10) / 10;
   }
   function leaveAfter(rack, tiles) {
@@ -695,6 +698,7 @@
     if (exch && (!ref || exch.equity > ref.equity + 1)) ref = exch;
     // nothing common and nothing to exchange: the best play there is stands in, so a pass cannot rate as best
     if (!ref && list[0]) ref = list[0];
+    if (endgame && (!ref || -replyNow > ref.equity)) ref = { t: 'pass', word: 'Pass', score: 0, equity: -replyNow, reply: replyNow, common: true, words: [], tiles: [] };
     // the expert play: a rare-word play better than the yardstick, unless the player found it themselves
     const expert = list[0] && !list[0].common && played !== 0 && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
     // ratings: the yardstick is 100 and every point of equity above or below it is worth three,

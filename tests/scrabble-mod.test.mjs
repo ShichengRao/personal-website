@@ -593,6 +593,8 @@ test('a move object handed to apply is copied, not shared, and a seed must be an
 test('three blanks are not worth three times one, and a rare-only position still has a yardstick', () => {
   const d = dict();
   assert.ok(C.leaveValue(['?', '?', '?']) < C.leaveValue(['?', '?']) + 10, 'a third blank is worth little');
+  assert.ok(C.leaveValue(['?', '?', '?']) >= C.leaveValue(['?', '?']), 'but never less than nothing');
+  assert.ok(C.leaveValue(['?', '?', '?', 'E']) >= C.leaveValue(['?', '?', 'E']), 'and holding it beats not holding it');
   let s = C.newGame(12);
   s = withRack(s, '???EAIS');
   const m = C.botMove(s, 'hard', C.seededRandom(1), d);

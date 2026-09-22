@@ -49,7 +49,7 @@
     return m ? m[1].toLowerCase() : null;
   }
   function tokenFromUrl() {
-    const m = location.hash.match(/[#&]k=([0-9a-f]{32})/);
+    const m = location.hash.match(/[#&]k=([0-9a-f]{32,64})(?![0-9a-f])/);
     return m ? m[1] : null;
   }
   const setUrl = (id) => history.replaceState(null, '', pathFor(id));
@@ -583,7 +583,14 @@
   // ---- keyboard ------------------------------------------------------------------
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (ui.overlay.classList.contains('is-open')) return;
+    if (ui.overlay.classList.contains('is-open')) {
+      if (e.key === 'Escape' && !cancelPicker) {
+        const out = [...ui.overlay.querySelectorAll('button')].find((b) => /^(Cancel|Close|Back|Back to the board|Not now)$/.test(b.textContent.trim()));
+        if (out) { e.preventDefault(); out.click(); }
+      }
+      return;
+    }
+    if (e.repeat && e.key === 'Enter') return;
     if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     if (R) {
       if (e.key === 'ArrowLeft') { e.preventDefault(); reviewGo(R.k - 1); }
@@ -592,7 +599,7 @@
       return;
     }
     if (!myTurn()) return;
-    if (e.key === 'Escape') { if (swapMode) { swapMode = false; marks = new Set(); render(); } else recall(); return; }
+    if (e.key === 'Escape') { if (swapMode) { swapMode = false; marks = new Set(); setStatus(''); render(); } else recall(); return; }
     if (swapMode) return;
     if (e.key === 'Enter') { if (e.target && /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return; e.preventDefault(); play(); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') { if (pending.length) { e.preventDefault(); backspace(); } return; }
@@ -882,10 +889,12 @@
       const an = analysis(R.k), who = isYou(s.history[R.k - 1].p) ? 'You' : nameOf(s.history[R.k - 1].p);
       const playedRare = an.played !== null && an.played >= 0 && !an.list[an.played].common;
       const rankTxt = an.played === null || an.played < 0 ? '' : playedRare ? ' (a rare word: #' + (an.played + 1) + ' of ' + an.list.length + ' plays in the full list)' : ' (#' + (an.list.slice(0, an.played).filter((m) => m.common).length + 1) + ' of ' + an.commonList.length + ' common plays)';
-      const refTxt = an.ref ? (an.ref.t === 'swap' ? 'exchanging ' + esc(an.ref.tiles.join('')) + ' and keeping ' + esc(an.ref.keeps || 'nothing') : esc(an.ref.word) + ' for ' + an.ref.score) : '';
+      const refTxt = an.ref ? (an.ref.t === 'swap' ? 'exchanging ' + esc(an.ref.tiles.join('')) + ' and keeping ' + esc(an.ref.keeps || 'nothing') : an.ref.t === 'pass' ? 'passing' : esc(an.ref.word) + ' for ' + an.ref.score) : '';
+      const refIsPlayed = an.played !== null && an.played >= 0 && an.ref === an.list[an.played];
+      const refKind = an.ref && an.ref.t !== 'swap' && an.ref.t !== 'pass' && !an.ref.common ? 'The best play in the full list was ' : 'The best common play was ';
       if (!an.ref) a += '<div class="sm-verdict">No play was available; ' + esc(who.toLowerCase() === 'you' ? 'you' : who) + ' ' + esc(an.playedLabel) + '.</div>';
-      else if (an.grade === 'brilliant') a += '<div class="sm-verdict best"><b>Brilliant: ' + esc(who) + ' beat every common play, rated ' + an.rating + '.</b> ' + esc(an.playedLabel) + rankTxt + ' The best common play was ' + refTxt + '.</div>';
-      else if (an.grade === 'best') a += '<div class="sm-verdict best"><b>' + esc(who) + ' found the best play.</b> ' + esc(an.playedLabel) + rankTxt + (playedRare ? ' The best common play was ' + refTxt + '.' : '') + '</div>';
+      else if (an.grade === 'brilliant') a += '<div class="sm-verdict best"><b>Brilliant: ' + esc(who) + ' beat every common play, rated ' + an.rating + '.</b> ' + esc(an.playedLabel) + rankTxt + ' ' + refKind + refTxt + '.</div>';
+      else if (an.grade === 'best') a += '<div class="sm-verdict best"><b>' + esc(who) + ' found the best play.</b> ' + esc(an.playedLabel) + rankTxt + (playedRare && !refIsPlayed ? ' ' + refKind + refTxt + '.' : '') + '</div>';
       else a += '<div class="sm-verdict ' + (an.grade === 'miss' ? 'miss' : '') + '"><b>' + esc(who) + ': ' + esc(an.playedLabel) + rankTxt + ', rated <b>' + an.rating + '</b>.</b> The best play was ' + refTxt + '.</div>';
       if (an.expert) a += '<div class="sm-note" style="margin:-2px 0 8px">With the full word list an expert had <b>' + esc(an.expert.word) + '</b> for ' + an.expert.score + '. Ratings do not count rare words against you.</div>';
       // the same word in several spots with the same score is one line, unless one of them is the played spot
@@ -900,7 +909,7 @@
         seenKey.add(key); top.push(m);
       }
       if (an.exch && (an.playedSwap || top.length < 5 || an.exch.equity > top[top.length - 1].equity)) { top.push(an.exch); top.sort((x, y) => y.equity - x.equity); }
-      if (an.played >= 0 && !top.includes(an.list[an.played])) top.push(an.list[an.played]);
+      if (an.played !== null && an.played >= 0 && !top.includes(an.list[an.played])) top.push(an.list[an.played]);
       if (top.length) {
         a += '<div class="sm-cands"><div class="head"><span>Top plays</span><span>score</span><span></span><span>rating</span></div>';
         top.forEach((m) => {
@@ -941,15 +950,20 @@
 
   // ---- overlays ---------------------------------------------------------------
   let cancelPicker = null, focusBefore = null;
-  const behindOverlay = () => [...ui.overlay.parentElement.children].filter((el) => el !== ui.overlay);
+  const behindOverlay = () => {
+    const out = [];
+    for (let el = ui.overlay; el && el.parentElement && el !== document.body; el = el.parentElement) {
+      for (const sib of el.parentElement.children) if (sib !== el) out.push(sib);
+    }
+    return out;
+  };
   function openOverlay(html) {
     if (cancelPicker) cancelPicker();   // a picker still waiting is over: whatever replaces it wins
     if (!ui.overlay.classList.contains('is-open')) focusBefore = document.activeElement;
-    ui.overlay.innerHTML = '<div class="sm-card" role="dialog" aria-modal="true">' + html + '</div>';
+    ui.overlay.innerHTML = '<div class="sm-card" role="dialog" aria-modal="true" tabindex="-1">' + html + '</div>';
     ui.overlay.classList.add('is-open');
     for (const el of behindOverlay()) el.inert = true;   // nothing behind the card can be reached or activated
-    const first = ui.overlay.querySelector('input, button');
-    if (first) first.focus({ preventScroll: true });
+    ui.overlay.firstElementChild.focus({ preventScroll: true });   // the card itself, so a key still held down activates nothing
   }
   function closeOverlay() {
     if (cancelPicker) cancelPicker();
@@ -1010,7 +1024,8 @@
     setUrl(null);
     const list = games.list();
     const noDict = dictFailed ? ' disabled' : '';
-    let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p>' + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
+    const note = ui.status.classList.contains('bad') && ui.status.textContent ? '<p class="sm-card-note">' + esc(ui.status.textContent) + '</p>' : '';
+    let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p>' + note + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
       '<button data-bot="easy"' + noDict + '><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
       '<button data-bot="medium"' + noDict + '><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
       '<button data-bot="hard"' + noDict + '><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
@@ -1184,13 +1199,18 @@
     renderAuth();
     if (user) loadProfile();
   }
-  let signingOut = false;
   // On sign-in, every seat this browser holds by link gets attached to the
   // account (join_game is idempotent for a held seat), so the games follow
   // the account to other devices without being reopened here first.
   async function attachSeats() {
     const name = store.get('sm.name', '') || (user && user.name) || 'Player';
-    for (const rec of games.list().filter((r) => r.kind === 'online' && r.online && r.online.token).slice(0, 30)) {
+    const held = games.list().filter((r) => r.kind === 'online' && r.online && r.online.token && !r.attached).slice(0, 30);
+    if (!held.length) return;
+    // a shared device: the games in this browser may be someone else's, so they are attached only on a yes
+    if (!window.confirm('Attach the ' + plural(held.length, 'online game') + ' saved in this browser to this account? They will follow it to your other devices.')) return;
+    for (const rec of held) {
+      const cur = games.get(rec.id);
+      if (cur) { cur.attached = true; games.put(cur); }
       try { await Net.rpc('join_game', { p_code: rec.id, p_name: name, p_token: rec.online.token }); } catch (e) { /* finished or gone: nothing to attach */ }
     }
   }
@@ -1213,7 +1233,12 @@
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname + location.search } });
       setStatus(error ? 'Could not send the link: ' + error.message : 'Check your email for the sign-in link.', error ? 'bad' : 'good');
     });
-    if (o) o.addEventListener('click', async () => { signingOut = true; try { await sb.auth.signOut(); } finally { setTimeout(() => { signingOut = false; }, 5000); } });
+    if (o) o.addEventListener('click', async () => {
+      store.set('sm.signout', Date.now());   // every tab sees the same marker and forgets the seats too
+      let err = null;
+      try { const r = await sb.auth.signOut(); err = r && r.error; } catch (e) { err = e; }
+      if (err) { store.del('sm.signout'); setStatus('Could not sign out: ' + (err.message || err), 'bad'); }
+    });
   }
   if (sb) {
     sb.auth.getSession().then(({ data }) => setUser(data.session && data.session.user));
@@ -1223,7 +1248,8 @@
       if (event === 'SIGNED_OUT') {
         // a shared device: the seats this browser opened while signed in must not stay playable.
         // Only a sign-out this person asked for does that; a session that merely expired keeps them.
-        if (signingOut) {
+        const asked = Date.now() - (store.get('sm.signout', 0) || 0) < 15000;
+        if (asked) {
           for (const rec of games.list()) if (rec.kind === 'online') games.remove(rec.id);
           if (G && G.kind === 'online') { leaveGame(); showMenu(); }
         } else if (G && G.kind === 'online') render();
@@ -1268,8 +1294,7 @@
       // It is only dropped from the address once the server has answered.
       let seat;
       try { seat = await Net.rpc('my_seat', { p_code: id, p_token: urlToken }); } catch (e) { throw new Error('could not check the private link (' + e.message + ')'); }
-      history.replaceState(null, '', location.pathname + location.search);
-      if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; }
+      if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; history.replaceState(null, '', location.pathname + location.search); }
     }
     // a valid private link wins over whatever this browser remembered
     const token = urlToken || (rec && rec.online && rec.online.token) || randomToken();
@@ -1317,6 +1342,7 @@
     let seat;
     try { seat = await seatFor(id, row); } catch (e) { if (my !== navGen) return; setStatus('Could not join: ' + e.message, 'bad'); showMenu(); return; }
     if (my !== navGen) return;
+    if (tokenFromUrl()) history.replaceState(null, '', location.pathname + location.search);   // the seat is held (or refused) now; the link's token has done its work
     if (!seat) { showMenu(); return; }
     if (seat.player !== null) {
       try { row = await Net.rpc('get_game', { p_code: id, p_token: seat.token }); } catch (e) { /* keep what we have */ }
@@ -1356,7 +1382,8 @@
     const s = G.session;
     let row;
     try { row = await Net.rpc('get_game', { p_code: G.id, p_token: G.online.token || null }); } catch (e) { return; }
-    if (!alive(s) || busy || !row || !row.moves) return;
+    if (!alive(s) || busy || !row) return;
+    if (!row.moves) { if (row.private && G.me === null) { stopPolling(); setStatus('This game is private now: its players have closed it to watchers.', 'bad'); } return; }
     integrate(row.moves, [row.p1_name || 'Player 1', row.p2_name || null], row);
   }
   // The same two players again, seats swapped. The server copies both seats,
@@ -1443,12 +1470,16 @@
     }
     return st;
   }
+  let profileGen = 0;
   async function showProfile(handle) {
     if (!Net.enabled) { openOverlay('<h2>Profile</h2><p>Profiles need a connection, and this page is offline.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', () => { closeOverlay(); if (!G) showMenu(); }); return; }
-    openOverlay('<h2>Profile</h2><p>Loading…</p>');
     let pr;
     const back = () => { closeOverlay(); if (!G) showMenu(); };
-    try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
+    openOverlay('<h2>Profile</h2><p>Loading…</p><button id="sm-pr-close">Cancel</button>');
+    const my = ++profileGen;
+    $('sm-pr-close').addEventListener('click', () => { profileGen++; back(); });
+    try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { if (my !== profileGen) return; openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
+    if (my !== profileGen) return;
     if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
     const st = statsOf(pr.results);
     const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : 0).toString();
@@ -1521,11 +1552,13 @@
       $('sm-qr-copy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText(link); e.target.textContent = 'Copied'; } catch (err) { window.prompt('Copy this link:', link); } });
     };
     if (window.qrcode) { draw(); return; }
-    openOverlay('<h2>QR code</h2><p>Loading…</p>');
+    openOverlay('<h2>QR code</h2><p>Loading…</p><button id="sm-qr-cancel">Cancel</button>');
+    let cancelled = false;
+    $('sm-qr-cancel').addEventListener('click', () => { cancelled = true; showProfile(pr.handle); });
     const sc = document.createElement('script');
     sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
-    sc.onload = draw;
-    sc.onerror = () => { openOverlay('<h2>QR code</h2><p>Could not load the QR library. The link is ' + esc(link) + '</p><button id="sm-qr-back">Back</button>'); $('sm-qr-back').addEventListener('click', () => showProfile(pr.handle)); };
+    sc.onload = () => { if (!cancelled) draw(); };
+    sc.onerror = () => { if (cancelled) return; openOverlay('<h2>QR code</h2><p>Could not load the QR library. The link is ' + esc(link) + '</p><button id="sm-qr-back">Back</button>'); $('sm-qr-back').addEventListener('click', () => showProfile(pr.handle)); };
     document.head.appendChild(sc);
   }
 

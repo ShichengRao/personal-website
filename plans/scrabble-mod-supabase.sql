@@ -77,6 +77,24 @@ create table if not exists game_results (
   stats       jsonb not null,
   finished_at timestamptz not null default now()
 );
+-- Each seat's own account of how the game ended. A result is written only
+-- when the two agree (each player's stats come from their own report), or
+-- from a lone report once the other side has had a day to speak up; a pair
+-- that disagree never becomes a result.
+create table if not exists game_reports (
+  game_id     text not null references games(id),
+  seat        smallint not null check (seat in (0, 1)),
+  p0_score    integer not null,
+  p1_score    integer not null,
+  winner      smallint not null check (winner in (-1, 0, 1)),
+  end_reason  text not null,
+  moves       integer not null,
+  stats       jsonb not null,
+  reported_at timestamptz not null default now(),
+  primary key (game_id, seat)
+);
+alter table game_reports enable row level security;
+revoke all on game_reports from anon, authenticated;
 alter table game_results drop constraint if exists game_results_game_id_fkey;
 alter table game_results add constraint game_results_game_id_fkey foreign key (game_id) references games(id);
 alter table game_results drop constraint if exists game_results_winner_check;
@@ -191,8 +209,15 @@ $$;
 create or replace function game_brake()
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if (select count(*) from games where created_at > now() - interval '1 hour') >= 300 then
-    raise exception 'too many new games right now; try again in a while';
+  if auth.uid() is null then
+    -- anonymous creators share one budget, so a script cannot fill the id space; signed-in players are unaffected
+    if (select count(*) from games g join game_keys k on k.game_id = g.id and k.player = 0
+        where g.created_at > now() - interval '1 hour' and k.user_id is null) >= 300 then
+      raise exception 'too many new games right now; sign in, or try again in a while';
+    end if;
+  elsif (select count(*) from games g join game_keys k on k.game_id = g.id and k.player = 0
+         where g.created_at > now() - interval '1 hour' and k.user_id = auth.uid()) >= 30 then
+    raise exception 'you have started a lot of games this hour; try again in a while';
   end if;
 end $$;
 
@@ -269,9 +294,9 @@ begin
   end if;
   kind := p_move->>'t';
   if kind is null or kind not in ('play', 'swap', 'pass', 'resign') then raise exception 'bad move'; end if;
-  if p_move->>'d' is null or p_move->>'d' !~ '^[A-Za-z0-9+/]+={0,2}$' or length(p_move->>'d') > 4000 then raise exception 'bad move'; end if;
+  if p_move->>'d' is null or p_move->>'d' !~ '^[A-Za-z0-9+/]+={0,2}$' or length(p_move->>'d') > 800 then raise exception 'bad move'; end if;
   if kind = 'play' and ((p_move->>'n') is null or (p_move->>'n')::int < 1 or (p_move->>'n')::int > 7) then raise exception 'bad move'; end if;
-  if length(p_move::text) > 4200 then raise exception 'move too large'; end if;
+  if length(p_move::text) > 1000 then raise exception 'move too large'; end if;
   who := seat_of(p_code, p_token);
   if who is null then raise exception 'not a player in this game'; end if;
   select moves into cur from games where id = p_code for update;
@@ -279,7 +304,7 @@ begin
   n := jsonb_array_length(cur);
   if coalesce(game_over(cur), false) or exists (select 1 from game_results r where r.game_id = p_code) then raise exception 'the game is over'; end if;
   if kind = 'resign' and not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody to resign to'; end if;
-  if n >= 400 and kind <> 'resign' then raise exception 'game too long: resign to end it'; end if;
+  if (n >= 400 or length(cur::text) > 150000) and kind <> 'resign' then raise exception 'game too long: resign to end it'; end if;
   if n <> p_index then raise exception 'out of date: the game has moved on'; end if;
   if n % 2 <> who then raise exception 'not your turn'; end if;
   update games set moves = cur || jsonb_build_array(p_move), updated_at = now() where id = p_code;
@@ -324,14 +349,20 @@ end $$;
 -- A public profile: name, code, the results it took part in (for stats and
 -- records), whether the caller is a friend, and, for the owner, the friend list.
 create or replace function profile(p_handle text)
-returns jsonb language plpgsql security definer set search_path = public stable as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   u uuid;
   h text;
   nm text;
+  gid text;
 begin
   select user_id, handle, name into u, h, nm from profiles where handle = upper(trim(p_handle));
   if u is null then return null; end if;
+  -- a lone report the other side never answered becomes the record after a day
+  for gid in select r.game_id from game_reports r join game_keys k on k.game_id = r.game_id and k.user_id = u
+             where r.reported_at < now() - interval '1 day' and not exists (select 1 from game_results x where x.game_id = r.game_id) limit 50 loop
+    perform settle_game(gid);
+  end loop;
   return jsonb_build_object(
     'handle', h, 'name', nm, 'mine', auth.uid() = u,
     'public_games', (select public_games from profiles where user_id = u),
@@ -412,8 +443,48 @@ returns jsonb language sql immutable as $$
   select jsonb_build_object('p0', seat_stats(coalesce(p->'p0', '{}'::jsonb)), 'p1', seat_stats(coalesce(p->'p1', '{}'::jsonb)));
 $$;
 
--- Records a finished game. Idempotent: the first report stands. The caller
--- must hold a seat, and the report must cover every move on the server.
+-- The result as clients may see it: no account ids.
+create or replace function result_view(p_code text)
+returns jsonb language sql security definer set search_path = public stable as $$
+  select jsonb_build_object('game_id', game_id, 'p0_name', p0_name, 'p1_name', p1_name, 'p0_score', p0_score, 'p1_score', p1_score,
+                            'winner', winner, 'end_reason', end_reason, 'moves', moves, 'finished_at', finished_at)
+  from game_results where game_id = p_code;
+$$;
+
+-- Turns the reports on a game into its result when they allow it: both seats
+-- agree, or one seat reported and the other has been silent for a day.
+create or replace function settle_game(p_code text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r0 game_reports%rowtype;
+  r1 game_reports%rowtype;
+  g games%rowtype;
+  src game_reports%rowtype;
+  st jsonb;
+begin
+  if exists (select 1 from game_results where game_id = p_code) then return; end if;
+  select * into r0 from game_reports where game_id = p_code and seat = 0;
+  select * into r1 from game_reports where game_id = p_code and seat = 1;
+  if r0.game_id is not null and r1.game_id is not null then
+    if r0.p0_score <> r1.p0_score or r0.p1_score <> r1.p1_score or r0.winner <> r1.winner or r0.moves <> r1.moves then return; end if;   -- disputed: no record
+    src := r0;
+    st := jsonb_build_object('p0', r0.stats->'p0', 'p1', r1.stats->'p1');   -- each player's stats from their own report
+  elsif r0.game_id is not null and r0.reported_at < now() - interval '1 day' then src := r0; st := r0.stats;
+  elsif r1.game_id is not null and r1.reported_at < now() - interval '1 day' then src := r1; st := r1.stats;
+  else return; end if;
+  select * into g from games where id = p_code;
+  insert into game_results (game_id, p0_user, p1_user, p0_name, p1_name, p0_score, p1_score, winner, end_reason, moves, stats)
+  values (p_code,
+          (select user_id from game_keys where game_id = p_code and player = 0),
+          (select user_id from game_keys where game_id = p_code and player = 1),
+          g.p1_name, g.p2_name, src.p0_score, src.p1_score, src.winner, src.end_reason, src.moves, st)
+  on conflict (game_id) do nothing;
+end $$;
+
+-- Files the caller's account of a finished game (the first per seat stands)
+-- and settles the result when the reports allow it. The report must cover
+-- every move on the server and agree with what the record says about the
+-- ending. Returns the result, or null while it is not settled.
 create or replace function finish_game(p_code text, p_token text, p_result jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
@@ -423,9 +494,8 @@ declare
 begin
   who := seat_of(p_code, p_token);
   if who is null then raise exception 'not a player in this game'; end if;
-  if exists (select 1 from game_results where game_id = p_code) then
-    return (select to_jsonb(r) from game_results r where game_id = p_code);
-  end if;
+  if exists (select 1 from game_results where game_id = p_code) then return result_view(p_code); end if;
+  if exists (select 1 from game_reports where game_id = p_code and seat = who) then perform settle_game(p_code); return result_view(p_code); end if;
   select * into g from games where id = p_code;
   if not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody joined this game'; end if;
   if length(p_result::text) > 4000 then raise exception 'report too large'; end if;
@@ -444,15 +514,12 @@ begin
       raise exception 'the report does not match the game';
     end if;
   end if;
-  insert into game_results (game_id, p0_user, p1_user, p0_name, p1_name, p0_score, p1_score, winner, end_reason, moves, stats)
-  values (p_code,
-          (select user_id from game_keys where game_id = p_code and player = 0),
-          (select user_id from game_keys where game_id = p_code and player = 1),
-          g.p1_name, g.p2_name,
-          (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, p_result->>'end_reason',
+  insert into game_reports (game_id, seat, p0_score, p1_score, winner, end_reason, moves, stats)
+  values (p_code, who, (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, p_result->>'end_reason',
           (p_result->>'moves')::int, stats_shape(p_result->'stats'))
-  on conflict (game_id) do nothing;   -- two clients finishing at once: the first stands
-  return (select to_jsonb(r) from game_results r where game_id = p_code);
+  on conflict (game_id, seat) do nothing;
+  perform settle_game(p_code);
+  return result_view(p_code);
 end $$;
 
 -- A rematch with the sides swapped: both seats (token and account) are
@@ -473,7 +540,6 @@ begin
   if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or length(p_new) > 40 then raise exception 'bad game id'; end if;
   if exists (select 1 from games where id = p_new) then raise exception 'that id is taken'; end if;
   if p_seed is null or p_seed !~ '^[A-Za-z0-9+/]+={0,2}$' or length(p_seed) > 200 then raise exception 'bad seed'; end if;
-  perform game_brake();
   insert into games (id, seed, p1_name, p2_name) values (p_new, p_seed, g.p2_name, g.p1_name);
   insert into game_keys (game_id, player, token, user_id)
     select p_new, 1 - player, token, user_id from game_keys where game_id = p_old;
@@ -499,13 +565,15 @@ begin
     raise exception 'you already have three games waiting on this player';
   end if;
   perform create_game(p_code, p_seed, p_name, p_token);
-  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), other);
+  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, replace(gen_random_uuid()::text, '-', ''), other);
   update games set p2_name = other_name, updated_at = now() where id = p_code;
   return p_code;
 end $$;
 
 revoke all on function seat_of(text, text) from public;
 revoke all on function game_brake() from public;
+revoke all on function result_view(text) from public;
+revoke all on function settle_game(text) from public;
 revoke all on function stat_int(text) from public;
 revoke all on function seat_stats(jsonb) from public;
 revoke all on function stats_shape(jsonb) from public;
