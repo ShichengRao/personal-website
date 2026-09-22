@@ -345,6 +345,11 @@ begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
   if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 24 then raise exception 'name must be 1-24 characters'; end if;
   update profiles set name = trim(p_name) where user_id = auth.uid();
+  -- the name follows the account onto every seat it holds, in games and in the record
+  update games g set p1_name = trim(p_name) from game_keys k where k.game_id = g.id and k.user_id = auth.uid() and k.player = 0;
+  update games g set p2_name = trim(p_name) from game_keys k where k.game_id = g.id and k.user_id = auth.uid() and k.player = 1;
+  update game_results set p0_name = trim(p_name) where p0_user = auth.uid();
+  update game_results set p1_name = trim(p_name) where p1_user = auth.uid();
   return (select jsonb_build_object('handle', handle, 'name', name) from profiles where user_id = auth.uid());
 end $$;
 
