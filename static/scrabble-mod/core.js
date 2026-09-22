@@ -97,7 +97,9 @@
     const bad = (reason) => ({ ok: false, reason });
     if (!tiles || !tiles.length) return bad('Place at least one tile.');
     const placed = new Map();
+    if (!Array.isArray(tiles)) return bad('Not a play.');
     for (const t of tiles) {
+      if (!t || typeof t !== 'object') return bad('Not a play.');
       if (!(t.r >= 0 && t.r < N && t.c >= 0 && t.c < N)) return bad('That square is off the board.');
       const i = t.r * N + t.c;
       if (board[i]) return bad('That square is already taken.');
@@ -176,13 +178,13 @@
     const rack = state.racks[state.turn];
     if (move.t === 'pass' || move.t === 'resign') return { ok: true };
     if (move.t === 'swap') {
-      if (!Array.isArray(move.tiles) || !move.tiles.length) return bad('Pick the tiles to swap.');
+      if (!Array.isArray(move.tiles) || !move.tiles.length || move.tiles.some((t) => typeof t !== 'string')) return bad('Pick the tiles to swap.');
       if (move.tiles.length > state.bag.length) return bad('The bag only has ' + state.bag.length + ' tiles left.');
       if (!hasTiles(rack, move.tiles)) return bad('Those tiles are not on your rack.');
       return { ok: true };
     }
     if (move.t === 'play') {
-      if (!Array.isArray(move.tiles)) return bad('Not a move.');
+      if (!Array.isArray(move.tiles) || move.tiles.some((t) => !t || typeof t !== 'object')) return bad('Not a move.');
       if (!hasTiles(rack, move.tiles.map((t) => (t.b ? '?' : t.l)))) return bad('Those tiles are not on your rack.');
       const res = analyze(state.board, move.tiles);
       if (!res.ok) return res;
@@ -636,37 +638,64 @@
   // as common.
   function evaluateTurn(before, move, h, dict, common) {
     const p = before.turn, rack = before.racks[p];
-    const list = rank(generate(before.board, rack, dict), rack, before.bag.length === 0);
+    const bagEmpty = before.bag.length === 0;
+    // in the last turns the opponent's rack is known, so a play is worth its
+    // score minus their best reply (what the bot's endgame search uses too)
+    const endgame = bagEmpty && before.finalTurns === 2 && before.racks[1 - p].length > 0;
+    const list = rank(generate(before.board, rack, dict), rack, bagEmpty);
+    if (endgame) {
+      const opp = before.racks[1 - p];
+      for (const m of list.slice(0, 40)) {
+        const after = apply(before, { t: 'play', tiles: m.tiles }, null);
+        const reply = generate(after.board, opp, dict)[0];
+        m.reply = reply ? reply.score : 0;
+        m.equity = m.score - m.reply;
+      }
+      for (const m of list.slice(40)) { m.reply = null; m.equity = m.score - 99; }   // unexamined: rated well below the searched ones
+      list.sort((a, b) => b.equity - a.equity || b.score - a.score);
+    }
     const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
     for (const m of list) m.common = isCommon(m);
     const exch = bestExchange(rack, before.bag.length);
     const commonList = list.filter((m) => m.common);
     const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+    const replyNow = endgame ? (generate(before.board, before.racks[1 - p], dict)[0] || { score: 0 }).score : 0;
     let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
     if (move.t === 'play') {
       const pk = key(move.tiles);
       played = list.findIndex((m) => key(m.tiles) === pk);
-      playedEquity = played >= 0 ? list[played].equity : h.score;
+      if (played >= 0) playedEquity = list[played].equity;
+      else {   // not in the generated list (a word since dropped from the list): rate it like any other play
+        const kept = rack.slice();
+        for (const t of move.tiles) kept.splice(kept.indexOf(t.b ? '?' : t.l), 1);
+        if (endgame) { const after = apply(before, move, null); const reply = generate(after.board, before.racks[1 - p], dict)[0]; playedEquity = h.score - (reply ? reply.score : 0); }
+        else playedEquity = h.score + (bagEmpty ? 0 : leaveValue(kept));
+      }
       playedLabel = h.word + ' for ' + h.score;
     } else if (move.t === 'swap') {
       const kept = rack.slice();
       for (const t of move.tiles) kept.splice(kept.indexOf(t), 1);
-      playedEquity = before.bag.length ? leaveValue(kept) : 0;
+      playedEquity = bagEmpty ? 0 : leaveValue(kept);
       playedLabel = 'exchanged ' + move.tiles.join('') + ', kept ' + (kept.join('') || 'nothing');
       playedSwap = true;
     } else if (move.t === 'pass') {
-      playedEquity = before.bag.length ? leaveValue(rack) : 0;
+      playedEquity = endgame ? -replyNow : bagEmpty ? 0 : leaveValue(rack);
       playedLabel = 'passed';
     }
     let ref = commonList[0] || null;
-    if (exch && (!ref || exch.equity > ref.equity)) ref = exch;
+    // the exchange is the yardstick only when it clearly beats playing, the bot's own rule
+    if (exch && (!ref || exch.equity > ref.equity + 1)) ref = exch;
     // the expert play: a rare-word play better than the yardstick, unless the player found it themselves
     const expert = list[0] && !list[0].common && played !== 0 && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
-    const rate = (eq) => !ref ? 100 : ref.equity > 0 ? Math.max(0, Math.round(100 * eq / ref.equity)) : Math.max(0, Math.round(100 - 4 * (ref.equity - eq)));
+    // ratings: the yardstick is 100; otherwise a share of it, or, when shares make no sense
+    // (endgame margins, a yardstick under ten points), four points per point of equity
+    const rate = (eq) => !ref ? 100 : (!endgame && ref.equity >= 10) ? Math.max(0, Math.round(100 * eq / ref.equity)) : Math.max(0, Math.round(100 - 4 * (ref.equity - eq)));
     for (const m of list) m.rating = rate(m.equity);
     if (exch) exch.rating = rate(exch.equity);
     const rating = rate(playedEquity);
-    return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref ? 'best' : rating >= 110 ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
+    // a brilliancy is a rare word that beats every common play by a clear margin
+    const brilliant = ref && played !== null && played >= 0 && !list[played].common && rating >= 120;
+    return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, endgame, rating, grade: !ref ? 'best' : brilliant ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
   }
   // The outcome of a finished game for the results table: scores, winner and
   // each seat's plays, points, bingos, best word and brilliancies. `step` is

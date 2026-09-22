@@ -176,13 +176,17 @@ begin
   return p_code;
 end $$;
 
--- Returns the seat (0 or 1) the caller holds, claiming seat 1 if it is free.
--- A signed-in caller opening a seat they held by link gets it attached to
--- their account, so it follows them to other devices.
+-- Returns {player, token}: the seat (0 or 1) the caller holds and the token
+-- that seat really carries (an account may hold a seat created with a token
+-- this browser never saw), claiming seat 1 if it is free. A signed-in caller
+-- opening a seat they held by link gets it attached to their account, so it
+-- follows them to other devices. A finished game takes no new players.
+drop function if exists join_game(text, text, text);   -- its return type changed from integer to jsonb
 create or replace function join_game(p_code text, p_name text, p_token text)
-returns integer language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   existing smallint;
+  g games%rowtype;
 begin
   if p_token is null or length(p_token) < 16 then raise exception 'bad token'; end if;
   existing := seat_of(p_code, p_token);
@@ -190,18 +194,22 @@ begin
     if auth.uid() is not null then
       update game_keys set user_id = auth.uid() where game_id = p_code and player = existing and user_id is null;
     end if;
-    return existing;
+    return (select jsonb_build_object('player', player, 'token', token) from game_keys where game_id = p_code and player = existing);
   end if;
-  if not exists (select 1 from games where id = p_code) then raise exception 'no such game'; end if;
+  select * into g from games where id = p_code;
+  if g.id is null then raise exception 'no such game'; end if;
   if exists (select 1 from game_keys where game_id = p_code and player = 1) then
     raise exception 'this game already has two players';
+  end if;
+  if coalesce(game_over(g.moves), false) or exists (select 1 from game_results r where r.game_id = p_code) then
+    raise exception 'this game is over';
   end if;
   if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 24 then
     raise exception 'name must be 1-24 characters';
   end if;
   insert into game_keys (game_id, player, token, user_id) values (p_code, 1, p_token, auth.uid());
   update games set p2_name = trim(p_name), updated_at = now() where id = p_code;
-  return 1;
+  return jsonb_build_object('player', 1, 'token', p_token);
 end $$;
 
 -- Appends a move for the caller's seat. The seat to move is derived from the
@@ -230,9 +238,7 @@ begin
   if cur is null then raise exception 'no such game'; end if;
   n := jsonb_array_length(cur);
   if n >= 400 then raise exception 'game too long'; end if;
-  if exists (select 1 from jsonb_array_elements(cur) m where m->>'t' = 'resign') then
-    raise exception 'the game is over';
-  end if;
+  if coalesce(game_over(cur), false) then raise exception 'the game is over'; end if;
   if n <> p_index then raise exception 'out of date: the game has moved on'; end if;
   if n % 2 <> who then raise exception 'not your turn'; end if;
   update games set moves = cur || jsonb_build_array(p_move), updated_at = now() where id = p_code;
@@ -260,7 +266,7 @@ begin
       tries := tries + 1;
       if tries > 20 then raise exception 'could not allocate a code'; end if;
     end loop;
-    insert into profiles (user_id, handle, name) values (auth.uid(), code, nm);
+    insert into profiles (user_id, handle, name) values (auth.uid(), code, nm) on conflict (user_id) do nothing;
   end if;
   return (select jsonb_build_object('handle', handle, 'name', name) from profiles where user_id = auth.uid());
 end $$;
@@ -357,6 +363,7 @@ begin
     return (select to_jsonb(r) from game_results r where game_id = p_code);
   end if;
   select * into g from games where id = p_code;
+  if not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody joined this game'; end if;
   if (p_result->>'moves') is null or (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
   if game_over(g.moves) is false then raise exception 'the game is not over'; end if;
   if length(p_result::text) > 4000 then raise exception 'report too large'; end if;
@@ -366,7 +373,8 @@ begin
           (select user_id from game_keys where game_id = p_code and player = 1),
           g.p1_name, g.p2_name,
           (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, p_result->>'end_reason',
-          (p_result->>'moves')::int, coalesce(p_result->'stats', '{}'::jsonb));
+          (p_result->>'moves')::int, coalesce(p_result->'stats', '{}'::jsonb))
+  on conflict (game_id) do nothing;   -- two clients finishing at once: the first stands
   return (select to_jsonb(r) from game_results r where game_id = p_code);
 end $$;
 
@@ -384,6 +392,7 @@ begin
   select * into g from games where id = p_old for update;
   if g.next_game is not null then return g.next_game; end if;
   if not exists (select 1 from game_keys where game_id = p_old and player = 1) then raise exception 'nobody to rematch'; end if;
+  if not coalesce(game_over(g.moves), false) and not exists (select 1 from game_results r where r.game_id = p_old) then raise exception 'the game is not over yet'; end if;
   if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or exists (select 1 from games where id = p_new) then raise exception 'that id is taken'; end if;
   if p_seed is null or length(p_seed) = 0 or length(p_seed) > 200 then raise exception 'bad seed'; end if;
   insert into games (id, seed, p1_name, p2_name) values (p_new, p_seed, g.p2_name, g.p1_name);
@@ -405,6 +414,7 @@ begin
   select user_id, name into other, other_name from profiles where upper(handle) = upper(trim(p_handle));
   if other is null then raise exception 'no player has that code'; end if;
   if other = auth.uid() then raise exception 'that is your own code'; end if;
+  if not exists (select 1 from friends where user_id = auth.uid() and friend_id = other) then raise exception 'you can only challenge a friend'; end if;
   perform create_game(p_code, p_seed, p_name, p_token);
   insert into game_keys (game_id, player, token, user_id) values (p_code, 1, md5(random()::text || p_code), other);
   update games set p2_name = other_name, updated_at = now() where id = p_code;

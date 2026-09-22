@@ -250,8 +250,9 @@ function fitKlv(file, outFile) {
 
 async function bench(games) {
   const res = await run('arena', games, 'hard', 'hard');
-  const moves = res.reduce((a, r) => a + r.moves, 0), ms = Math.max(...res.map((r) => r.ms));
-  console.log(`${moves} moves in ${(ms / 1000).toFixed(1)}s wall across ${res.length} workers: ${(moves / (ms / 1000) / res.length).toFixed(0)} moves/s per core`);
+  const busy = res.filter((r) => r.moves > 0);
+  const moves = busy.reduce((a, r) => a + r.moves, 0), ms = Math.max(...busy.map((r) => r.ms));
+  console.log(`${moves} moves in ${(ms / 1000).toFixed(1)}s wall across ${busy.length} busy workers: ${(moves / (ms / 1000) / busy.length).toFixed(0)} moves/s per core`);
 }
 
 if (isMainThread) {

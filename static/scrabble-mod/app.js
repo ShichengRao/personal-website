@@ -173,7 +173,9 @@
     const p = viewer();
     return p === null ? [] : G.state.racks[p];
   }
+  let rackDirty = false;   // a render was skipped mid-drag; redo it at release
   function renderRack() {
+    if (drag && drag.active) { rackDirty = true; return; }
     const rack = rackShown();
     const used = new Set(pending.map((t) => t.ri));
     let html = '';
@@ -247,7 +249,7 @@
     ui.pass.disabled = !mine || swapMode;
     ui.recall.disabled = !mine || !pending.length;
     ui.shuffle.disabled = !!R || viewer() === null || G.hidden;
-    ui.resign.disabled = !!R || s.over || (G.kind === 'hotseat' ? false : G.me === null);
+    ui.resign.disabled = !!R || s.over || (G.kind === 'hotseat' ? false : G.me === null || (G.kind === 'online' && !G.names[1]));
     if (mine && opt.mustPass && !stickyError) setStatus('You have no tiles left. Pass to let ' + nameOf(1 - s.turn) + ' take the last turn.');
     renderOnlinePanel();
   }
@@ -309,13 +311,19 @@
     }
     takeBack(idx >= 0 ? idx : pending.length - 1);
   }
-  // Rack order is cosmetic; pending tiles follow their letters around.
+  // Rack order is cosmetic; pending tiles follow their slot through any
+  // rearrangement (by index, so two of the same letter cannot be confused).
+  function permuteRack(rack, order) {   // order[newIndex] = oldIndex
+    const old = rack.slice();
+    const newOf = [];
+    order.forEach((o, n) => { rack[n] = old[o]; newOf[o] = n; });
+    for (const t of pending) if (newOf[t.ri] !== undefined) t.ri = newOf[t.ri];
+  }
   function reorderRack(rack, from, to) {
-    const keep = pending.map((t) => rack[t.ri]);
-    const [t] = rack.splice(from, 1);
-    rack.splice(to, 0, t);
-    const taken = new Set();
-    pending.forEach((p, k) => { for (let i = 0; i < rack.length; i++) if (!taken.has(i) && rack[i] === keep[k]) { taken.add(i); p.ri = i; break; } });
+    const order = rack.map((_, i) => i);
+    const [m] = order.splice(from, 1);
+    order.splice(to, 0, m);
+    permuteRack(rack, order);
   }
 
   let suppressClick = false;
@@ -360,6 +368,8 @@
   let drag = null;   // { src: {kind:'rack', i} | {kind:'pending', pi}, x, y, active, ghost, over, pointerId, lifted }
   const BAND = 70;
   function rackBand(x, y) {
+    const b = ui.wrap.getBoundingClientRect();
+    if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return false;   // over the board (even its gaps) is not the rack
     const r = ui.rack.getBoundingClientRect();
     return y >= r.top - BAND && y <= r.bottom + BAND && x >= r.left - 20 && x <= r.right + 20;
   }
@@ -388,7 +398,7 @@
     const order = tiles.map((_, i) => i);
     const [m] = order.splice(from, 1);
     order.splice(to, 0, m);            // order[newIndex] = oldIndex
-    reorderRack(rack, from, to);
+    permuteRack(rack, order);
     slots.forEach((slot, j) => {
       const node = tiles[order[j]] || null;
       const cur = slot.querySelector('.sm-tile');
@@ -415,8 +425,10 @@
     if (d.lifted) d.lifted.classList.remove('lifted');
     if (d.hiddenNode) d.hiddenNode.style.visibility = '';
     drag = null;
+    if (rackDirty) { rackDirty = false; renderRack(); }
   }
   function onPointerDown(e) {
+    if (drag) { endDrag(drag); render(); }   // a drag whose release never arrived
     if (!G || R || G.hidden || viewer() === null || swapMode || e.button !== 0 || pinch.active) return;
     const tile = e.target.closest('.sm-tile');
     if (!tile) return;
@@ -560,7 +572,7 @@
       return;
     }
     if (!myTurn() || swapMode) return;
-    if (e.key === 'Enter') { e.preventDefault(); play(); return; }
+    if (e.key === 'Enter') { if (e.target && e.target.tagName === 'BUTTON') return; e.preventDefault(); play(); return; }
     if (e.key === 'Escape') { recall(); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') { if (pending.length) { e.preventDefault(); backspace(); } return; }
     if (/^Arrow(Up|Down|Left|Right)$/.test(e.key) && cursor) {
@@ -593,10 +605,9 @@
   ui.shuffle.addEventListener('click', () => {
     if (!G || R || G.hidden || viewer() === null) return;
     const rack = G.state.racks[viewer()];
-    const keep = pending.map((t) => rack[t.ri]);
-    for (let i = rack.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = rack[i]; rack[i] = rack[j]; rack[j] = t; }
-    const taken = new Set();
-    pending.forEach((t, k) => { for (let i = 0; i < rack.length; i++) if (!taken.has(i) && rack[i] === keep[k]) { taken.add(i); t.ri = i; break; } });
+    const order = rack.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
+    permuteRack(rack, order);
     sel = -1; marks = new Set();
     render();
   });
@@ -615,6 +626,7 @@
   ui.resign.addEventListener('click', () => {
     if (!G || R || G.state.over) return;
     if (G.kind === 'hotseat' ? G.hidden : (G.state.turn !== G.me || busy)) { setStatus('You can resign on your own turn.'); return; }
+    if (G.kind === 'online' && !G.names[1]) { setStatus('Nobody has joined yet; there is no one to resign to.'); return; }
     if (!window.confirm('Resign this game? ' + nameOf(1 - G.state.turn) + ' will take the win.')) return;
     commit({ t: 'resign' });
   });
@@ -663,11 +675,12 @@
   // A move arrived while a review snapshot exists: extend it rather than
   // leaving navigation pointing at positions it does not have.
   function extendReview() {
-    if (!R) return;
+    if (!R || R.states.length >= G.state.moves.length + 1) return;
     while (R.states.length < G.state.moves.length + 1) {
       const k = R.states.length - 1;
       R.states.push(C.apply(R.states[k], G.state.moves[k], null));
     }
+    R.summary = null; computeSummary();
   }
   function applyLocal(move) {
     G.state = C.apply(G.state, move, dict);
@@ -722,7 +735,7 @@
     }, 650);
   }
   function persist() {
-    if (!G) return;
+    if (!G || (G.kind === 'online' && G.me === null)) return;
     games.put({ id: G.id, kind: G.kind, level: G.level, names: G.names, seed: G.state.seed, moves: G.state.moves, over: G.state.over,
                 online: G.kind === 'online' ? { token: G.online.token, player: G.me } : undefined });
   }
@@ -897,7 +910,7 @@
     }));
     ui.analysis.querySelectorAll('.sm-summary div[data-k]').forEach((d) => d.addEventListener('click', () => reviewGo(+d.dataset.k)));
   }
-  ui.review.addEventListener('click', () => { if (R) exitReview(); else enterReview(G.state.moves.length); });
+  ui.review.addEventListener('click', () => { if (!G) return; if (R) exitReview(); else enterReview(G.state.moves.length); });
   $('sm-nav-first').addEventListener('click', () => reviewGo(0));
   $('sm-nav-prev').addEventListener('click', () => reviewGo(R.k - 1));
   $('sm-nav-next').addEventListener('click', () => reviewGo(R.k + 1));
@@ -959,7 +972,7 @@
       '<button data-bot="medium"><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
       '<button data-bot="hard"><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
       '<button id="sm-m-hotseat"><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
-      '<button id="sm-m-online"' + (Net.enabled ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (Net.enabled ? 'share a link; take turns whenever' : 'not set up on this site yet') + '</small></button>' +
+      '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
     if (list.length) {
       html += '<div class="sm-k" style="text-align:left;margin-top:14px">Your games</div><div class="sm-games">';
@@ -1037,7 +1050,7 @@
     const why = s.endReason === 'resign' ? esc(nameOf(s.resigned)) + ' resigned.' : s.endReason === 'passes' ? 'Four passes in a row.' : 'The bag ran out and both players took a last turn.';
     openOverlay('<h2>' + esc(verdict(s)) + '</h2><p>' + why + '</p><div class="sm-final"><div>' + esc(nameOf(0)) + '<b>' + s.scores[0] + '</b></div><div>' + esc(nameOf(1)) + '<b>' + s.scores[1] + '</b></div></div>' +
       '<div class="sm-row" style="justify-content:center"><button id="sm-over-close">Look at the board</button><button id="sm-over-review">Review the game</button>' +
-      (G.kind === 'online' && G.me !== null ? '<button class="primary" id="sm-over-again">' + (G.nextGame ? 'Open the rematch' : 'Play again, sides swapped') + '</button>' : '<button class="primary" id="sm-over-new">New game</button>') + '</div>');
+      (G.kind === 'online' && G.me !== null && G.names[1] ? '<button class="primary" id="sm-over-again">' + (G.nextGame ? 'Open the rematch' : 'Play again, sides swapped') + '</button>' : '<button class="primary" id="sm-over-new">New game</button>') + '</div>');
     $('sm-over-close').addEventListener('click', closeOverlay);
     $('sm-over-review').addEventListener('click', () => { closeOverlay(); enterReview(s.moves.length); });
     const again = $('sm-over-again'), fresh = $('sm-over-new');
@@ -1066,11 +1079,11 @@
     let state;
     try { state = C.replay(rec.seed, rec.moves); }
     catch (e) { setStatus('The saved game ' + rec.id + ' could not be restored.', 'bad'); showMenu(); return; }
-    G = { id: rec.id, kind: rec.kind, level: rec.level, names: rec.names, state, me: 0, hidden: rec.kind === 'hotseat' && !state.over, session: ++sessions };
+    G = { id: rec.id, kind: rec.kind, level: rec.level, names: rec.names, state, me: 0, hidden: rec.kind === 'hotseat' && !state.over && !!dict, session: ++sessions };
     seenMoves = state.history.length;
     setUrl(rec.id);
     render();
-    setStatus('');
+    setStatus(dict ? '' : 'The word list did not load, so plays cannot be checked. Reload to try again.', 'bad');
     if (!dict) return;
     if (G.state.over) showGameOver();
     else if (G.kind === 'bot' && G.state.turn !== G.me) scheduleBot();
@@ -1119,13 +1132,15 @@
   let user = null;   // { id, name, email }
   const authPanel = $('sm-auth');
   function setUser(u) {
-    const was = user && user.id;
+    if (u && user && user.id === u.id) { if (!user.handle) loadProfile(); return; }   // a refresh or refocus, same account: keep what we have
     user = u ? { id: u.id, email: u.email || '', name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || (u.email || '').split('@')[0] || 'Player', handle: null } : null;
     if (user && !store.get('sm.name', '')) store.set('sm.name', user.name);
     renderAuth();
-    if (user && user.id !== was) {
-      Net.rpc('ensure_profile', { p_name: user.name }).then((p) => { if (user && p) { user.handle = p.handle; user.name = p.name; store.set('sm.name', p.name); renderAuth(); } }).catch(() => {});
-    }
+    if (user) loadProfile();
+  }
+  function loadProfile() {
+    const id = user.id;
+    Net.rpc('ensure_profile', { p_name: user.name }).then((p) => { if (user && user.id === id && p) { user.handle = p.handle; user.name = p.name; store.set('sm.name', p.name); renderAuth(); } }).catch(() => {});
   }
   function renderAuth() {
     if (!Net.enabled) { authPanel.style.display = 'none'; return; }
@@ -1134,7 +1149,7 @@
       ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b>' + (user.handle ? ' <span class="sm-code">' + esc(user.handle) + '</span>' : '') + '<button class="small" id="sm-profile">Profile</button><button class="small" id="sm-signout">Sign out</button></div><div class="sm-note">Your games, stats and friends follow this account to any device.</div>'
       : '<div class="sm-auth-row"><button class="small" id="sm-google">Sign in with Google</button><button class="small" id="sm-email">Email me a link</button></div><div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>';
     const g = $('sm-google'), e = $('sm-email'), o = $('sm-signout'), pr = $('sm-profile');
-    if (pr) pr.addEventListener('click', () => { if (user.handle) showProfile(user.handle); });
+    if (pr) pr.addEventListener('click', () => { if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } });
     if (g) g.addEventListener('click', () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } }));
     if (e) e.addEventListener('click', async () => {
       const email = await askText('Email me a sign-in link', 'A one-time link to sign in here. No password.', 'you@example.com', '');
@@ -1179,25 +1194,29 @@
     const rec = games.get(id);
     let urlToken = tokenFromUrl();
     if (urlToken) {
+      // a private link must name a seat that exists; a stale or wrong one is not a way in.
+      // It is only dropped from the address once the server has answered.
+      let seat;
+      try { seat = await Net.rpc('my_seat', { p_code: id, p_token: urlToken }); } catch (e) { throw new Error('could not check the private link (' + e.message + ')'); }
       history.replaceState(null, '', location.pathname + location.search);
-      // a private link must name a seat that exists; a stale or wrong one is not a way in
-      let seat = null;
-      try { seat = await Net.rpc('my_seat', { p_code: id, p_token: urlToken }); } catch (e) { /* treated as unknown */ }
       if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; }
     }
-    const token = (rec && rec.online && rec.online.token) || urlToken || randomToken();
+    // a valid private link wins over whatever this browser remembered
+    const token = urlToken || (rec && rec.online && rec.online.token) || randomToken();
     const holds = row.seat !== null && row.seat !== undefined;   // the account already has a seat here
     const known = holds || (rec && rec.online && rec.online.token) || urlToken;
     let name = store.get('sm.name', '') || (user && user.name) || '';
     if (!known && row.full) return { token: null, player: null };
     if (!known && !name) {
-      name = await askText('Join ' + esc(row.p1_name || 'the game'), 'Shown to your opponent.', 'Your name', '');
+      name = await askText('Join ' + (row.p1_name || 'the game'), 'Shown to your opponent.', 'Your name', '');
       if (!name) return null;
       store.set('sm.name', name);
     }
     try {
-      const player = await Net.rpc('join_game', { p_code: id, p_name: name || 'Player', p_token: token });
-      return { token, player };
+      // the server answers with the seat and the token that seat really holds
+      // (an account-held seat may have been created with a token this browser never saw)
+      const r = await Net.rpc('join_game', { p_code: id, p_name: name || 'Player', p_token: token });
+      return typeof r === 'number' ? { token, player: r } : { token: r.token || token, player: r.player };
     } catch (e) {
       if (/two players/.test(e.message)) return { token: null, player: null };
       throw e;
@@ -1207,9 +1226,17 @@
     const my = ++navGen;
     await dictReady;
     if (my !== navGen) return;
-    if (!dict) return;
+    if (!dict) { setStatus('The word list did not load. Reload to try again.', 'bad'); showMenu(); return; }
+    const rec = games.get(id);
+    // offline: the copy this browser has, read-only
+    if (navigator.onLine === false && rec && rec.seed) { showCachedOnline(rec); return; }
     let row;
-    try { row = await Net.rpc('get_game', { p_code: id }); } catch (e) { if (my !== navGen) return; setStatus('Could not load game ' + id + ': ' + e.message, 'bad'); showMenu(); return; }
+    try { row = await Net.rpc('get_game', { p_code: id }); }
+    catch (e) {
+      if (my !== navGen) return;
+      if (rec && rec.seed) { showCachedOnline(rec); return; }
+      setStatus('Could not load game ' + id + ': ' + e.message, 'bad'); showMenu(); return;
+    }
     if (my !== navGen) return;
     if (!row) { setStatus('There is no game called ' + id + '.', 'bad'); showMenu(); return; }
     let seat;
@@ -1221,7 +1248,7 @@
       if (my !== navGen) return;
     }
     let state;
-    try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { setStatus('This game’s record is corrupt: ' + e.message, 'bad'); return; }
+    try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { setStatus('This game’s record is corrupt: ' + e.message, 'bad'); showMenu(); return; }
     leaveGame();
     G = { id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', row.p2_name || null], handles: row.handles || {}, nextGame: row.next_game || null, state, me: seat.player, online: { token: seat.token }, hidden: false, session: ++sessions };
     seenMoves = state.history.length;

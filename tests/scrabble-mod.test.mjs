@@ -199,15 +199,21 @@ function bruteForce(board, rack, d) {
     for (const t of seq) {
       while (rr < N && cc < N && board[rr * N + cc]) { if (down) rr++; else cc++; }
       if (rr >= N || cc >= N) { ok = false; break; }
-      if (t === '?') { for (let L = 0; L < 26; L++) { /* blanks: try every letter */ } }
-      tiles.push({ r: rr, c: cc, l: t, b: false });
+      tiles.push({ r: rr, c: cc, l: t, b: t === '?' });
       if (down) rr++; else cc++;
     }
     if (!ok) continue;
-    const res = C.analyze(board, tiles);
-    if (!res.ok || res.words.some((w) => !d.has(w.word))) continue;
-    const key = tiles.map((t) => t.r + ',' + t.c + t.l).sort().join('|');
-    found.set(key, res.score);
+    // a blank can be any letter: try them all
+    const blanks = tiles.filter((t) => t.b);
+    const combos = blanks.length ? Array.from({ length: 26 ** blanks.length }, (_, k) => k) : [0];
+    for (const k of combos) {
+      let n = k;
+      for (const b of blanks) { b.l = String.fromCharCode(65 + (n % 26)); n = Math.floor(n / 26); }
+      const res = C.analyze(board, tiles);
+      if (!res.ok || res.words.some((w) => !d.has(w.word))) continue;
+      const key = tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+      found.set(key, res.score);
+    }
   }
   return found;
 }
@@ -218,11 +224,19 @@ test('the move generator finds exactly the legal plays', () => {
   const rack = ['O', 'X', 'A', 'B'];
   const gen = C.generate(s.board, rack, small);
   const brute = bruteForce(s.board, rack, small);
-  const genKeys = new Map(gen.map((m) => [m.tiles.map((t) => t.r + ',' + t.c + t.l).sort().join('|'), m.score]));
+  const genKeys = new Map(gen.map((m) => [m.tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|'), m.score]));
   for (const [k, v] of brute) assert.equal(genKeys.get(k), v, `generator missed or mis-scored ${k}`);
   for (const [k, v] of genKeys) assert.equal(brute.get(k), v, `generator invented ${k}`);
   assert.ok(gen.length > 0);
   assert.equal(gen[0].score, Math.max(...brute.values()));
+  // and with a blank in the rack, against every letter the blank could be
+  const rackB = ['O', 'X', '?'];
+  const genB = C.generate(s.board, rackB, small);
+  const bruteB = bruteForce(s.board, rackB, small);
+  const genKeysB = new Map(genB.map((m) => [m.tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|'), m.score]));
+  for (const [k, v] of bruteB) assert.equal(genKeysB.get(k), v, `generator missed or mis-scored ${k} (blank)`);
+  for (const [k, v] of genKeysB) assert.equal(bruteB.get(k), v, `generator invented ${k} (blank)`);
+  assert.ok(genB.some((m) => m.tiles.some((t) => t.b)), 'the blank is used');
   // the empty board too
   const first = C.generate(C.newGame(1).board, ['Q', 'U', 'I', 'L', 'T', 'X', 'O'], small);
   assert.ok(first.some((m) => m.word === 'QUILT' && m.score === 34));
@@ -451,7 +465,9 @@ test('online records are packed per game and unpack to the same thing', () => {
   assert.ok(!packed.includes('tiles'), 'not readable as is');
   assert.deepEqual(C.unpack('otter-slate-plum', packed), move);
   assert.notEqual(C.pack('otter-slate-bob', move), packed, 'keyed by the game id');
-  assert.throws(() => JSON.parse(C.unpack('otter-slate-bob', packed) && 'x'), /./, 'the wrong key does not decode to the move');
+  let other = null;
+  try { other = C.unpack('otter-slate-bob', packed); } catch (e) { other = 'garbage'; }
+  assert.notDeepEqual(other, move, 'the wrong key does not decode to the move');
   assert.equal(C.unpack('otter-slate-plum', C.pack('otter-slate-plum', 123456789)), 123456789);
 });
 
@@ -501,4 +517,43 @@ test('the result report attributes plays, bingos and best words to the right sea
   // the sliced form gives the same answer
   const sliced = await C.computeResult(s, d, null, (go) => setTimeout(go, 0));
   assert.deepEqual(sliced, r);
+});
+
+
+test('in the last turns a play is rated by its margin over the known reply, not its score', () => {
+  const d = dict();
+  const rnd = C.seededRandom(703);
+  let s = C.newGame(703);
+  let n = 0;
+  while (!s.over && !(s.bag.length === 0 && s.finalTurns === 2) && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d, { noEndgame: true }), d);
+  assert.equal(s.finalTurns, 2);
+  const e = C.endgameMove(s, d);
+  if (e.move.t !== 'play') return;
+  const after = C.apply(s, e.move, d);
+  const a = C.evaluateTurn(s, e.move, after.history[after.history.length - 1], d, null);
+  assert.equal(a.endgame, true);
+  assert.equal(a.rating, 100, 'the margin-optimal play is the best play');
+  const greedy = C.generate(s.board, s.racks[s.turn], d)[0];
+  const afterG = C.apply(s, { t: 'play', tiles: greedy.tiles }, d);
+  const g = C.evaluateTurn(s, { t: 'play', tiles: greedy.tiles }, afterG.history[afterG.history.length - 1], d, null);
+  assert.ok(g.rating <= 100);
+  assert.equal(a.list[0].equity, e.margin, 'the yardstick is the searched margin');
+});
+
+test('a brilliancy needs a rare word with a clear edge, and a malformed move is refused, not a crash', () => {
+  const d = dict();
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  assert.equal(C.check(s, { t: 'play', tiles: [null] }, d).ok, false);
+  assert.equal(C.check(s, { t: 'play', tiles: [{ r: 8, c: 7 }] }, d).ok, false);
+  assert.equal(C.check(s, { t: 'swap', tiles: [null] }, d).ok, false);
+  assert.throws(() => C.apply(s, { t: 'play', tiles: 'nope' }, d), /Not a move/);
+  // a common word cannot be a brilliancy even when it tops the list
+  const tiny = C.buildDict(['quilt', 'lit', 'tilt', 'it', 'ti', 'quit', 'tin', 'nit', 'lint', 'tint', 'unit', 'until'].join('\n'));
+  const before = withRack(s, 'NTIUSEA');
+  const best = C.rank(C.generate(before.board, before.racks[1], tiny), before.racks[1], false)[0];
+  const after = C.apply(before, { t: 'play', tiles: best.tiles }, d);
+  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[0], d, tiny);
+  assert.notEqual(a.grade, 'brilliant');
+  assert.equal(a.rating, 100);
 });
