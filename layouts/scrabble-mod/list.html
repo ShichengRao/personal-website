@@ -47,7 +47,8 @@
  background:var(--tile);color:var(--tile-ink);font-weight:700;font-size:clamp(11px,3.6cqw,72px);line-height:1}
 .sm-app .sm-tile i{position:absolute;top:1px;right:2px;font-style:normal;font-size:clamp(6px,1.6cqw,30px);font-weight:600;opacity:.85}
 .sm-app .sm-tile.blank span{opacity:.75;text-decoration:underline dotted}
-.sm-app .sm-cell .sm-tile.pending{background:var(--pend);box-shadow:0 0 0 2px var(--accent-ink),0 0 0 3px var(--pend);touch-action:none;cursor:grab}
+.sm-app .sm-cell .sm-tile.pending{background:var(--pend);box-shadow:inset 0 0 0 2px var(--accent-ink);touch-action:none;cursor:grab}
+.sm-app .sm-cell:has(.sm-tile.bounce){overflow:visible;z-index:2}
 .sm-app .sm-cell .sm-tile.recent{box-shadow:inset 0 0 0 2px var(--recent)}
 .sm-app .sm-cell .sm-tile.ghost{background:var(--dw);color:var(--dw-ink);outline:2px dashed var(--accent);outline-offset:-2px}
 .sm-app .sm-rack{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-width:400px;margin:14px auto 0;padding:8px;border-radius:10px;
@@ -80,6 +81,8 @@
 .sm-app .sm-log{list-style:none;margin:0;padding:0;font-size:13px;max-height:300px;overflow:auto;color:var(--soft)}
 .sm-app .sm-log li{padding:3px 4px;border-bottom:1px dashed var(--ring);display:flex;justify-content:space-between;gap:8px;cursor:pointer;border-radius:4px}
 .sm-app .sm-log li:hover{background:var(--plane)}
+.sm-app .sm-log.locked li{cursor:default}
+.sm-app .sm-log.locked li:hover{background:none}
 .sm-app .sm-log li.cur{background:var(--dw)}
 .sm-app .sm-log li:last-child{border-bottom:0}
 .sm-app .sm-log li b{color:var(--text);font-variant-numeric:tabular-nums}
@@ -111,11 +114,13 @@
 .sm-app .sm-code{font-family:ui-monospace,Menlo,monospace;font-size:14px;letter-spacing:.1em;background:var(--plane);padding:2px 8px;border-radius:6px}
 .sm-app .sm-zoom{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
 .sm-app .sm-zoom button{padding:3px 9px}
-.sm-app .sm-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:20px;
- background:rgba(246,244,238,.88);backdrop-filter:blur(3px);border-radius:12px;z-index:5}
+.sm-app .sm-overlay{position:fixed;inset:0;display:none;align-items:center;align-items:safe center;justify-content:center;padding:20px;overflow:auto;
+ background:rgba(246,244,238,.88);backdrop-filter:blur(3px);z-index:50}
 .sm-app .sm-overlay.is-open{display:flex}
+.sm-app .sm-card:focus{outline:none}
+.sm-app .sm-card p.sm-card-note{color:var(--bad);font-weight:600}
 .sm-app .sm-card{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:20px 22px;max-width:460px;width:100%;
- box-shadow:0 10px 30px rgba(0,0,0,.08);text-align:center;max-height:100%;overflow:auto}
+ box-shadow:0 10px 30px rgba(0,0,0,.08);text-align:center;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto}
 .sm-app .sm-card h2{margin:0 0 6px;font-size:22px;letter-spacing:-.01em}
 .sm-app .sm-card p{margin:0 0 12px;color:var(--soft);font-size:14px;line-height:1.5}
 .sm-app .sm-card p.left{text-align:left}
@@ -132,6 +137,15 @@
 .sm-app .sm-games button{padding:7px 10px;text-align:left;font-size:13px}
 .sm-app .sm-games button small{display:block;color:var(--muted);font-size:12px}
 .sm-app .sm-games button b.now{color:var(--good)}
+.sm-app .sm-auth-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--soft)}
+.sm-app .sm-auth-row b{color:var(--text)}
+.sm-app .sm-player .sm-name.link{text-decoration:underline dotted;cursor:pointer}
+.sm-app .sm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.sm-app .sm-stats div{background:var(--plane);border-radius:8px;padding:8px 4px}
+.sm-app .sm-stats b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.sm-app .sm-stats small{color:var(--muted);font-size:11px}
+.sm-app .sm-qr{max-width:240px;margin:0 auto}
+.sm-app .sm-qr svg{width:100%;height:auto}
 .sm-app .sm-final{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin:12px 0;font-size:15px}
 .sm-app .sm-final b{font-size:26px;display:block;font-variant-numeric:tabular-nums}
 .sm-app .sm-keys{font-size:13px;color:var(--soft);line-height:1.8;text-align:left}
@@ -153,10 +167,18 @@
 @keyframes sm-fall{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),70vh) rotate(720deg);opacity:0}}
 @media(prefers-reduced-motion:reduce){.sm-app .sm-bingo,.sm-app .sm-tile.bounce,.sm-app .sm-confetti i{animation-duration:.01s}}
 </style>
+<link rel="manifest" href="/scrabble-mod/manifest.webmanifest">
+<meta name="theme-color" content="#1f6f6a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Scrabble Mod">
+<link rel="apple-touch-icon" href="/scrabble-mod/icon-180.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 /* Online play needs a Supabase project (see plans/scrabble-mod-supabase.sql).
    Leave both blank and the page offers the bot and pass-and-play only. */
-window.SM_CONFIG = { url: "", key: "" };
+window.SM_CONFIG = { url: "https://ebbgvdomzqsmecryepon.supabase.co", key: "sb_publishable_OL6TD1hxZosugdW-IntbYQ_dKZSGH22" };
 </script>
 {{ end }}
 
@@ -198,6 +220,7 @@ window.SM_CONFIG = { url: "", key: "" };
         <ol class="sm-log" id="sm-log"></ol>
       </div>
       <div class="sm-panel" id="sm-online-panel" style="display:none"></div>
+      <div class="sm-panel" id="sm-auth" style="display:none"></div>
       <div class="sm-panel">
         <div class="sm-row" style="margin-top:0">
           <button id="sm-new">Games</button>

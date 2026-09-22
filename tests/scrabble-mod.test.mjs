@@ -199,15 +199,21 @@ function bruteForce(board, rack, d) {
     for (const t of seq) {
       while (rr < N && cc < N && board[rr * N + cc]) { if (down) rr++; else cc++; }
       if (rr >= N || cc >= N) { ok = false; break; }
-      if (t === '?') { for (let L = 0; L < 26; L++) { /* blanks: try every letter */ } }
-      tiles.push({ r: rr, c: cc, l: t, b: false });
+      tiles.push({ r: rr, c: cc, l: t, b: t === '?' });
       if (down) rr++; else cc++;
     }
     if (!ok) continue;
-    const res = C.analyze(board, tiles);
-    if (!res.ok || res.words.some((w) => !d.has(w.word))) continue;
-    const key = tiles.map((t) => t.r + ',' + t.c + t.l).sort().join('|');
-    found.set(key, res.score);
+    // a blank can be any letter: try them all
+    const blanks = tiles.filter((t) => t.b);
+    const combos = blanks.length ? Array.from({ length: 26 ** blanks.length }, (_, k) => k) : [0];
+    for (const k of combos) {
+      let n = k;
+      for (const b of blanks) { b.l = String.fromCharCode(65 + (n % 26)); n = Math.floor(n / 26); }
+      const res = C.analyze(board, tiles);
+      if (!res.ok || res.words.some((w) => !d.has(w.word))) continue;
+      const key = tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+      found.set(key, res.score);
+    }
   }
   return found;
 }
@@ -218,11 +224,19 @@ test('the move generator finds exactly the legal plays', () => {
   const rack = ['O', 'X', 'A', 'B'];
   const gen = C.generate(s.board, rack, small);
   const brute = bruteForce(s.board, rack, small);
-  const genKeys = new Map(gen.map((m) => [m.tiles.map((t) => t.r + ',' + t.c + t.l).sort().join('|'), m.score]));
+  const genKeys = new Map(gen.map((m) => [m.tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|'), m.score]));
   for (const [k, v] of brute) assert.equal(genKeys.get(k), v, `generator missed or mis-scored ${k}`);
   for (const [k, v] of genKeys) assert.equal(brute.get(k), v, `generator invented ${k}`);
   assert.ok(gen.length > 0);
   assert.equal(gen[0].score, Math.max(...brute.values()));
+  // and with a blank in the rack, against every letter the blank could be
+  const rackB = ['O', 'X', '?'];
+  const genB = C.generate(s.board, rackB, small);
+  const bruteB = bruteForce(s.board, rackB, small);
+  const genKeysB = new Map(genB.map((m) => [m.tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|'), m.score]));
+  for (const [k, v] of bruteB) assert.equal(genKeysB.get(k), v, `generator missed or mis-scored ${k} (blank)`);
+  for (const [k, v] of genKeysB) assert.equal(bruteB.get(k), v, `generator invented ${k} (blank)`);
+  assert.ok(genB.some((m) => m.tiles.some((t) => t.b)), 'the blank is used');
   // the empty board too
   const first = C.generate(C.newGame(1).board, ['Q', 'U', 'I', 'L', 'T', 'X', 'O'], small);
   assert.ok(first.some((m) => m.word === 'QUILT' && m.score === 34));
@@ -332,7 +346,8 @@ test('with the bag empty the hard bot searches the last turns exactly', () => {
   assert.equal(s.finalTurns, 2, 'the mover has one turn, then the opponent has the last');
   const e = C.endgameMove(s, d);
   assert.ok(e && e.move);
-  if (e.move.t === 'play') {
+  assert.equal(e.move.t, 'play', 'fixture assumption: the endgame opens with a play');
+  {
     // margin is this move's score minus the opponent's best reply, and no other candidate does better
     const after = C.apply(s, e.move, d);
     const reply = C.generate(after.board, after.racks[after.turn], d)[0];
@@ -347,10 +362,12 @@ test('with the bag empty the hard bot searches the last turns exactly', () => {
   assert.deepEqual(move, e.move);
   // and on the very last move it just takes the points
   const last = C.apply(s, e.move, d);
-  if (!last.over && last.racks[last.turn].length) {
+  assert.ok(!last.over && last.racks[last.turn].length, 'fixture assumption: the opponent has the last turn');
+  {
     const e2 = C.endgameMove(last, d);
     const best = C.generate(last.board, last.racks[last.turn], d)[0];
-    if (best) assert.equal(e2.score, best.score);
+    assert.ok(best, 'fixture assumption: the last player has a play');
+    assert.equal(e2.score, best.score);
   }
 });
 
@@ -378,4 +395,217 @@ test('the lookahead charges each candidate its sampled best reply', () => {
   C.LEAVE2.ER = had + 2.5;
   assert.equal(C.leaveValue(['E', 'R']), Math.round((before + 2.5) * 10) / 10);
   C.LEAVE2.ER = had;
+});
+
+test('the common-word list is a subset of the word list and draws the line sensibly', () => {
+  const text = readFileSync(join(dir, 'common.txt'), 'utf8');
+  const words = text.split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
+  const all = new Set(readFileSync(join(dir, 'words.txt'), 'utf8').split('\n'));
+  assert.ok(words.length > 20000 && words.length < 60000, 'a few tens of thousands of words');
+  for (const w of words) assert.ok(all.has(w), w + ' is not in the word list');
+  const c = C.buildDict(text);
+  for (const w of ['LOVE', 'QUILT', 'VARNISH', 'JUMP', 'ZEBRA']) assert.equal(c.has(w), true, w);
+  for (const w of ['FOVEAL', 'LOVAT', 'HUED', 'CLEW', 'OXO', 'ZAX']) assert.equal(c.has(w), false, w);
+});
+
+test('an exchange is a candidate: the bot swaps a stuck rack and keeps what is worth keeping', () => {
+  const rack = ['Q', 'V', 'W', 'U', 'I', 'I', 'S'];
+  const e = C.bestExchange(rack, 40);
+  assert.equal(e.t, 'swap');
+  assert.ok(e.tiles.length >= 1 && e.tiles.length <= 7);
+  assert.equal(e.equity, C.leaveValue(e.keeps.split('')));
+  assert.ok(e.keeps.includes('S'), 'the S stays');
+  assert.ok(!e.tiles.includes('S'));
+  for (let m = 1; m < 128; m++) {   // nothing kept is worth more
+    const kept = rack.filter((_, i) => !(m & (1 << i)));
+    assert.ok(C.leaveValue(kept) <= e.equity + 1e-9);
+  }
+  assert.equal(C.bestExchange(rack, 0), null, 'no exchange from an empty bag');
+  assert.ok(C.bestExchange(rack, 2).tiles.length <= 2, 'never more tiles than the bag holds');
+  // with only QUILT playable, a rack of vowels has no play: the bot exchanges rather than passes
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), small);
+  s = withRack(s, 'UUIIOOA');
+  const move = C.botMove(s, 'hard', C.seededRandom(1), small);
+  assert.equal(move.t, 'swap');
+  assert.ok(move.tiles.length >= 1);
+});
+
+test('easy and medium bots stay inside their vocabulary; hard uses everything', () => {
+  const d = dict();
+  const tiny = C.buildDict(['quilt', 'lit', 'tilt', 'it', 'ti', 'quit', 'quilts', 'tin', 'nit', 'lint', 'tint', 'unit', 'until'].join('\n'));
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  s = withRack(s, 'NTIUSEA');
+  const rnd = C.seededRandom(9);
+  for (const level of ['easy', 'medium']) {
+    for (let i = 0; i < 5; i++) {
+      const m = C.botMove(s, level, rnd, d, { vocab: tiny });
+      assert.equal(m.t, 'play', 'fixture assumption: ' + level + ' plays from NTIUSEA on the opening');
+      const r = C.check(s, m, d);
+      assert.equal(r.ok, true);
+      for (const w of r.words) assert.equal(tiny.has(w.word), true, level + ' played ' + w.word + ', outside its vocabulary');
+    }
+  }
+  const hardMove = C.botMove(s, 'hard', rnd, d, { vocab: tiny });
+  const hardBest = C.rank(C.generate(s.board, s.racks[1], d), s.racks[1], false)[0];
+  assert.deepEqual(hardMove.tiles, hardBest.tiles, 'hard ignores the vocabulary limit');
+});
+
+test('the NWL additions are in both lists until the licensed list arrives', () => {
+  const adds = readFileSync(join(root, 'tools', 'word-additions.txt'), 'utf8').split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
+  const d = dict();
+  const c = C.buildDict(readFileSync(join(dir, 'common.txt'), 'utf8'));
+  for (const w of adds) assert.equal(d.has(w.toUpperCase()), true, w);
+  for (const w of ['QI', 'ZA', 'KI', 'OI', 'QIS', 'ZEN']) assert.equal(c.has(w), true, w + ' should count as common');
+  assert.equal(c.has('MBAQANGA'), false);
+});
+
+test('online records are packed per game and unpack to the same thing', () => {
+  const move = { t: 'play', tiles: [{ r: 7, c: 7, l: 'Q', b: false }, { r: 7, c: 8, l: 'I', b: true }] };
+  const packed = C.pack('otter-slate-plum', move);
+  assert.match(packed, /^[A-Za-z0-9+/=]+$/, 'base64');
+  assert.ok(!packed.includes('tiles'), 'not readable as is');
+  assert.deepEqual(C.unpack('otter-slate-plum', packed), move);
+  assert.notEqual(C.pack('otter-slate-bob', move), packed, 'keyed by the game id');
+  let other = null;
+  try { other = C.unpack('otter-slate-bob', packed); } catch (e) { other = 'garbage'; }
+  assert.notDeepEqual(other, move, 'the wrong key does not decode to the move');
+  assert.equal(C.unpack('otter-slate-plum', C.pack('otter-slate-plum', 123456789)), 123456789);
+});
+
+test('a turn is rated against the best common play, and rare words can beat it', () => {
+  const d = dict();
+  const tiny = C.buildDict(['quilt', 'lit', 'tilt', 'it', 'ti', 'quit', 'tin', 'nit', 'lint', 'tint', 'unit', 'until'].join('\n'));
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  const before = withRack(s, 'NTIUSEA');
+  const best = C.rank(C.generate(before.board, before.racks[1], d), before.racks[1], false)[0];
+  const after = C.apply(before, { t: 'play', tiles: best.tiles }, d);
+  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, tiny);
+  assert.equal(a.playedLabel, best.word + ' for ' + best.score);
+  assert.ok(a.ref, 'a common yardstick exists');
+  assert.ok(a.commonList.every((m) => m.common));
+  assert.ok(!best.words.every((w) => tiny.has(w.word)), 'fixture assumption: the best play uses a word outside the tiny list');
+  assert.ok(a.rating >= 100, 'the best full-list play rates at least the best common play');
+  assert.equal(a.expert, null, 'no expert note when the player found the rare word');
+  // without a common list every play is common and the best play is exactly 100
+  const b = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, null);
+  assert.equal(b.rating, 100);
+  assert.equal(b.grade, 'best');
+  // a pass is rated by the rack it keeps against that yardstick
+  const c = C.evaluateTurn(before, { t: 'pass' }, { t: 'pass', p: 1 }, d, tiny);
+  assert.equal(c.playedLabel, 'passed');
+  assert.ok(c.rating < 100);
+});
+
+test('the result report attributes plays, bingos and best words to the right seat', async () => {
+  const d = dict();
+  const rnd = C.seededRandom(31);
+  let s = C.newGame(3131);
+  let n = 0;
+  while (!s.over && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d), d);
+  const r = C.computeResult(s, d, null);
+  assert.equal(r.moves, s.moves.length);
+  assert.deepEqual([r.p0_score, r.p1_score], s.scores);
+  assert.equal(r.winner, C.winner(s));
+  for (const p of [0, 1]) {
+    const mine = s.history.filter((h) => h.p === p && h.t === 'play');
+    const st = r.stats['p' + p];
+    assert.equal(st.plays, mine.length);
+    assert.equal(st.points, mine.reduce((t, h) => t + h.score, 0));
+    assert.equal(st.bingos, mine.filter((h) => h.bingo).length);
+    assert.equal(st.best_score, Math.max(0, ...mine.map((h) => h.score)));
+  }
+  // the sliced form gives the same answer
+  const sliced = await C.computeResult(s, d, null, (go) => setTimeout(go, 0));
+  assert.deepEqual(sliced, r);
+});
+
+
+test('in the last turns a play is rated by its margin over the known reply, not its score', () => {
+  const d = dict();
+  const rnd = C.seededRandom(703);
+  let s = C.newGame(703);
+  let n = 0;
+  while (!s.over && !(s.bag.length === 0 && s.finalTurns === 2) && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d, { noEndgame: true }), d);
+  assert.equal(s.finalTurns, 2);
+  const e = C.endgameMove(s, d);
+  assert.equal(e.move.t, 'play', 'seed 703 has a playable endgame');
+  const after = C.apply(s, e.move, d);
+  const a = C.evaluateTurn(s, e.move, after.history[after.history.length - 1], d, null);
+  assert.equal(a.endgame, true);
+  assert.equal(a.rating, 100, 'the margin-optimal play is the best play');
+  const greedy = C.generate(s.board, s.racks[s.turn], d)[0];
+  const afterG = C.apply(s, { t: 'play', tiles: greedy.tiles }, d);
+  const g = C.evaluateTurn(s, { t: 'play', tiles: greedy.tiles }, afterG.history[afterG.history.length - 1], d, null);
+  assert.ok(g.rating < 100, 'the greedy play gives more back and rates below the best');
+  assert.equal(a.list[0].equity, e.margin, 'the yardstick is the searched margin');
+  // a modest play far down the list by score is rated by its own margin, not written off
+  const all = C.generate(s.board, s.racks[s.turn], d);
+  const low = all[all.length - 1];
+  const afterL = C.apply(s, { t: 'play', tiles: low.tiles }, d);
+  const l = C.evaluateTurn(s, { t: 'play', tiles: low.tiles }, afterL.history[afterL.history.length - 1], d, null);
+  assert.ok(l.played >= 0, 'the played move is in the examined list');
+  const replyL = C.generate(afterL.board, afterL.racks[afterL.turn], d)[0];
+  assert.equal(l.playedEquity, low.score - (replyL ? replyL.score : 0), 'rated by its real margin');
+});
+
+test('a brilliancy needs a rare word with a clear edge, and a malformed move is refused, not a crash', () => {
+  const d = dict();
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  assert.equal(C.check(s, { t: 'play', tiles: [null] }, d).ok, false);
+  assert.equal(C.check(s, { t: 'play', tiles: [{ r: 8, c: 7 }] }, d).ok, false);
+  assert.equal(C.check(s, { t: 'swap', tiles: [null] }, d).ok, false);
+  assert.throws(() => C.apply(s, { t: 'play', tiles: 'nope' }, d), /Not a move/);
+  // a common word cannot be a brilliancy even when it tops the list
+  const tiny = C.buildDict(['quilt', 'lit', 'tilt', 'it', 'ti', 'quit', 'tin', 'nit', 'lint', 'tint', 'unit', 'until'].join('\n'));
+  const before = withRack(s, 'NTIUSEA');
+  const best = C.rank(C.generate(before.board, before.racks[1], tiny), before.racks[1], false)[0];
+  const after = C.apply(before, { t: 'play', tiles: best.tiles }, d);
+  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, tiny);
+  assert.equal(a.grade, 'best');
+  assert.equal(a.rating, 100);
+  // and the rating scale is one straight line: three points per point of equity, best at 100
+  const r2 = a.list[1];
+  assert.ok(r2, 'fixture assumption: more than one play');
+  assert.equal(r2.rating, Math.max(0, Math.round(100 + 3 * (r2.equity - a.ref.equity))));
+});
+
+test('a move object handed to apply is copied, not shared, and a seed must be an integer', () => {
+  const d = dict();
+  let s = C.newGame(11);
+  s = withRack(s, 'QUILTAX');
+  const m = { t: 'play', tiles: [{ r: 7, c: 7, l: 'Q' }, { r: 7, c: 8, l: 'U' }, { r: 7, c: 9, l: 'I' }, { r: 7, c: 10, l: 'L' }, { r: 7, c: 11, l: 'T' }], extra: 1 };
+  const after = C.apply(s, m, d);
+  m.tiles[0].l = 'Z'; m.tiles.push({ r: 0, c: 0, l: 'A' });
+  assert.equal(after.moves[0].tiles.length, 5);
+  assert.equal(after.moves[0].tiles[0].l, 'Q');
+  assert.equal('extra' in after.moves[0], false);
+  assert.deepEqual(C.apply(s, after.moves[0], d).scores, after.scores, 'the stored copy replays to the same position');
+  assert.throws(() => C.newGame('abc'), /bad seed/);
+  assert.throws(() => C.newGame(0.5), /bad seed/);
+  assert.throws(() => C.pack('id', undefined), /nothing to pack/);
+  assert.notEqual(C.pack(123, 'x'), C.pack(124, 'x'));
+});
+
+test('three blanks are not worth three times one, and a rare-only position still has a yardstick', () => {
+  const d = dict();
+  assert.ok(C.leaveValue(['?', '?', '?']) < C.leaveValue(['?', '?']) + 10, 'a third blank is worth little');
+  assert.ok(C.leaveValue(['?', '?', '?']) >= C.leaveValue(['?', '?']), 'but never less than nothing');
+  assert.ok(C.leaveValue(['?', '?', '?', 'E']) >= C.leaveValue(['?', '?', 'E']), 'and holding it beats not holding it');
+  let s = C.newGame(12);
+  s = withRack(s, '???EAIS');
+  const m = C.botMove(s, 'hard', C.seededRandom(1), d);
+  assert.equal(m.t, 'play');
+  assert.equal(m.tiles.length, 7, 'with three blanks the bot plays a bingo, not a two-tile word');
+  // a position where no common play exists and the bag is empty: the best play is the yardstick
+  const empty = C.newGame(13);
+  const tiny = new Set(['ZZZZ']);
+  let e = withRack(empty, 'QUILTAX'); e = { ...e, bag: [], racks: [e.racks[0], ['A', 'B']] };
+  const after = C.apply(e, { t: 'pass' }, d);
+  const a = C.evaluateTurn(e, { t: 'pass' }, after.history[after.history.length - 1], d, tiny);
+  assert.ok(a.ref, 'a yardstick exists');
+  assert.ok(a.rating < 100, 'a pass does not rate best when a play was available');
 });

@@ -164,7 +164,7 @@ for (const s of positions) {
 console.table(rows);
 const pct = (a) => (100 * a / tally.n).toFixed(0) + '%';
 console.log(`${tally.n} positions, sim ${iters} iterations, 2 plies, MAGPIE leaves ${MAGPIE_LEAVES}, our leaves ${OUR_LEAVES || 'built in'}`);
-console.log(`generator/scoring: our best score equals MAGPIE's best score in ${pct(tally.maxScoreAgree)}; matched plays score the same in ${tally.scoreAgree}/${tally.scoreChecked}`);
+console.log(`generator/scoring: our best score is matched within MAGPIE's top 40 by equity in ${pct(tally.maxScoreAgree)} (its true top scorer may rank lower); matched plays score the same in ${tally.scoreAgree}/${tally.scoreChecked}`);
 console.log(`static (MAGPIE equity): our top play is MAGPIE's #1 in ${pct(tally.statTop1)}, in its top 3 in ${pct(tally.statTop3)}, in its top 40 in ${pct(tally.statListed)}`);
 console.log(`sim (win%):             our top play is MAGPIE's #1 in ${pct(tally.simTop1)}, in its top 3 in ${pct(tally.simTop3)}, among the 15 simmed in ${pct(tally.simListed)}`);
 console.log(`                        when simmed, our play trails MAGPIE's best by ${(tally.winGap / Math.max(1, tally.winGapN)).toFixed(2)} win% on average`);

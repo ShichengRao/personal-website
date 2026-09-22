@@ -82,6 +82,7 @@
   }
 
   function newGame(seed) {
+    if (!Number.isInteger(seed)) throw new Error('bad seed');
     const bag = shuffle(fullBag(), seededRandom(mix(seed, 0)));
     const state = {
       version: VERSION, seed, board: new Array(N * N).fill(null), racks: [[], []], bag,
@@ -97,8 +98,10 @@
     const bad = (reason) => ({ ok: false, reason });
     if (!tiles || !tiles.length) return bad('Place at least one tile.');
     const placed = new Map();
+    if (!Array.isArray(tiles)) return bad('Not a play.');
     for (const t of tiles) {
-      if (!(t.r >= 0 && t.r < N && t.c >= 0 && t.c < N)) return bad('That square is off the board.');
+      if (!t || typeof t !== 'object') return bad('Not a play.');
+      if (!(Number.isInteger(t.r) && Number.isInteger(t.c) && t.r >= 0 && t.r < N && t.c >= 0 && t.c < N)) return bad('That square is off the board.');
       const i = t.r * N + t.c;
       if (board[i]) return bad('That square is already taken.');
       if (placed.has(i)) return bad('Two tiles landed on one square.');
@@ -176,13 +179,13 @@
     const rack = state.racks[state.turn];
     if (move.t === 'pass' || move.t === 'resign') return { ok: true };
     if (move.t === 'swap') {
-      if (!Array.isArray(move.tiles) || !move.tiles.length) return bad('Pick the tiles to swap.');
+      if (!Array.isArray(move.tiles) || !move.tiles.length || move.tiles.some((t) => typeof t !== 'string')) return bad('Pick the tiles to swap.');
       if (move.tiles.length > state.bag.length) return bad('The bag only has ' + state.bag.length + ' tiles left.');
       if (!hasTiles(rack, move.tiles)) return bad('Those tiles are not on your rack.');
       return { ok: true };
     }
     if (move.t === 'play') {
-      if (!Array.isArray(move.tiles)) return bad('Not a move.');
+      if (!Array.isArray(move.tiles) || move.tiles.some((t) => !t || typeof t !== 'object')) return bad('Not a move.');
       if (!hasTiles(rack, move.tiles.map((t) => (t.b ? '?' : t.l)))) return bad('Those tiles are not on your rack.');
       const res = analyze(state.board, move.tiles);
       if (!res.ok) return res;
@@ -202,8 +205,10 @@
     const s = clone(state);
     const p = s.turn, rack = s.racks[p];
     const wasFinal = s.finalTurns !== null;
-    const take = (tile) => rack.splice(rack.indexOf(tile), 1);
+    const take = (tile) => { const i = rack.indexOf(tile); if (i < 0) throw new Error('Tile not on the rack.'); rack.splice(i, 1); };
+    let kept;   // the record's own copy of the move: the caller's object is not shared with the state
     if (move.t === 'play') {
+      kept = { t: 'play', tiles: move.tiles.map((t) => ({ r: t.r, c: t.c, l: t.l, b: !!t.b })) };
       for (const t of move.tiles) { take(t.b ? '?' : t.l); s.board[t.r * N + t.c] = { l: t.l, b: !!t.b }; }
       s.scores[p] += res.score;
       s.history.push({ p, t: 'play', word: res.main, words: res.words.map((w) => ({ word: w.word, score: w.score })),
@@ -225,7 +230,7 @@
       s.history.push({ p, t: 'pass' });
       if (s.passes >= PASS_LIMIT) { s.over = true; s.endReason = 'passes'; }
     }
-    s.moves.push(move);
+    s.moves.push(kept || (move.t === 'swap' ? { t: 'swap', tiles: move.tiles.slice() } : { t: move.t }));
     if (wasFinal && !s.over) {
       s.finalTurns--;
       if (s.finalTurns === 0) { s.over = true; s.endReason = 'bag'; }
@@ -261,9 +266,36 @@
 
   // What the side to move may do. A player with no tiles once the bag is
   // empty can only pass, which is how the other side gets their last turn.
+  // mustPass is kept for safety only: a rack empties during the final turns, and the game ends before that player moves again.
   function options(state) {
     const rack = state.racks[state.turn];
     return { play: !state.over && rack.length > 0, swap: !state.over && rack.length > 0 && state.bag.length > 0, pass: !state.over, mustPass: !state.over && rack.length === 0 };
+  }
+
+  // ---- packing for the server ------------------------------------------------
+  // What the online store holds is a seed and a move list, from which both
+  // racks follow. They are scrambled with a key derived from the game id and
+  // base64'd before they leave the page: not secret, just not readable at a
+  // glance in the database. Works in Node and the browser.
+  function packKey(id) {
+    let h = 2166136261;
+    for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    const rnd = seededRandom(h || 1), k = new Uint8Array(32);
+    for (let i = 0; i < k.length; i++) k[i] = Math.floor(rnd() * 256);
+    return k;
+  }
+  function pack(id, value) {
+    const json = JSON.stringify(value);
+    if (json === undefined) throw new Error('nothing to pack');
+    const bytes = new TextEncoder().encode(json), k = packKey(String(id));
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ^ k[i % k.length]);
+    return btoa(bin);
+  }
+  function unpack(id, str) {
+    const bin = atob(str), k = packKey(String(id)), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(bytes));
   }
 
   // ---- dictionary ---------------------------------------------------------
@@ -442,56 +474,58 @@
   // heuristic, but it is what separates "the highest score" from "the best
   // play": dumping a Q for 11 beats a 14 that keeps the Q.
   // Fitted to leave values that MAGPIE's leavegen produced for this exact
-  // board and tile set (three generations, 3.3 million self-play games), by
-  // least squares over singles, pairs and skew: tools/scrabble-mod-lab.mjs
-  // fitklv, output in tools/leaves-gen3.json. Against the hand-written table
-  // the generation-1 fit won a 600-game arena 55.3%; the generation-3 fit
-  // plays it level but agrees with MAGPIE's own ranking far more often
-  // (top play 85%, top three 97%). Duplicates are handled by the pair terms.
-  const LEAVE = { '?': 21.2, A: -0.7, B: -0.3, C: -0.7, D: -1, E: 0.4, F: -3.1, G: 0.1, H: -2.3, I: -2.4, J: 3.2, K: 1.9, L: 0.6, M: -0.8, N: -1, O: -2.5, P: -1.6, Q: -10.2, R: -0.3, S: 5.3, T: -1.7, U: -2.2, V: -1.9, W: -0.7, X: 2.7, Y: -0.2, Z: 4.4 };
-  const LEAVE_TUNE = { dup: 0, blankDup: 0, skew: -0.2 };
+  // board, tile set and word list (three generations, 2 million self-play
+  // games, regenerated after the NWL short words such as QI and ZA joined
+  // the list, which took the Q from -10 to -7 kept), by least squares over
+  // singles, pairs and skew: tools/scrabble-mod-lab.mjs fitklv, output in
+  // tools/leaves-gen3.json. Against the hand-written table the first such
+  // fit won a 600-game arena 55.3%; this one beats the previous fit 51.6%
+  // over 1,000 games and agrees with MAGPIE's own ranking on the top play
+  // about 85% of the time. Duplicates are handled by the pair terms.
+  const LEAVE = { '?': 21, A: -0.7, B: -0.5, C: -0.8, D: -1, E: 0.5, F: -3, G: 0.2, H: -2.6, I: -2.1, J: 3, K: 2.4, L: 0.5, M: -0.9, N: -1.2, O: -2.5, P: -1.6, Q: -7.4, R: -0.4, S: 5.2, T: -1.8, U: -2.5, V: -2.2, W: -0.5, X: 2.3, Y: -0.4, Z: 5.4 };
+  const LEAVE_TUNE = { dup: 0, blankDup: 0, skew: -0.1 };
   // Pair synergies, keyed by the two tiles in order ('?' first, then A-Z):
   // what holding both is worth beyond the two singles (QU is the classic;
   // doubled letters are the big negatives).
   const LEAVE2 = {
-    '??': -4.2, '?A': 1, '?B': -0.7, '?D': -0.6, '?E': 1.2, '?F': -1.2, '?G': -0.4, '?H': -0.7, '?I': 1.1,
-    '?J': -1.6, '?K': -0.8, '?L': 0.4, '?M': -0.7, '?O': 0.7, '?P': -0.8, '?Q': -2, '?V': -1.9, '?W': -1.6,
-    '?X': -2.2, '?Y': -0.8, '?Z': -0.9, 'AA': -5.1, 'AB': 1.4, 'AC': 1.3, 'AD': 1, 'AE': -0.7, 'AF': 0.6,
-    'AG': 1.3, 'AH': 1.1, 'AI': -0.9, 'AJ': 2.2, 'AK': 1.2, 'AL': 1.7, 'AM': 1.8, 'AN': 1.3, 'AO': -1.7, 'AP': 1,
-    'AQ': 1.9, 'AR': 1.5, 'AS': 1.1, 'AT': 1.3, 'AU': -1, 'AV': 1.9, 'AW': 1.4, 'AX': 1.7, 'AZ': 1.9, 'BB': -2.8,
-    'BC': -1.3, 'BD': -1, 'BE': 1, 'BF': -1.3, 'BG': -1.3, 'BH': -1.1, 'BI': 0.9, 'BK': -0.6, 'BM': -0.7,
-    'BN': -1.2, 'BO': 1.9, 'BP': -2.5, 'BQ': -1, 'BS': -0.8, 'BT': -1.1, 'BU': 1.6, 'BV': -2, 'BW': -1.1,
-    'BX': -1.1, 'BY': 0.6, 'BZ': -0.8, 'CC': -5.8, 'CD': -1.3, 'CE': 0.6, 'CF': -1.1, 'CG': -2.6, 'CH': 1.8,
-    'CI': 1.3, 'CJ': -2, 'CK': 2.5, 'CL': -0.6, 'CM': -1, 'CN': -0.8, 'CO': 1.4, 'CP': -1, 'CQ': -1.6,
-    'CR': -0.5, 'CS': -0.9, 'CT': -0.7, 'CU': 0.8, 'CV': -1.4, 'CW': -1.6, 'CX': -1.3, 'CZ': -1.9, 'DD': -4.1,
-    'DE': 2.5, 'DF': -0.8, 'DG': -1, 'DH': -0.9, 'DI': 1.3, 'DJ': -1, 'DK': -1.2, 'DL': -1.1, 'DM': -1.2,
-    'DN': -0.8, 'DO': 1.3, 'DP': -1.3, 'DQ': -0.6, 'DR': -0.9, 'DS': -1.3, 'DT': -1.5, 'DU': 0.8, 'DV': -1.1,
-    'DX': -1.2, 'DZ': -1.1, 'EE': -4.5, 'EF': 0.5, 'EG': 0.4, 'EH': 0.4, 'EI': -0.6, 'EJ': 1.2, 'EK': 1,
-    'EL': 1.4, 'EM': 0.6, 'EN': 0.8, 'EO': -1, 'EP': 0.9, 'EQ': -0.7, 'ER': 2.2, 'ES': 1.5, 'ET': 1.3,
-    'EU': -0.7, 'EV': 2.1, 'EW': 0.9, 'EX': 1.7, 'EY': -0.5, 'EZ': 1.6, 'FF': 1.6, 'FG': -0.9, 'FH': -0.8,
-    'FI': 1.4, 'FJ': -0.9, 'FK': -1, 'FL': 0.3, 'FM': -1.4, 'FN': -1.1, 'FO': 1, 'FP': -1.7, 'FS': -0.8,
-    'FT': -0.4, 'FU': 1.5, 'FV': -1.7, 'FW': -0.5, 'FY': 0.4, 'FZ': -0.3, 'GG': -3.1, 'GH': -0.4, 'GI': 1.8,
-    'GJ': -0.7, 'GK': -2.1, 'GL': -0.5, 'GM': -1, 'GN': 1.4, 'GO': 1.1, 'GP': -1.5, 'GQ': -1.3, 'GR': -0.5,
-    'GS': -0.9, 'GT': -1.5, 'GU': 1.4, 'GV': -1.1, 'GW': -0.9, 'GX': -2, 'GY': 0.7, 'GZ': -1.3, 'HH': -4.5,
-    'HI': 0.3, 'HJ': -0.8, 'HK': -0.3, 'HL': -1, 'HN': -0.9, 'HO': 0.9, 'HP': 0.4, 'HR': -0.9, 'HS': 0.3,
-    'HT': 0.5, 'HU': 0.3, 'HV': -1.3, 'HW': 1.2, 'HX': -1, 'HY': 0.3, 'HZ': -0.8, 'II': -5.9, 'IJ': 0.6,
-    'IK': 0.9, 'IL': 1.3, 'IM': 1.5, 'IN': 2.6, 'IO': -1.3, 'IP': 1.1, 'IQ': 0.8, 'IR': 0.6, 'IS': 1.3,
-    'IT': 1.3, 'IU': -1.6, 'IV': 2.2, 'IX': 1.8, 'IY': -0.9, 'IZ': 2.1, 'JL': -1.5, 'JM': -0.8, 'JN': -0.5,
-    'JO': 2.1, 'JP': -1.2, 'JQ': -0.5, 'JR': -1.5, 'JS': -1, 'JT': -0.8, 'JU': 2.3, 'JV': -1.3, 'JW': -0.3,
-    'JX': -1, 'JZ': -2.1, 'KL': -0.7, 'KM': -1.4, 'KO': 1.1, 'KP': -0.8, 'KQ': -0.3, 'KR': -0.5, 'KT': -1.6,
-    'KU': 0.9, 'KV': -2, 'KX': -1.8, 'KY': 0.6, 'KZ': -1.5, 'LL': -4.5, 'LM': -1.1, 'LN': -1.6, 'LO': 1.1,
-    'LP': -0.5, 'LQ': -1.8, 'LR': -2, 'LS': -0.7, 'LT': -1.1, 'LU': 1.1, 'LV': -0.6, 'LW': -0.4, 'LX': -0.9,
-    'LY': 1.5, 'LZ': -1.6, 'MM': -3.8, 'MN': -1.1, 'MO': 1.5, 'MP': -0.4, 'MQ': -1.2, 'MR': -0.7, 'MS': -0.4,
-    'MT': -1.2, 'MU': 1.4, 'MV': -1.8, 'MW': -1.1, 'MX': -0.6, 'MY': 0.8, 'MZ': -1.1, 'NN': -4.9, 'NO': 1.2,
-    'NP': -1.2, 'NQ': -1.3, 'NR': -1.5, 'NS': -0.9, 'NT': -0.7, 'NU': 0.8, 'NV': -1.2, 'NX': -1, 'NY': 0.3,
-    'NZ': -1.1, 'OO': -4, 'OP': 1.3, 'OR': 1.1, 'OS': 0.9, 'OT': 1, 'OU': -1, 'OV': 1, 'OW': 1.8, 'OX': 2.1,
-    'OY': 0.6, 'OZ': 2.3, 'PP': -3.6, 'PT': -0.6, 'PU': 1, 'PV': -1.9, 'PW': -1, 'PX': -0.3, 'PY': 1.3, 'PZ': -1,
-    'QR': -1.4, 'QS': -1.4, 'QT': 0.3, 'QU': 10.9, 'QV': -0.3, 'QX': 0.3, 'RR': -5.4, 'RS': -0.6, 'RT': -0.3,
-    'RU': 0.7, 'RV': -0.4, 'RW': -0.3, 'RX': -1.7, 'RY': 0.3, 'RZ': -1.1, 'SS': -5.9, 'SU': 1.2, 'SV': -1.2,
-    'SW': -0.4, 'SX': -1.8, 'SY': -0.6, 'SZ': -1.8, 'TT': -4.2, 'TU': 1, 'TV': -1.3, 'TW': -0.8, 'TX': -0.7,
-    'TZ': -0.9, 'UU': -7.3, 'UW': -1.6, 'UX': 0.7, 'UY': -0.6, 'UZ': -0.3, 'VV': -3.7, 'VW': -0.8, 'VX': -0.6,
-    'VY': 0.4, 'VZ': -2.3, 'WW': -5, 'WX': -1, 'WY': 0.7, 'WZ': -1.4, 'XY': 0.5, 'XZ': -1.7, 'YY': -6.5,
-    'YZ': 0.4
+    '??': -4.2, '?A': 0.9, '?B': -0.7, '?D': -0.5, '?E': 1.2, '?F': -1.2, '?G': -0.4, '?H': -0.7, '?I': 1.1,
+    '?J': -1.6, '?K': -0.9, '?L': 0.4, '?M': -0.7, '?O': 0.7, '?P': -0.8, '?Q': -1.9, '?V': -1.9, '?W': -1.6,
+    '?X': -2.1, '?Y': -0.8, '?Z': -0.9, 'AA': -5.2, 'AB': 1.5, 'AC': 1.3, 'AD': 1.1, 'AE': -0.8, 'AF': 0.7,
+    'AG': 1.4, 'AH': 1.1, 'AI': -1, 'AJ': 2.2, 'AK': 1.4, 'AL': 1.7, 'AM': 1.8, 'AN': 1.3, 'AO': -1.8, 'AP': 1.1,
+    'AQ': 2, 'AR': 1.5, 'AS': 1.1, 'AT': 1.3, 'AU': -1, 'AV': 1.9, 'AW': 1.4, 'AX': 1.7, 'AZ': 2.2, 'BB': -2.9,
+    'BC': -1.4, 'BD': -1.1, 'BE': 1, 'BF': -1.4, 'BG': -1.4, 'BH': -1.1, 'BI': 0.9, 'BK': -0.6, 'BM': -0.7,
+    'BN': -1.2, 'BO': 1.9, 'BP': -2.5, 'BQ': -1.1, 'BS': -0.8, 'BT': -1.1, 'BU': 1.7, 'BV': -2, 'BW': -1.1,
+    'BX': -1.1, 'BY': 0.6, 'BZ': -0.9, 'CC': -5.8, 'CD': -1.3, 'CE': 0.6, 'CF': -1.2, 'CG': -2.6, 'CH': 1.8,
+    'CI': 1.3, 'CJ': -2, 'CK': 2.3, 'CL': -0.6, 'CM': -1, 'CN': -0.8, 'CO': 1.4, 'CP': -1, 'CQ': -1.8,
+    'CR': -0.5, 'CS': -0.9, 'CT': -0.7, 'CU': 0.9, 'CV': -1.4, 'CW': -1.6, 'CX': -1.3, 'CZ': -1.7, 'DD': -4.2,
+    'DE': 2.6, 'DF': -0.9, 'DG': -1.1, 'DH': -0.9, 'DI': 1.3, 'DJ': -1, 'DK': -1.3, 'DL': -1.1, 'DM': -1.3,
+    'DN': -0.8, 'DO': 1.3, 'DP': -1.3, 'DQ': -0.8, 'DR': -0.9, 'DS': -1.4, 'DT': -1.6, 'DU': 0.9, 'DV': -1.1,
+    'DW': -0.3, 'DX': -1.2, 'DZ': -1.2, 'EE': -4.6, 'EF': 0.6, 'EG': 0.5, 'EH': 0.4, 'EI': -0.6, 'EJ': 1.3,
+    'EK': 1.1, 'EL': 1.4, 'EM': 0.7, 'EN': 0.9, 'EO': -1, 'EP': 0.9, 'EQ': -0.7, 'ER': 2.3, 'ES': 1.5, 'ET': 1.3,
+    'EU': -0.8, 'EV': 2.1, 'EW': 0.9, 'EX': 1.8, 'EY': -0.5, 'EZ': 1.7, 'FF': 1.5, 'FG': -1, 'FH': -0.8,
+    'FI': 1.4, 'FJ': -1, 'FK': -1, 'FL': 0.3, 'FM': -1.4, 'FN': -1.2, 'FO': 1, 'FP': -1.8, 'FQ': -0.5,
+    'FS': -0.9, 'FT': -0.4, 'FU': 1.6, 'FV': -1.7, 'FW': -0.6, 'FY': 0.3, 'FZ': -0.3, 'GG': -3.2, 'GH': -0.4,
+    'GI': 1.8, 'GJ': -0.6, 'GK': -2.2, 'GL': -0.6, 'GM': -1.1, 'GN': 1.3, 'GO': 1.2, 'GP': -1.5, 'GQ': -1.6,
+    'GR': -0.6, 'GS': -1, 'GT': -1.5, 'GU': 1.5, 'GV': -1.1, 'GW': -0.9, 'GX': -2.1, 'GY': 0.8, 'GZ': -1.3,
+    'HH': -4.5, 'HI': 0.3, 'HJ': -0.8, 'HK': -0.4, 'HL': -1.1, 'HN': -0.9, 'HO': 0.9, 'HP': 0.4, 'HQ': -0.4,
+    'HR': -0.9, 'HT': 0.5, 'HU': 0.4, 'HV': -1.3, 'HW': 1.2, 'HX': -1, 'HY': 0.4, 'HZ': -0.9, 'II': -6,
+    'IJ': 0.6, 'IK': 1, 'IL': 1.3, 'IM': 1.5, 'IN': 2.6, 'IO': -1.4, 'IP': 1.1, 'IQ': 2.6, 'IR': 0.7, 'IS': 1.4,
+    'IT': 1.3, 'IU': -1.9, 'IV': 2.2, 'IX': 1.8, 'IY': -0.9, 'IZ': 2, 'JL': -1.5, 'JM': -0.8, 'JN': -0.5,
+    'JO': 2.1, 'JP': -1.2, 'JQ': -0.9, 'JR': -1.6, 'JS': -1, 'JT': -0.8, 'JU': 2.5, 'JV': -1.3, 'JW': -0.4,
+    'JX': -1, 'JZ': -2, 'KL': -0.8, 'KM': -1.5, 'KO': 1.2, 'KP': -0.8, 'KQ': -0.6, 'KR': -0.6, 'KT': -1.6,
+    'KU': 0.9, 'KV': -2, 'KX': -1.9, 'KY': 0.6, 'KZ': -1.6, 'LL': -4.6, 'LM': -1.1, 'LN': -1.7, 'LO': 1.1,
+    'LP': -0.5, 'LQ': -1.8, 'LR': -2, 'LS': -0.7, 'LT': -1.1, 'LU': 1.2, 'LV': -0.7, 'LW': -0.4, 'LX': -0.9,
+    'LY': 1.5, 'LZ': -1.6, 'MM': -3.8, 'MN': -1.1, 'MO': 1.5, 'MP': -0.4, 'MQ': -1.6, 'MR': -0.7, 'MS': -0.5,
+    'MT': -1.2, 'MU': 1.5, 'MV': -1.8, 'MW': -1.1, 'MX': -0.6, 'MY': 0.8, 'MZ': -1.2, 'NN': -4.9, 'NO': 1.2,
+    'NP': -1.2, 'NQ': -1.5, 'NR': -1.5, 'NS': -0.9, 'NT': -0.7, 'NU': 0.8, 'NV': -1.2, 'NW': -0.3, 'NX': -1,
+    'NY': 0.3, 'NZ': -1, 'OO': -4, 'OP': 1.3, 'OR': 1.1, 'OS': 1, 'OT': 1, 'OU': -1.1, 'OV': 1, 'OW': 1.9,
+    'OX': 2, 'OY': 0.6, 'OZ': 2.2, 'PP': -3.6, 'PQ': -0.6, 'PT': -0.7, 'PU': 1.1, 'PV': -1.9, 'PW': -1,
+    'PX': -0.3, 'PY': 1.3, 'PZ': -1, 'QR': -1.5, 'QS': -1.1, 'QU': 9.5, 'QV': -0.8, 'QW': -0.3, 'QX': -0.4,
+    'QZ': -0.4, 'RR': -5.4, 'RS': -0.6, 'RT': -0.3, 'RU': 0.7, 'RV': -0.4, 'RW': -0.3, 'RX': -1.8, 'RY': 0.3,
+    'RZ': -1.1, 'SS': -5.8, 'SU': 1.2, 'SV': -1.2, 'SW': -0.5, 'SX': -1.8, 'SY': -0.6, 'SZ': -1.8, 'TT': -4.2,
+    'TU': 1.1, 'TV': -1.4, 'TW': -0.8, 'TX': -0.7, 'TZ': -1, 'UU': -7.1, 'UW': -1.5, 'UX': 0.7, 'UY': -0.6,
+    'VV': -3.7, 'VW': -0.8, 'VX': -0.5, 'VY': 0.4, 'VZ': -2.3, 'WW': -5.1, 'WX': -1.2, 'WY': 0.7, 'WZ': -1.4,
+    'XY': 0.6, 'XZ': -1.7, 'YY': -6.6
   };
   const pairKey = (a, b) => (a <= b ? a + b : b + a);
   // The features leaveValue scores: letter counts, pairs, duplicates, skew.
@@ -513,6 +547,11 @@
   }
   function leaveValue(tiles) {
     if (!tiles.length) return 0;
+    // the fit never saw three blanks in one leave (the pair terms cover two): a third is priced as
+    // two points on top of the two-blank leave, less than an S, so a bingo in hand is played now
+    let nb = 0;
+    for (const t of tiles) if (t === '?') nb++;
+    if (nb > 2) { let drop = nb - 2; return leaveValue(tiles.filter((t) => t !== '?' || drop-- <= 0)) + 2 * (nb - 2); }
     const f = leaveFeatures(tiles);
     let v = 0;
     for (const t in f.counts) v += LEAVE[t] * f.counts[t];
@@ -522,7 +561,7 @@
   }
   function leaveAfter(rack, tiles) {
     const left = rack.slice();
-    for (const t of tiles) left.splice(left.indexOf(t.b ? '?' : t.l), 1);
+    for (const t of tiles) { const i = left.indexOf(t.b ? '?' : t.l); if (i >= 0) left.splice(i, 1); }
     return left;
   }
   // Adds leave and equity to generated moves and sorts by equity. Once the
@@ -583,10 +622,132 @@
     return best;
   }
 
+  // ---- exchanging ------------------------------------------------------------
+  // The best exchange on offer: the tiles to give back whose kept tiles are
+  // worth the most next turn. Shaped like a generated play so it can sit in
+  // the same ranked list (score 0, equity = the leave). Null with an empty bag.
+  function bestExchange(rack, bagLen) {
+    if (!bagLen || !rack.length) return null;
+    let best = null;
+    for (let m = 1; m < (1 << rack.length); m++) {
+      const swap = [], kept = [];
+      for (let i = 0; i < rack.length; i++) (m & (1 << i) ? swap : kept).push(rack[i]);
+      if (swap.length > bagLen) continue;
+      const v = leaveValue(kept);
+      if (!best || v > best.equity) best = { t: 'swap', tiles: swap, keeps: kept.join(''), word: 'Exchange ' + swap.join(''), score: 0, leave: v, equity: v, words: [] };
+    }
+    return best;
+  }
+
+  // ---- rating a turn ------------------------------------------------------------
+  // Everything a review says about one turn: the plays that were available
+  // before it (ranked by equity), which of them use only common words, the
+  // best exchange, the yardstick (best common play or the exchange), the
+  // expert play a rare word would have given, and the played move's rating:
+  // the yardstick is 100, everything else its share, a rare word that beats
+  // it rates above 100. `common` may be null, in which case every word counts
+  // as common.
+  function evaluateTurn(before, move, h, dict, common) {
+    const p = before.turn, rack = before.racks[p];
+    const bagEmpty = before.bag.length === 0;
+    // in the last turns the opponent's rack is known, so a play is worth its
+    // score minus their best reply (what the bot's endgame search uses too)
+    const endgame = bagEmpty && before.finalTurns === 2 && before.racks[1 - p].length > 0;
+    let list = rank(generate(before.board, rack, dict), rack, bagEmpty);
+    const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
+    for (const m of list) m.common = isCommon(m);
+    const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+    const pk = move.t === 'play' ? key(move.tiles) : null;
+    if (endgame) {
+      // search the top plays by score, the top common ones, and whatever was played; the rest are left out
+      const opp = before.racks[1 - p];
+      const margin = (m) => { const after = apply(before, { t: 'play', tiles: m.tiles }, null); const reply = generate(after.board, opp, dict)[0]; return m.score - (reply ? reply.score : 0); };
+      const examined = new Set(list.slice(0, 40));
+      for (const m of list.filter((m) => m.common).slice(0, 40)) examined.add(m);
+      const playedMove = pk && list.find((m) => key(m.tiles) === pk);
+      if (playedMove) examined.add(playedMove);
+      for (const m of examined) { m.equity = margin(m); m.reply = m.score - m.equity; }
+      list = [...examined].sort((a, b) => b.equity - a.equity || b.score - a.score);
+    }
+    const exch = bestExchange(rack, before.bag.length);
+    const commonList = list.filter((m) => m.common);
+    const replyNow = endgame ? (generate(before.board, before.racks[1 - p], dict)[0] || { score: 0 }).score : 0;
+    let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
+    if (move.t === 'play') {
+      played = list.findIndex((m) => key(m.tiles) === pk);
+      if (played >= 0) playedEquity = list[played].equity;
+      else {   // not in the generated list (a word since dropped from the list): rate it like any other play
+        const kept = rack.slice();
+        for (const t of move.tiles) { const i = kept.indexOf(t.b ? '?' : t.l); if (i >= 0) kept.splice(i, 1); }
+        if (endgame) { const after = apply(before, move, null); const reply = generate(after.board, before.racks[1 - p], dict)[0]; playedEquity = h.score - (reply ? reply.score : 0); }
+        else playedEquity = h.score + (bagEmpty ? 0 : leaveValue(kept));
+      }
+      playedLabel = h.word + ' for ' + h.score;
+    } else if (move.t === 'swap') {
+      const kept = rack.slice();
+      for (const t of move.tiles) { const i = kept.indexOf(t); if (i >= 0) kept.splice(i, 1); }
+      playedEquity = bagEmpty ? 0 : leaveValue(kept);
+      playedLabel = 'exchanged ' + move.tiles.join('') + ', kept ' + (kept.join('') || 'nothing');
+      playedSwap = true;
+    } else if (move.t === 'pass') {
+      playedEquity = endgame ? -replyNow : bagEmpty ? 0 : leaveValue(rack);
+      playedLabel = 'passed';
+    }
+    let ref = commonList[0] || null;
+    // the exchange is the yardstick only when it clearly beats playing, the bot's own rule
+    if (exch && (!ref || exch.equity > ref.equity + 1)) ref = exch;
+    // nothing common and nothing to exchange: the best play there is stands in, so a pass cannot rate as best
+    if (!ref && list[0]) ref = list[0];
+    if (endgame && (!ref || -replyNow > ref.equity)) ref = { t: 'pass', word: 'Pass', score: 0, equity: -replyNow, reply: replyNow, common: true, words: [], tiles: [] };
+    // the expert play: a rare-word play better than the yardstick, unless the player found it themselves
+    const expert = list[0] && !list[0].common && played !== 0 && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
+    // ratings: the yardstick is 100 and every point of equity above or below it is worth three,
+    // so ten points behind rates 70 and a third of the board's value behind rates 0
+    const rate = (eq) => !ref ? 100 : Math.max(0, Math.round(100 + 3 * (eq - ref.equity)));
+    for (const m of list) m.rating = rate(m.equity);
+    if (exch) exch.rating = rate(exch.equity);
+    const rating = rate(playedEquity);
+    // a brilliancy is a rare word that beats every common play by five points or more
+    const brilliant = ref && played !== null && played >= 0 && !list[played].common && rating >= 115;
+    return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, endgame, rating, grade: !ref ? 'best' : brilliant ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
+  }
+  // The outcome of a finished game for the results table: scores, winner and
+  // each seat's plays, points, bingos, best word and brilliancies. `step` is
+  // called between turns when given, so a page can spread the work out.
+  function computeResult(state, dict, common, step) {
+    const positions_ = positions(state.seed, state.moves);
+    const stats = { p0: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 }, p1: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 } };
+    const turn = (i) => {
+      const m = state.moves[i], before = positions_[i], h = state.history[i], st = stats['p' + before.turn];
+      if (m.t !== 'play') return;
+      st.plays++; st.points += h.score;
+      if (h.bingo) st.bingos++;
+      if (h.score > st.best_score) { st.best_score = h.score; st.best_word = h.word; }
+      if (dict && evaluateTurn(before, m, h, dict, common).grade === 'brilliant') st.brilliancies++;
+    };
+    const result = () => ({ moves: state.moves.length, p0_score: state.scores[0], p1_score: state.scores[1], winner: winner(state), end_reason: state.endReason, stats });
+    if (!step) { for (let i = 0; i < state.moves.length; i++) turn(i); return result(); }
+    return new Promise((resolve, reject) => {
+      let i = 0;
+      const go = () => {
+        try {
+          const t0 = Date.now();
+          while (i < state.moves.length && Date.now() - t0 < 30) turn(i++);
+          if (i < state.moves.length) step(go); else resolve(result());
+        } catch (e) { reject(e); }
+      };
+      go();
+    });
+  }
+
   // ---- the bot ------------------------------------------------------------
-  // hard takes the play with the best equity; medium takes one of the next
-  // few; easy plays a middling one by score. With nothing to play it swaps the
-  // rack while the bag allows.
+  // hard takes the play with the best equity from the whole word list;
+  // medium one of the next few by equity, easy one of the eleventh to
+  // thirtieth by score, both from opts.vocab when given (a smaller list of
+  // common words). Against hard in self-play that is roughly 430, 260 and
+  // 190 points a game. Any level exchanges instead when the kept rack is
+  // worth more than the best play.
+  const EASY_POOL = [10, 30];   // easy picks among these ranks by score (0-based, end exclusive)
   function botMove(state, level, rnd, dict, opts) {
     const p = state.turn, rack = state.racks[p];
     if (!rack.length) return { t: 'pass' };
@@ -594,12 +755,13 @@
       const e = endgameMove(state, dict);
       if (e) return e.move;
     }
-    const moves = level === 'easy' ? generate(state.board, rack, dict) : rank(generate(state.board, rack, dict), rack, state.bag.length === 0);
-    if (!moves.length) {
-      if (state.bag.length >= rack.length) return { t: 'swap', tiles: rack.slice() };
-      if (state.bag.length > 0) return { t: 'swap', tiles: rack.slice(0, state.bag.length) };
-      return { t: 'pass' };
-    }
+    const vocab = (opts && opts.vocab && level !== 'hard') ? opts.vocab : dict;
+    const byScore = generate(state.board, rack, vocab);
+    const moves = rank(byScore.slice(), rack, state.bag.length === 0);
+    const exch = bestExchange(rack, state.bag.length);
+    // an exchange has to be clearly better than playing; ties go to the board
+    if (exch && (!moves.length || exch.equity > moves[0].equity + 1)) return { t: 'swap', tiles: exch.tiles };
+    if (!moves.length) return { t: 'pass' };
     let pool;
     if (level === 'hard' && opts && opts.sim && moves.length > 1 && state.bag.length > 0) {
       const top = moves.slice(0, opts.sim.cands || 5);
@@ -608,11 +770,11 @@
     }
     if (level === 'hard') pool = moves.slice(0, 1);
     else if (level === 'medium') pool = moves.slice(Math.min(2, moves.length - 1), Math.min(10, moves.length));
-    else pool = moves.slice(Math.floor(moves.length * 0.35), Math.max(Math.floor(moves.length * 0.35) + 1, Math.floor(moves.length * 0.75)));
+    else { const [lo, hi] = (opts && opts.easyPool) || EASY_POOL; pool = byScore.slice(Math.min(lo, byScore.length - 1), Math.min(hi, byScore.length)); }   // a casual play, by score alone
     const pick = pool[Math.floor(rnd() * pool.length)] || moves[moves.length - 1];
     return { t: 'play', tiles: pick.tiles };
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, endgameMove, lookahead, botMove, transpose };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, transpose, pack, unpack };
 });

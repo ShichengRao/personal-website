@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#f6f4ee"/>
+  <rect x="116" y="116" width="280" height="280" rx="40" fill="#22515a"/>
+  <text x="242" y="323" font-family="-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-weight="700" font-size="188" fill="#fbf6e9" text-anchor="middle">Q</text>
+  <text x="358" y="182" font-family="-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-weight="600" font-size="50" fill="#fbf6e9" text-anchor="middle">10</text>
+</svg>

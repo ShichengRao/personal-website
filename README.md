@@ -87,7 +87,14 @@ every position. Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
 
 The hard bot plays by equity (score plus leave), and once the bag is empty it
-searches the last turns exactly, since the opponent's rack is then known. The
+searches the last turns exactly, since the opponent's rack is then known. It
+also exchanges when the kept rack is worth more than any play. The easy and
+medium bots are limited to `static/scrabble-mod/common.txt`, the ENABLE words
+that appear among the 50,000 most frequent English words in
+[hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
+(OpenSubtitles 2018, MIT licence), about 32,500 words; the review rates a
+move against the best play made of those common words and reports a better
+rare-word play separately, so an ordinary vocabulary is not marked down. The
 leave values (singles and pair synergies in `core.js`) were fitted to a leave
 file that MAGPIE's leavegen produced for this board and tile set; the fit is
 `tools/scrabble-mod-lab.mjs fitklv` and its output is `tools/leaves-gen3.json`.
@@ -101,6 +108,21 @@ generator. Changes to the bot should come with an arena result.
 ranking and Monte Carlo sim on positions sampled from self-play; its header
 says what MAGPIE needs (a layout file for this board, a letter distribution
 for these tiles, a KWG built from words.txt, and `-bb 40`).
+
+The page is an installable web app: `static/scrabble-mod/manifest.webmanifest`
+and `sw.js` give it a home-screen icon, a standalone window and an offline
+copy of the page, scripts and word lists (cached first, refreshed in the
+background). Signing in (Google, or a one-time email link, through Supabase
+Auth and the `supabase-js` browser build loaded from jsdelivr) is optional; it
+attaches online seats to the account so the same games open on any device,
+and the menu lists them. Link play without an account still works. An account
+also has a profile at `/scrabble-mod/u/<code>` (a six-character friend code,
+with a QR code of the link): stats over its online games (record, average and
+best game, points per play, bingos, brilliancies, best word), the record
+against each opponent, past games, and a friends list. Friends can be
+challenged straight into a seated game, and a finished game offers a rematch
+with the sides swapped. Results are reported by the first client to see a game
+end (`finish_game`); the record is deterministic, so both sides agree.
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id

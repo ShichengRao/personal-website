@@ -1,0 +1,47 @@
+# Words added to static/scrabble-mod/words.txt on top of ENABLE, from memory of
+# NASPA's NWL2023, while the licence for the real list is pending: the plays
+# that make the high-value tiles bearable. Remove this file and rebuild the
+# lists once NWL2023 replaces ENABLE. The two- and three-letter ones also go
+# into common.txt, since anyone who has played a word game knows QI and ZA.
+da
+ew
+fe
+gi
+ki
+oi
+ok
+po
+qi
+te
+za
+gis
+kis
+pos
+tes
+qis
+zas
+zen
+zuz
+cuz
+sez
+saz
+luz
+rez
+tiz
+qadi
+qadis
+niqab
+niqabs
+talaq
+talaqs
+sheqels
+qabala
+qabalas
+qapik
+qapiks
+mbaqanga
+burqa
+burqas
+qigong
+qigongs
+tzatziki
