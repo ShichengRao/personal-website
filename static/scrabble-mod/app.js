@@ -213,7 +213,10 @@
     const s = G.state;
     for (let p = 0; p < 2; p++) {
       const el = ui.players[p];
+      const handle = G.kind === 'online' && G.handles ? G.handles[p] : null;
       el.querySelector('.sm-name').textContent = nameOf(p) + (isYou(p) ? ' (you)' : '');
+      el.querySelector('.sm-name').classList.toggle('link', !!handle);
+      el.dataset.handle = handle || '';
       el.querySelector('.sm-score').textContent = R ? R.states[R.k].scores[p] : s.scores[p];
       el.classList.toggle('turn', !s.over && !R && s.turn === p);
     }
@@ -676,9 +679,18 @@
     render();
     afterMove();
   }
+  async function reportResult() {
+    if (!G || G.kind !== 'online' || !G.state.over || G.me === null || G.reported) return;
+    G.reported = true;
+    const s = G.session;
+    await dictReady;
+    if (!alive(s)) return;
+    try { await Net.rpc('finish_game', { p_code: G.id, p_token: G.online.token, p_result: computeResult(G.state) }); }
+    catch (e) { if (alive(s)) G.reported = false; }
+  }
   function afterMove() {
     celebrateNew();
-    if (G.state.over) { stopPolling(); showGameOver(); return; }
+    if (G.state.over) { stopPolling(); reportResult(); showGameOver(); return; }
     if (G.kind === 'bot' && G.state.turn !== G.me) scheduleBot();
     else if (G.kind === 'hotseat') showHandoff();
     else if (G.kind === 'online') {
@@ -775,14 +787,20 @@
   // needs a rare word is reported separately as the expert play.
   function analysis(k) {
     if (R.cands.has(k)) return R.cands.get(k);
-    const before = R.states[k - 1], p = before.turn;
+    const a = evaluateTurn(R.states[k - 1], G.state.moves[k - 1], G.state.history[k - 1]);
+    R.cands.set(k, a);
+    return a;
+  }
+  // Everything the review says about one turn, from the position before it,
+  // the move and its history entry. Pure: no review state needed.
+  function evaluateTurn(before, move, h) {
+    const p = before.turn;
     const rack = before.racks[p];
     const list = C.rank(C.generate(before.board, rack, dict), rack, before.bag.length === 0);
     const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
     for (const m of list) m.common = isCommon(m);
     const exch = C.bestExchange(rack, before.bag.length);
     const commonList = list.filter((m) => m.common);
-    const move = G.state.moves[k - 1], h = G.state.history[k - 1];
     const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
     let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
     if (move.t === 'play') {
@@ -809,9 +827,22 @@
     for (const m of list) m.rating = rate(m.equity);
     if (exch) exch.rating = rate(exch.equity);
     const rating = rate(playedEquity);
-    const a = { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref ? 'best' : rating >= 110 ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
-    R.cands.set(k, a);
-    return a;
+    return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref ? 'best' : rating >= 110 ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
+  }
+  // The outcome of a finished game for the results table: scores, winner and
+  // each seat's plays, points, bingos, best word and brilliancies.
+  function computeResult(state) {
+    const positions = C.positions(state.seed, state.moves);
+    const stats = { p0: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 }, p1: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 } };
+    state.moves.forEach((m, i) => {
+      const before = positions[i], h = state.history[i], st = stats['p' + before.turn];
+      if (m.t !== 'play') return;
+      st.plays++; st.points += h.score;
+      if (h.bingo) st.bingos++;
+      if (h.score > st.best_score) { st.best_score = h.score; st.best_word = h.word; }
+      if (dict && evaluateTurn(before, m, h).grade === 'brilliant') st.brilliancies++;
+    });
+    return { moves: state.moves.length, p0_score: state.scores[0], p1_score: state.scores[1], winner: C.winner(state), end_reason: state.endReason, stats };
   }
   function computeSummary() {
     const session = G.session, states = R.states;
@@ -1047,10 +1078,13 @@
     const s = G.state;
     const why = s.endReason === 'resign' ? esc(nameOf(s.resigned)) + ' resigned.' : s.endReason === 'passes' ? 'Four passes in a row.' : 'The bag ran out and both players took a last turn.';
     openOverlay('<h2>' + esc(verdict(s)) + '</h2><p>' + why + '</p><div class="sm-final"><div>' + esc(nameOf(0)) + '<b>' + s.scores[0] + '</b></div><div>' + esc(nameOf(1)) + '<b>' + s.scores[1] + '</b></div></div>' +
-      '<div class="sm-row" style="justify-content:center"><button id="sm-over-close">Look at the board</button><button id="sm-over-review">Review the game</button><button class="primary" id="sm-over-new">New game</button></div>');
+      '<div class="sm-row" style="justify-content:center"><button id="sm-over-close">Look at the board</button><button id="sm-over-review">Review the game</button>' +
+      (G.kind === 'online' && G.me !== null ? '<button class="primary" id="sm-over-again">' + (G.nextGame ? 'Open the rematch' : 'Play again, sides swapped') + '</button>' : '<button class="primary" id="sm-over-new">New game</button>') + '</div>');
     $('sm-over-close').addEventListener('click', closeOverlay);
     $('sm-over-review').addEventListener('click', () => { closeOverlay(); enterReview(s.moves.length); });
-    $('sm-over-new').addEventListener('click', () => { closeOverlay(); showMenu(); });
+    const again = $('sm-over-again'), fresh = $('sm-over-new');
+    if (again) again.addEventListener('click', () => { closeOverlay(); startRematch(); });
+    if (fresh) fresh.addEventListener('click', () => { closeOverlay(); showMenu(); });
   }
 
   // ---- starting and opening games ------------------------------------------------
@@ -1111,17 +1145,22 @@
   let user = null;   // { id, name, email }
   const authPanel = $('sm-auth');
   function setUser(u) {
-    user = u ? { id: u.id, email: u.email || '', name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || (u.email || '').split('@')[0] || 'Player' } : null;
+    const was = user && user.id;
+    user = u ? { id: u.id, email: u.email || '', name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || (u.email || '').split('@')[0] || 'Player', handle: null } : null;
     if (user && !store.get('sm.name', '')) store.set('sm.name', user.name);
     renderAuth();
+    if (user && user.id !== was) {
+      Net.rpc('ensure_profile', { p_name: store.get('sm.name', '') || user.name }).then((p) => { if (user && p) { user.handle = p.handle; user.name = p.name; store.set('sm.name', p.name); renderAuth(); } }).catch(() => {});
+    }
   }
   function renderAuth() {
     if (!Net.enabled) { authPanel.style.display = 'none'; return; }
     authPanel.style.display = '';
     authPanel.innerHTML = user
-      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b><button class="small" id="sm-signout">Sign out</button></div><div class="sm-note">Your online games open on any device you sign in on.</div>'
-      : '<div class="sm-auth-row"><button class="small" id="sm-google">Sign in with Google</button><button class="small" id="sm-email">Email me a link</button></div><div class="sm-note">Optional: keeps your online games together across devices.</div>';
-    const g = $('sm-google'), e = $('sm-email'), o = $('sm-signout');
+      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b>' + (user.handle ? ' <span class="sm-code">' + esc(user.handle) + '</span>' : '') + '<button class="small" id="sm-profile">Profile</button><button class="small" id="sm-signout">Sign out</button></div><div class="sm-note">Your games, stats and friends follow this account to any device.</div>'
+      : '<div class="sm-auth-row"><button class="small" id="sm-google">Sign in with Google</button><button class="small" id="sm-email">Email me a link</button></div><div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>';
+    const g = $('sm-google'), e = $('sm-email'), o = $('sm-signout'), pr = $('sm-profile');
+    if (pr) pr.addEventListener('click', () => { if (user.handle) showProfile(user.handle); });
     if (g) g.addEventListener('click', () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } }));
     if (e) e.addEventListener('click', async () => {
       const email = await askText('Email me a sign-in link', 'A one-time link to sign in here. No password.', 'you@example.com', '');
@@ -1204,20 +1243,21 @@
     let state;
     try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { setStatus('This game’s record is corrupt: ' + e.message, 'bad'); return; }
     leaveGame();
-    G = { id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', row.p2_name || null], state, me: seat.player, online: { token: seat.token }, hidden: false, session: ++sessions };
+    G = { id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', row.p2_name || null], handles: row.handles || {}, nextGame: row.next_game || null, state, me: seat.player, online: { token: seat.token }, hidden: false, session: ++sessions };
     seenMoves = state.history.length;
     if (seat.player !== null) persist();
     setUrl(id);
     render();
     setStatus(seat.player === null ? 'Watching: this game already has two players.' : '');
-    if (G.state.over) showGameOver();
+    if (G.state.over) { reportResult(); showGameOver(); }
     else { startPolling(); if (G.state.turn === G.me && C.options(G.state).mustPass) commit({ t: 'pass' }); }
   }
   // Fold the server's move list into ours. Idempotent: moves we already have
   // are skipped, so a poll and a submission can both deliver the same move.
   // Server moves are trusted like stored ones; only our own are validated.
-  function integrate(moves, names) {
+  function integrate(moves, names, row) {
     if (names) G.names = names;
+    if (row) { G.handles = row.handles || G.handles || {}; if (row.next_game && !G.nextGame) { G.nextGame = row.next_game; } }
     moves = moves || [];
     let s = G.state;
     try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, C.unpack(G.id, moves[i].d), null); }
@@ -1234,7 +1274,42 @@
     let row;
     try { row = await Net.rpc('get_game', { p_code: G.id }); } catch (e) { return; }
     if (!alive(s) || busy || !row) return;
-    integrate(row.moves, [row.p1_name || 'Player 1', row.p2_name || null]);
+    integrate(row.moves, [row.p1_name || 'Player 1', row.p2_name || null], row);
+  }
+  // The same two players again, seats swapped. The server copies both seats,
+  // so the other side opens it with the token or account it already has.
+  async function startRematch() {
+    if (!G || G.kind !== 'online' || G.me === null) return;
+    const old = G, my = ++navGen;
+    let id = old.nextGame;
+    if (!id) {
+      id = newId();
+      setStatus('Starting the rematch…');
+      try { id = await Net.rpc('rematch', { p_old: old.id, p_token: old.online.token, p_new: id, p_seed: C.pack(id, randomSeed()) }); }
+      catch (e) { if (my !== navGen) return; setStatus('Could not start a rematch: ' + e.message, 'bad'); return; }
+      if (my !== navGen) return;
+    }
+    games.put({ id, kind: 'online', names: [old.names[1], old.names[0]], seed: null, moves: [], over: false, online: { token: old.online.token, player: 1 - old.me } });
+    openOnline(id);
+  }
+  // A game against a friend, seated for them: they find it in their games list.
+  async function challengeFriend(handle, name) {
+    const my = ++navGen;
+    const token = randomToken();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const id = newId();
+      try {
+        await Net.rpc('challenge', { p_code: id, p_seed: C.pack(id, randomSeed()), p_name: store.get('sm.name', '') || (user && user.name) || 'Player', p_token: token, p_handle: handle });
+        if (my !== navGen) return;
+        games.put({ id, kind: 'online', names: [store.get('sm.name', '') || user.name, name], seed: null, moves: [], over: false, online: { token, player: 0 } });
+        await openOnline(id);
+        return;
+      } catch (e) {
+        if (my !== navGen) return;
+        if (/taken/.test(e.message)) continue;
+        setStatus('Could not start the game: ' + e.message, 'bad'); return;
+      }
+    }
   }
   function startPolling() {
     stopPolling();
@@ -1254,12 +1329,104 @@
       (G.names[1] ? '<div class="sm-note">' + esc(G.names[0]) + ' vs ' + esc(G.names[1]) + '. This page checks for new moves every few seconds while it is open; come back any time.</div>'
                   : '<div class="sm-note">' + (G.state.moves.length ? 'Waiting for a second player to take their turn.' : 'Play your first word, then') + ' Send them this link:</div><input type="text" readonly value="' + esc(invite) + '" id="sm-link"><div class="sm-row"><button id="sm-copy" data-link="' + esc(invite) + '">Copy invite link</button></div>') +
       (mine ? '<div class="sm-note" style="margin-top:10px">Your private link opens <i>your</i> seat on another device. Keep it to yourself.</div><div class="sm-row"><button id="sm-copy-mine" data-link="' + esc(mine) + '">Copy private link</button></div>' : '') +
+      (G.nextGame && G.state.over ? '<div class="sm-row"><button class="primary" id="sm-rematch">Open the rematch</button></div>' : '') +
       '<div class="sm-row"><button id="sm-refresh">Refresh</button></div>';
+    const rm = $('sm-rematch');
+    if (rm) rm.addEventListener('click', startRematch);
     ui.online.querySelectorAll('button[data-link]').forEach((b) => b.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(b.dataset.link); b.textContent = 'Copied'; }
       catch (e) { window.prompt('Copy this link:', b.dataset.link); }
     }));
     $('sm-refresh').addEventListener('click', syncOnline);
+  }
+
+  // ---- profiles, stats and friends -------------------------------------------------
+  const profileUrl = (handle) => location.origin + (LOCAL_HOST ? BASE + '?u=' + handle : BASE + 'u/' + handle);
+  function statsOf(results) {
+    const st = { games: results.length, wins: 0, losses: 0, ties: 0, best: 0, total: 0, plays: 0, points: 0, bingos: 0, brilliancies: 0, bestWord: null, bestWordScore: 0 };
+    for (const r of results) {
+      if (r.won === true) st.wins++; else if (r.won === false) st.losses++; else st.ties++;
+      st.total += r.my_score; st.best = Math.max(st.best, r.my_score);
+      const x = r.stats || {};
+      st.plays += x.plays || 0; st.points += x.points || 0; st.bingos += x.bingos || 0; st.brilliancies += x.brilliancies || 0;
+      if ((x.best_score || 0) > st.bestWordScore) { st.bestWordScore = x.best_score; st.bestWord = x.best_word; }
+    }
+    return st;
+  }
+  async function showProfile(handle) {
+    if (!Net.enabled) return;
+    openOverlay('<h2>Profile</h2><p>Loading…</p>');
+    let pr;
+    try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', closeOverlay); return; }
+    if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', closeOverlay); return; }
+    const st = statsOf(pr.results);
+    const num = (v) => (Math.round(v * 10) / 10).toString();
+    const records = {};
+    for (const r of pr.results) {
+      const k = r.their_handle || ('~' + r.their_name);
+      const rec = records[k] || (records[k] = { name: r.their_name, handle: r.their_handle, w: 0, l: 0, t: 0 });
+      if (r.won === true) rec.w++; else if (r.won === false) rec.l++; else rec.t++;
+    }
+    let html = '<h2>' + esc(pr.name) + '</h2><p>Friend code <span class="sm-code">' + esc(pr.handle) + '</span></p>' +
+      '<div class="sm-row" style="justify-content:center">' +
+      (pr.mine ? '<button class="small" id="sm-pr-rename">Change name</button><button class="small" id="sm-pr-qr">Show QR code</button>' :
+        (user ? (pr.is_friend ? '<button class="small" id="sm-pr-challenge">Challenge to a game</button><button class="small" id="sm-pr-unfriend">Remove friend</button>' : '<button class="small" id="sm-pr-friend">Add friend</button>') : '<span class="sm-note">Sign in to add friends or challenge.</span>')) +
+      '</div>';
+    html += '<div class="sm-k" style="text-align:left;margin-top:12px">Online games</div><div class="sm-stats">' +
+      '<div><b>' + st.wins + '–' + st.losses + (st.ties ? '–' + st.ties : '') + '</b><small>won–lost' + (st.ties ? '–tied' : '') + '</small></div>' +
+      '<div><b>' + (st.games ? num(st.total / st.games) : '–') + '</b><small>average game</small></div>' +
+      '<div><b>' + (st.best || '–') + '</b><small>best game</small></div>' +
+      '<div><b>' + (st.plays ? num(st.points / st.plays) : '–') + '</b><small>points per play</small></div>' +
+      '<div><b>' + st.bingos + '</b><small>bingos</small></div>' +
+      '<div><b>' + st.brilliancies + '</b><small>brilliancies</small></div>' +
+      '<div style="grid-column:span 2"><b>' + (st.bestWord ? esc(st.bestWord) + ' ' + st.bestWordScore : '–') + '</b><small>best word</small></div></div>';
+    const recs = Object.values(records).sort((a, b) => (b.w + b.l + b.t) - (a.w + a.l + a.t));
+    if (recs.length) {
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Against</div><div class="sm-summary">';
+      for (const r of recs) html += '<div' + (r.handle ? ' data-u="' + esc(r.handle) + '"' : '') + '><span>' + esc(r.name || 'a guest') + '</span> <b>' + r.w + '–' + r.l + (r.t ? '–' + r.t : '') + '</b></div>';
+      html += '</div>';
+    }
+    if (pr.mine) {
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Friends</div><div class="sm-summary" id="sm-pr-friends">';
+      if (!pr.friends.length) html += '<div class="sm-note">No friends yet. Add one by their code, or send them yours.</div>';
+      for (const f of pr.friends) html += '<div data-u="' + esc(f.handle) + '"><span>' + esc(f.name) + ' <small>' + esc(f.handle) + '</small></span><b>›</b></div>';
+      html += '</div><div class="sm-row"><input type="text" id="sm-pr-code" placeholder="Friend code" maxlength="8" style="width:140px"><button class="small" id="sm-pr-add">Add friend</button></div>';
+    }
+    if (pr.results.length) {
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Past games</div><div class="sm-summary">';
+      for (const r of pr.results.slice(0, 30)) html += '<div data-g="' + esc(r.game_id) + '"><span>' + (r.won === true ? 'Won' : r.won === false ? 'Lost' : 'Tied') + ' ' + r.my_score + '–' + r.their_score + ' vs ' + esc(r.their_name || 'a guest') + '</span><small>' + esc(new Date(r.finished_at).toLocaleDateString()) + '</small></div>';
+      html += '</div>';
+    }
+    html += '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-pr-close">Close</button></div>';
+    openOverlay(html);
+    $('sm-pr-close').addEventListener('click', () => { closeOverlay(); if (!G) showMenu(); });
+    ui.overlay.querySelectorAll('[data-u]').forEach((d) => d.addEventListener('click', () => showProfile(d.dataset.u)));
+    ui.overlay.querySelectorAll('[data-g]').forEach((d) => d.addEventListener('click', () => { closeOverlay(); openGame(d.dataset.g); }));
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('sm-pr-qr', () => showQr(pr));
+    on('sm-pr-rename', async () => { const n = await askText('Your name', 'Shown to opponents.', 'Name', pr.name); if (!n) { showProfile(handle); return; } try { const p = await Net.rpc('set_name', { p_name: n }); store.set('sm.name', p.name); if (user) user.name = p.name; renderAuth(); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
+    on('sm-pr-friend', async () => { try { await Net.rpc('add_friend', { p_handle: pr.handle }); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
+    on('sm-pr-unfriend', async () => { try { await Net.rpc('remove_friend', { p_handle: pr.handle }); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
+    on('sm-pr-challenge', () => { closeOverlay(); challengeFriend(pr.handle, pr.name); });
+    on('sm-pr-add', async () => { const code = ($('sm-pr-code').value || '').trim(); if (!code) return; try { const f = await Net.rpc('add_friend', { p_handle: code }); setStatus('Added ' + f.name + '.', 'good'); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
+  }
+  // A QR code of the profile link, drawn by a small library fetched on demand.
+  function showQr(pr) {
+    const link = profileUrl(pr.handle);
+    const draw = () => {
+      const qr = window.qrcode(0, 'M');
+      qr.addData(link); qr.make();
+      openOverlay('<h2>' + esc(pr.name) + '</h2><p>Scan to open this profile and add a friend.</p><div class="sm-qr">' + qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }) + '</div><p><span class="sm-code">' + esc(pr.handle) + '</span></p><div class="sm-row" style="justify-content:center"><button id="sm-qr-copy" data-link="' + esc(link) + '">Copy link</button><button id="sm-qr-back">Back</button></div>');
+      $('sm-qr-back').addEventListener('click', () => showProfile(pr.handle));
+      $('sm-qr-copy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText(link); e.target.textContent = 'Copied'; } catch (err) { window.prompt('Copy this link:', link); } });
+    };
+    if (window.qrcode) { draw(); return; }
+    openOverlay('<h2>QR code</h2><p>Loading…</p>');
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+    sc.onload = draw;
+    sc.onerror = () => { openOverlay('<h2>QR code</h2><p>Could not load the QR library. The link is ' + esc(link) + '</p><button id="sm-qr-back">Back</button>'); $('sm-qr-back').addEventListener('click', () => showProfile(pr.handle)); };
+    document.head.appendChild(sc);
   }
 
   // ---- zoom ------------------------------------------------------------------------
@@ -1287,11 +1454,14 @@
   if ('serviceWorker' in navigator && !LOCAL_HOST) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => { /* no offline copy, nothing lost */ });
   ui.newBtn.addEventListener('click', showMenu);
   ui.help.addEventListener('click', showHelp);
+  ui.players.forEach((el) => el.addEventListener('click', () => { if (el.dataset.handle) showProfile(el.dataset.handle); }));
   ui.bagBtn.addEventListener('click', () => { if (G) showUnseen(); });
   dictReady.then(() => { if (G) render(); });
 
   const wanted = idFromUrl();
-  if (wanted) openGame(wanted);
+  const wantedProfile = new URLSearchParams(location.search).get('u') || (location.pathname.match(/\/scrabble-mod\/u\/([A-Za-z0-9]+)\/?$/) || [])[1];
+  if (wantedProfile) { history.replaceState(null, '', BASE); showProfile(wantedProfile.toUpperCase()); }
+  else if (wanted) openGame(wanted);
   else {
     const latest = games.list().find((r) => !r.over);
     if (latest) openGame(latest.id); else showMenu();

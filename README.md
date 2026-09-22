@@ -115,7 +115,14 @@ copy of the page, scripts and word lists (cached first, refreshed in the
 background). Signing in (Google, or a one-time email link, through Supabase
 Auth and the `supabase-js` browser build loaded from jsdelivr) is optional; it
 attaches online seats to the account so the same games open on any device,
-and the menu lists them. Link play without an account still works.
+and the menu lists them. Link play without an account still works. An account
+also has a profile at `/scrabble-mod/u/<code>` (a six-character friend code,
+with a QR code of the link): stats over its online games (record, average and
+best game, points per play, bingos, brilliancies, best word), the record
+against each opponent, past games, and a friends list. Friends can be
+challenged straight into a seated game, and a finished game offers a rematch
+with the sides swapped. Results are reported by the first client to see a game
+end (`finish_game`); the record is deterministic, so both sides agree.
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id

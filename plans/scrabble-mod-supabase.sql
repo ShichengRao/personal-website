@@ -42,12 +42,53 @@ create table if not exists game_keys (
 alter table game_keys add column if not exists user_id uuid references auth.users(id) on delete set null;
 create index if not exists game_keys_token on game_keys (game_id, token);
 create index if not exists game_keys_user on game_keys (user_id);
+alter table games add column if not exists next_game text;   -- the rematch, once one side starts it
+
+-- One row per account: a display name and a friend code.
+create table if not exists profiles (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  handle     text unique not null,
+  name       text not null,
+  created_at timestamptz not null default now()
+);
+-- Friendships are mutual: adding by code inserts both directions.
+create table if not exists friends (
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  friend_id  uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, friend_id)
+);
+-- The outcome of a finished online game, reported by the first client to see
+-- it end (the record is deterministic, so both sides compute the same thing).
+-- stats: {"p0": {plays, points, bingos, brilliancies, best_word, best_score}, "p1": {...}}
+create table if not exists game_results (
+  game_id     text primary key references games(id) on delete cascade,
+  p0_user     uuid,
+  p1_user     uuid,
+  p0_name     text,
+  p1_name     text,
+  p0_score    integer not null,
+  p1_score    integer not null,
+  winner      smallint not null,           -- 0, 1, or -1 for a tie
+  end_reason  text,
+  moves       integer not null,
+  stats       jsonb not null,
+  finished_at timestamptz not null default now()
+);
+create index if not exists game_results_p0 on game_results (p0_user);
+create index if not exists game_results_p1 on game_results (p1_user);
 
 alter table games enable row level security;
 alter table game_keys enable row level security;
+alter table profiles enable row level security;
+alter table friends enable row level security;
+alter table game_results enable row level security;
 drop policy if exists "read games" on games;
 revoke all on games from anon, authenticated;
 revoke all on game_keys from anon, authenticated;
+revoke all on profiles from anon, authenticated;
+revoke all on friends from anon, authenticated;
+revoke all on game_results from anon, authenticated;
 
 -- The seat the caller holds in a game: by account when signed in, else by token.
 create or replace function seat_of(p_code text, p_token text)
@@ -62,9 +103,10 @@ $$;
 -- Everything a client needs to rebuild a game. Null when there is no such id.
 create or replace function get_game(p_code text)
 returns jsonb language sql security definer set search_path = public stable as $$
-  select jsonb_build_object('id', id, 'seed', seed, 'moves', moves, 'p1_name', p1_name, 'p2_name', p2_name,
+  select jsonb_build_object('id', id, 'seed', seed, 'moves', moves, 'p1_name', p1_name, 'p2_name', p2_name, 'next_game', next_game,
                             'full', exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1),
-                            'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1))
+                            'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1),
+                            'handles', (select jsonb_object_agg(k.player, p.handle) from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id))
   from games g where id = p_code;
 $$;
 
@@ -158,6 +200,160 @@ begin
   return cur || jsonb_build_array(p_move);
 end $$;
 
+-- ---- accounts: profiles, friends, results ----------------------------------
+
+-- The caller's profile, created on first call. A friend code is six characters
+-- from an alphabet without look-alikes.
+create or replace function ensure_profile(p_name text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  code text;
+  tries int := 0;
+  nm text := coalesce(nullif(trim(coalesce(p_name, '')), ''), 'Player');
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  if length(nm) > 24 then nm := left(nm, 24); end if;
+  if not exists (select 1 from profiles where user_id = auth.uid()) then
+    loop
+      code := '';
+      for i in 1..6 loop code := code || substr('ABCDEFGHJKMNPQRSTUVWXYZ23456789', 1 + floor(random() * 31)::int, 1); end loop;
+      exit when not exists (select 1 from profiles where handle = code);
+      tries := tries + 1;
+      if tries > 20 then raise exception 'could not allocate a code'; end if;
+    end loop;
+    insert into profiles (user_id, handle, name) values (auth.uid(), code, nm);
+  end if;
+  return (select jsonb_build_object('handle', handle, 'name', name) from profiles where user_id = auth.uid());
+end $$;
+
+create or replace function set_name(p_name text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 24 then raise exception 'name must be 1-24 characters'; end if;
+  update profiles set name = trim(p_name) where user_id = auth.uid();
+  return (select jsonb_build_object('handle', handle, 'name', name) from profiles where user_id = auth.uid());
+end $$;
+
+-- A public profile: name, code, the results it took part in (for stats and
+-- records), whether the caller is a friend, and, for the owner, the friend list.
+create or replace function profile(p_handle text)
+returns jsonb language plpgsql security definer set search_path = public stable as $$
+declare
+  u uuid;
+  h text;
+  nm text;
+begin
+  select user_id, handle, name into u, h, nm from profiles where upper(handle) = upper(trim(p_handle));
+  if u is null then return null; end if;
+  return jsonb_build_object(
+    'handle', h, 'name', nm, 'mine', auth.uid() = u,
+    'is_friend', exists (select 1 from friends f where f.user_id = auth.uid() and f.friend_id = u),
+    'results', (select coalesce(jsonb_agg(jsonb_build_object(
+        'game_id', r.game_id, 'seat', case when r.p0_user = u then 0 else 1 end,
+        'my_score', case when r.p0_user = u then r.p0_score else r.p1_score end,
+        'their_score', case when r.p0_user = u then r.p1_score else r.p0_score end,
+        'their_name', case when r.p0_user = u then r.p1_name else r.p0_name end,
+        'their_handle', (select handle from profiles where user_id = case when r.p0_user = u then r.p1_user else r.p0_user end),
+        'won', case when r.winner = -1 then null else r.winner = (case when r.p0_user = u then 0 else 1 end) end,
+        'end_reason', r.end_reason,
+        'stats', r.stats -> (case when r.p0_user = u then 'p0' else 'p1' end),
+        'finished_at', r.finished_at) order by r.finished_at desc), '[]'::jsonb)
+      from (select * from game_results where p0_user = u or p1_user = u order by finished_at desc limit 500) r),
+    'friends', case when auth.uid() = u then (select coalesce(jsonb_agg(jsonb_build_object('handle', p.handle, 'name', p.name) order by p.name), '[]'::jsonb)
+                                              from friends f join profiles p on p.user_id = f.friend_id where f.user_id = u) else null end);
+end $$;
+
+create or replace function add_friend(p_handle text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  other uuid;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select user_id into other from profiles where upper(handle) = upper(trim(p_handle));
+  if other is null then raise exception 'no player has that code'; end if;
+  if other = auth.uid() then raise exception 'that is your own code'; end if;
+  insert into friends (user_id, friend_id) values (auth.uid(), other), (other, auth.uid()) on conflict do nothing;
+  return (select jsonb_build_object('handle', handle, 'name', name) from profiles where user_id = other);
+end $$;
+
+create or replace function remove_friend(p_handle text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  other uuid;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select user_id into other from profiles where upper(handle) = upper(trim(p_handle));
+  delete from friends where (user_id = auth.uid() and friend_id = other) or (user_id = other and friend_id = auth.uid());
+end $$;
+
+-- Records a finished game. Idempotent: the first report stands. The caller
+-- must hold a seat, and the report must cover every move on the server.
+create or replace function finish_game(p_code text, p_token text, p_result jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  who smallint;
+  g games%rowtype;
+begin
+  who := seat_of(p_code, p_token);
+  if who is null then raise exception 'not a player in this game'; end if;
+  if exists (select 1 from game_results where game_id = p_code) then
+    return (select to_jsonb(r) from game_results r where game_id = p_code);
+  end if;
+  select * into g from games where id = p_code;
+  if (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
+  if length(p_result::text) > 4000 then raise exception 'report too large'; end if;
+  insert into game_results (game_id, p0_user, p1_user, p0_name, p1_name, p0_score, p1_score, winner, end_reason, moves, stats)
+  values (p_code,
+          (select user_id from game_keys where game_id = p_code and player = 0),
+          (select user_id from game_keys where game_id = p_code and player = 1),
+          g.p1_name, g.p2_name,
+          (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, p_result->>'end_reason',
+          (p_result->>'moves')::int, coalesce(p_result->'stats', '{}'::jsonb));
+  return (select to_jsonb(r) from game_results r where game_id = p_code);
+end $$;
+
+-- A rematch with the sides swapped: both seats (token and account) are
+-- copied over, so each player opens the new game with what they already hold.
+-- Idempotent: a second call returns the rematch already started.
+create or replace function rematch(p_old text, p_token text, p_new text, p_seed text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  who smallint;
+  g games%rowtype;
+begin
+  who := seat_of(p_old, p_token);
+  if who is null then raise exception 'not a player in this game'; end if;
+  select * into g from games where id = p_old for update;
+  if g.next_game is not null then return g.next_game; end if;
+  if not exists (select 1 from game_keys where game_id = p_old and player = 1) then raise exception 'nobody to rematch'; end if;
+  if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or exists (select 1 from games where id = p_new) then raise exception 'that id is taken'; end if;
+  if p_seed is null or length(p_seed) = 0 or length(p_seed) > 200 then raise exception 'bad seed'; end if;
+  insert into games (id, seed, p1_name, p2_name) values (p_new, p_seed, g.p2_name, g.p1_name);
+  insert into game_keys (game_id, player, token, user_id)
+    select p_new, 1 - player, token, user_id from game_keys where game_id = p_old;
+  update games set next_game = p_new where id = p_old;
+  return p_new;
+end $$;
+
+-- A game against a friend, seated directly: the friend finds it in their
+-- games list and plays second.
+create or replace function challenge(p_code text, p_seed text, p_name text, p_token text, p_handle text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  other uuid;
+  other_name text;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select user_id, name into other, other_name from profiles where upper(handle) = upper(trim(p_handle));
+  if other is null then raise exception 'no player has that code'; end if;
+  if other = auth.uid() then raise exception 'that is your own code'; end if;
+  perform create_game(p_code, p_seed, p_name, p_token);
+  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, md5(random()::text || p_code), other);
+  update games set p2_name = other_name, updated_at = now() where id = p_code;
+  return p_code;
+end $$;
+
 revoke all on function seat_of(text, text) from public;
 revoke all on function get_game(text) from public;
 revoke all on function my_games() from public;
@@ -169,6 +365,22 @@ grant execute on function my_games() to anon, authenticated;
 grant execute on function create_game(text, text, text, text) to anon, authenticated;
 grant execute on function join_game(text, text, text) to anon, authenticated;
 grant execute on function play_move(text, text, integer, jsonb) to anon, authenticated;
+revoke all on function ensure_profile(text) from public;
+revoke all on function set_name(text) from public;
+revoke all on function profile(text) from public;
+revoke all on function add_friend(text) from public;
+revoke all on function remove_friend(text) from public;
+revoke all on function finish_game(text, text, jsonb) from public;
+revoke all on function rematch(text, text, text, text) from public;
+revoke all on function challenge(text, text, text, text, text) from public;
+grant execute on function ensure_profile(text) to authenticated;
+grant execute on function set_name(text) to authenticated;
+grant execute on function profile(text) to anon, authenticated;
+grant execute on function add_friend(text) to authenticated;
+grant execute on function remove_friend(text) to authenticated;
+grant execute on function finish_game(text, text, jsonb) to anon, authenticated;
+grant execute on function rematch(text, text, text, text) to anon, authenticated;
+grant execute on function challenge(text, text, text, text, text) to authenticated;
 
 -- Optional housekeeping: drop games nobody has touched for three months.
 -- delete from games where updated_at < now() - interval '90 days';
