@@ -1254,7 +1254,7 @@
   function openMyProfile() { if (!user) return; if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } }
   function signInGoogle() {
     try { if (linkToken && linkGame) sessionStorage.setItem('sm.linkToken', JSON.stringify({ id: linkGame, token: linkToken })); } catch (e) { /* ignore */ }
-    sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } });
+    sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: returnUrl() } });
   }
   // the same controls appear in the side panel and in the menu card (the card makes the panel unreachable)
   function authRowHtml() {
@@ -1269,7 +1269,7 @@
     if (e) e.addEventListener('click', async () => {
       const email = await askText('Email me a sign-in link', 'A one-time link to sign in here. No password.', 'you@example.com', '');
       if (!email) return;
-      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname + location.search } });
+      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: returnUrl() } });
       setStatus(error ? 'Could not send the link: ' + error.message : 'Check your email for the sign-in link.', error ? 'bad' : 'good');
     });
     if (o) o.addEventListener('click', async () => {
@@ -1293,10 +1293,13 @@
           for (const rec of games.list()) if (rec.kind === 'online') games.remove(rec.id);
           if (G && G.kind === 'online') { leaveGame(); setUrl(null); showMenu(); return; }
         }
-        if (menuOpen) showMenu(); else if (G) render();
+        if (menuOpen) showMenu();
+        else if (shownProfile && ui.overlay.classList.contains('is-open')) showProfile(shownProfile);
+        else if (G) render();
         return;
       }
       if (menuOpen && (user && user.id) !== before) showMenu();
+      else if (shownProfile && ui.overlay.classList.contains('is-open') && (user && user.id) !== before) showProfile(shownProfile);
       if (user && user.id !== before) attachSeats();
       if (G && G.kind === 'online') syncOnline();
     });
@@ -1522,11 +1525,14 @@
     }
     return st;
   }
-  let profileGen = 0;
+  let profileGen = 0, shownProfile = null;   // the profile card on screen, so a sign-in returns to it
+  // where a sign-in round trip lands: the profile being looked at, or else this very address
+  const returnUrl = () => (shownProfile ? profileUrl(shownProfile) : location.origin + location.pathname + location.search);
   async function showProfile(handle) {
     if (!Net.enabled) { openOverlay('<h2>Profile</h2><p>Profiles need a connection, and this page is offline.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', () => { closeOverlay(); if (!G) showMenu(); }); return; }
     let pr;
-    const back = () => { closeOverlay(); if (!G) showMenu(); };
+    const back = () => { shownProfile = null; closeOverlay(); if (!G) showMenu(); };
+    shownProfile = handle;
     openOverlay('<h2>Profile</h2><p>Loading…</p><button id="sm-pr-close">Cancel</button>');
     const my = ++profileGen;
     $('sm-pr-close').addEventListener('click', () => { profileGen++; back(); });
@@ -1545,8 +1551,8 @@
     let html = '<h2>' + esc(pr.name) + '</h2><p>Friend code <span class="sm-code">' + esc(pr.handle) + '</span></p>' +
       '<div class="sm-row" style="justify-content:center">' +
       (pr.mine ? '<button class="small" id="sm-pr-rename">Change name</button><button class="small" id="sm-pr-qr">Show QR code</button>' :
-        (user ? (pr.is_friend ? '<button class="small" id="sm-pr-challenge">Challenge to a game</button><button class="small" id="sm-pr-unfriend">Remove friend</button>' : '<button class="small" id="sm-pr-friend">Add friend</button>') : '<span class="sm-note">Sign in to add friends or challenge.</span>')) +
-      '</div>';
+        (user ? (pr.is_friend ? '<button class="small" id="sm-pr-challenge">Challenge to a game</button><button class="small" id="sm-pr-unfriend">Remove friend</button>' : '<button class="small" id="sm-pr-friend">Add friend</button>') : '')) +
+      '</div>' + (user || pr.mine ? '' : '<p class="sm-note" style="margin:6px 0 2px">Sign in to add ' + esc(pr.name) + ' as a friend or challenge them.</p><div style="display:flex;justify-content:center">' + authRowHtml() + '</div>');
     html += '<div class="sm-k" style="text-align:left;margin-top:12px">Online games</div><div class="sm-stats">' +
       '<div><b>' + st.wins + '–' + st.losses + (st.ties ? '–' + st.ties : '') + '</b><small>won–lost' + (st.ties ? '–tied' : '') + '</small></div>' +
       '<div><b>' + (st.games ? num(st.total / st.games) : '–') + '</b><small>average game</small></div>' +
@@ -1582,6 +1588,7 @@
     html += '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-pr-close">Close</button></div>';
     openOverlay(html);
     $('sm-pr-close').addEventListener('click', back);
+    if (!user && !pr.mine) bindAuth(ui.overlay);
     ui.overlay.querySelectorAll('[data-u]').forEach((d) => d.addEventListener('click', () => showProfile(d.dataset.u)));
     ui.overlay.querySelectorAll('[data-g]').forEach((d) => d.addEventListener('click', () => { closeOverlay(); openGame(d.dataset.g); }));
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
