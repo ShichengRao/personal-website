@@ -1357,8 +1357,9 @@
     if (!Net.enabled) return;
     openOverlay('<h2>Profile</h2><p>Loading…</p>');
     let pr;
-    try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', closeOverlay); return; }
-    if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', closeOverlay); return; }
+    const back = () => { closeOverlay(); if (!G) showMenu(); };
+    try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
+    if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
     const st = statsOf(pr.results);
     const num = (v) => (Math.round(v * 10) / 10).toString();
     const records = {};
@@ -1399,7 +1400,7 @@
     }
     html += '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-pr-close">Close</button></div>';
     openOverlay(html);
-    $('sm-pr-close').addEventListener('click', () => { closeOverlay(); if (!G) showMenu(); });
+    $('sm-pr-close').addEventListener('click', back);
     ui.overlay.querySelectorAll('[data-u]').forEach((d) => d.addEventListener('click', () => showProfile(d.dataset.u)));
     ui.overlay.querySelectorAll('[data-g]').forEach((d) => d.addEventListener('click', () => { closeOverlay(); openGame(d.dataset.g); }));
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
