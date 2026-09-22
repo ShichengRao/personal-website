@@ -434,3 +434,23 @@ test('easy and medium bots stay inside their vocabulary; hard uses everything', 
   const hardBest = C.rank(C.generate(s.board, s.racks[1], d), s.racks[1], false)[0];
   assert.deepEqual(hardMove.tiles, hardBest.tiles, 'hard ignores the vocabulary limit');
 });
+
+test('the NWL additions are in both lists until the licensed list arrives', () => {
+  const adds = readFileSync(join(root, 'tools', 'word-additions.txt'), 'utf8').split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
+  const d = dict();
+  const c = C.buildDict(readFileSync(join(dir, 'common.txt'), 'utf8'));
+  for (const w of adds) assert.equal(d.has(w.toUpperCase()), true, w);
+  for (const w of ['QI', 'ZA', 'KI', 'OI', 'QIS', 'ZEN']) assert.equal(c.has(w), true, w + ' should count as common');
+  assert.equal(c.has('MBAQANGA'), false);
+});
+
+test('online records are packed per game and unpack to the same thing', () => {
+  const move = { t: 'play', tiles: [{ r: 7, c: 7, l: 'Q', b: false }, { r: 7, c: 8, l: 'I', b: true }] };
+  const packed = C.pack('otter-slate-plum', move);
+  assert.match(packed, /^[A-Za-z0-9+/=]+$/, 'base64');
+  assert.ok(!packed.includes('tiles'), 'not readable as is');
+  assert.deepEqual(C.unpack('otter-slate-plum', packed), move);
+  assert.notEqual(C.pack('otter-slate-bob', move), packed, 'keyed by the game id');
+  assert.throws(() => JSON.parse(C.unpack('otter-slate-bob', packed) && 'x'), /./, 'the wrong key does not decode to the move');
+  assert.equal(C.unpack('otter-slate-plum', C.pack('otter-slate-plum', 123456789)), 123456789);
+});

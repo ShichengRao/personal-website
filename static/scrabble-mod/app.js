@@ -645,7 +645,7 @@
     busy = true; render(); setStatus('Sending…');
     let moves;
     try {
-      moves = await Net.rpc('play_move', { p_code: G.id, p_token: G.online.token, p_index: idx, p_move: move });
+      moves = await Net.rpc('play_move', { p_code: G.id, p_token: G.online.token, p_index: idx, p_move: { t: move.t, d: C.pack(G.id, move) } });
     } catch (e) {
       if (!alive(s)) return;
       busy = false; setStatus('Could not send that move: ' + e.message, 'bad'); render();
@@ -1091,7 +1091,7 @@
     for (let attempt = 0; attempt < 5; attempt++) {
       const id = newId();
       try {
-        await Net.rpc('create_game', { p_code: id, p_seed: randomSeed(), p_name: name, p_token: token });
+        await Net.rpc('create_game', { p_code: id, p_seed: C.pack(id, randomSeed()), p_name: name, p_token: token });
         if (my !== navGen) return;
         games.put({ id, kind: 'online', names: [name, null], seed: null, moves: [], over: false, online: { token, player: 0 } });
         await openOnline(id);
@@ -1143,7 +1143,7 @@
       if (my !== navGen) return;
     }
     let state;
-    try { state = C.replay(row.seed, row.moves || []); } catch (e) { setStatus('This game’s record is corrupt: ' + e.message, 'bad'); return; }
+    try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { setStatus('This game’s record is corrupt: ' + e.message, 'bad'); return; }
     leaveGame();
     G = { id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', row.p2_name || null], state, me: seat.player, online: { token: seat.token }, hidden: false, session: ++sessions };
     seenMoves = state.history.length;
@@ -1161,7 +1161,7 @@
     if (names) G.names = names;
     moves = moves || [];
     let s = G.state;
-    try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, moves[i], null); }
+    try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, C.unpack(G.id, moves[i].d), null); }
     catch (e) { setStatus('The game record no longer matches this page: ' + e.message, 'bad'); return; }
     const changed = s !== G.state;
     if (changed) { G.state = s; extendReview(); resetTurnUi(); }

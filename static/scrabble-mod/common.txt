@@ -1,4 +1,4 @@
-# Common words: the ENABLE list intersected with the 50,000 most frequent English words in hermitdave/FrequencyWords (OpenSubtitles 2018, MIT licence). Used for the easy and medium bots and as the yardstick for ratings.
+# Common words: the ENABLE list intersected with the 50,000 most frequent English words in hermitdave/FrequencyWords (OpenSubtitles 2018, MIT licence), plus the short words in tools/word-additions.txt. Used for the easy and medium bots and as the yardstick for ratings.
 aa
 aah
 aardvark
@@ -7098,6 +7098,7 @@ cutting
 cuttings
 cuttlefish
 cutty
+cuz
 cyanide
 cybernetic
 cyberspace
@@ -7125,6 +7126,7 @@ cyprus
 cyst
 cystic
 czar
+da
 dab
 dabble
 dabbled
@@ -10006,6 +10008,7 @@ evolve
 evolved
 evolves
 evolving
+ew
 ewe
 ex
 exact
@@ -10619,6 +10622,7 @@ faxing
 fay
 fayed
 faze
+fe
 fealty
 fear
 feared
@@ -12153,6 +12157,7 @@ ghosts
 ghoul
 ghoulish
 ghouls
+gi
 giant
 giants
 gib
@@ -12209,6 +12214,7 @@ girls
 girly
 giro
 girth
+gis
 gist
 git
 gitano
@@ -15744,6 +15750,7 @@ khaki
 khakis
 khalifa
 khan
+ki
 kibble
 kibbutz
 kick
@@ -15828,6 +15835,7 @@ kir
 kirk
 kirkman
 kirsch
+kis
 kismet
 kiss
 kissed
@@ -16967,6 +16975,7 @@ lux
 luxuries
 luxurious
 luxury
+luz
 lye
 lying
 lymph
@@ -19460,12 +19469,14 @@ ogres
 oh
 ohm
 oho
+oi
 oil
 oiled
 oils
 oily
 oink
 ointment
+ok
 oka
 okay
 okayed
@@ -21309,6 +21320,7 @@ plywood
 pneumatic
 pneumonia
 pneumothorax
+po
 poach
 poached
 poacher
@@ -21503,6 +21515,7 @@ portrayed
 portraying
 portrays
 ports
+pos
 pose
 posed
 poser
@@ -22504,6 +22517,8 @@ pyromaniac
 pyrotechnics
 python
 pythons
+qi
+qis
 qua
 quack
 quacking
@@ -24045,6 +24060,7 @@ rewritten
 rewrote
 rex
 reynard
+rez
 rhapsody
 rhea
 rhetoric
@@ -24810,6 +24826,7 @@ saying
 sayings
 sayonara
 says
+saz
 scab
 scabbard
 scabby
@@ -25467,6 +25484,7 @@ sexual
 sexuality
 sexually
 sexy
+sez
 sh
 sha
 shabby
@@ -28778,6 +28796,7 @@ taxis
 taxman
 taxpayer
 taxpayers
+te
 tea
 teach
 teacher
@@ -28995,6 +29014,7 @@ terrorized
 terrorizing
 terrors
 terry
+tes
 tesla
 test
 testament
@@ -29391,6 +29411,7 @@ titles
 tits
 titties
 titty
+tiz
 tizzy
 to
 toad
@@ -32449,6 +32470,7 @@ yup
 yuppie
 yuppies
 yurt
+za
 zag
 zaire
 zander
@@ -32457,6 +32479,7 @@ zap
 zapped
 zapping
 zaps
+zas
 zeal
 zealot
 zealots
@@ -32465,6 +32488,7 @@ zebra
 zebras
 zed
 zee
+zen
 zenith
 zephyr
 zeppelin
@@ -32509,3 +32533,4 @@ zoom
 zooming
 zoos
 zucchini
+zuz

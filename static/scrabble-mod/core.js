@@ -266,6 +266,30 @@
     return { play: !state.over && rack.length > 0, swap: !state.over && rack.length > 0 && state.bag.length > 0, pass: !state.over, mustPass: !state.over && rack.length === 0 };
   }
 
+  // ---- packing for the server ------------------------------------------------
+  // What the online store holds is a seed and a move list, from which both
+  // racks follow. They are scrambled with a key derived from the game id and
+  // base64'd before they leave the page: not secret, just not readable at a
+  // glance in the database. Works in Node and the browser.
+  function packKey(id) {
+    let h = 2166136261;
+    for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    const rnd = seededRandom(h || 1), k = new Uint8Array(32);
+    for (let i = 0; i < k.length; i++) k[i] = Math.floor(rnd() * 256);
+    return k;
+  }
+  function pack(id, value) {
+    const bytes = new TextEncoder().encode(JSON.stringify(value)), k = packKey(id);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ^ k[i % k.length]);
+    return btoa(bin);
+  }
+  function unpack(id, str) {
+    const bin = atob(str), k = packKey(id), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) ^ k[i % k.length];
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
   // ---- dictionary ---------------------------------------------------------
   // A trie in flat typed arrays: node 0 is the root, children are a linked list.
 
@@ -636,5 +660,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, endgameMove, lookahead, botMove, transpose };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, endgameMove, lookahead, botMove, transpose, pack, unpack };
 });
