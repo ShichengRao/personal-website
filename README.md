@@ -27,6 +27,7 @@ install is needed to build or serve the site.
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Scrabble Mod's online games |
+| `tools/` | `scrabble-mod-lab.mjs`: self-play across the cores to measure the Scrabble Mod bot (arena between two bot profiles, leave-value fitting, a benchmark) |
 | `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Scrabble Mod scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
@@ -84,6 +85,13 @@ review both pick by equity. It loads in Node, which is how the tests check it.
 pass-and-play, online games, and a move-by-move review with the top plays for
 every position. Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
+
+The hard bot plays by equity (score plus leave), and once the bag is empty it
+searches the last turns exactly, since the opponent's rack is then known.
+`node tools/scrabble-mod-lab.mjs arena hard hard:score 400` pits two bot
+profiles against each other over 400 games on all but two cores and reports the
+win rate; `leaves` fits a leave table from self-play; `bench` times the
+generator. Changes to the bot should come with an arena result.
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id

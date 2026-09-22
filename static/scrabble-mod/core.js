@@ -441,21 +441,34 @@
   // a penalty for duplicates and for a lopsided vowel/consonant mix. A rough
   // heuristic, but it is what separates "the highest score" from "the best
   // play": dumping a Q for 11 beats a 14 that keeps the Q.
+  // A next-score regression from 9,000 self-play games (tools/scrabble-mod-lab.mjs
+  // leaves) produced a table that played this one to a coin flip (49.8%),
+  // and scaling this table by 0.5 or the fitted one by 2 both lost, so these
+  // values stay.
   const LEAVE = { A: 1, B: -3.5, C: -0.5, D: 0, E: 4, F: -2, G: -2, H: 0.5, I: -0.5, J: -3, K: -2.5, L: -1, M: -0.5,
                   N: 0.5, O: -1.5, P: -1.5, Q: -11.5, R: 1.5, S: 8, T: 0, U: -4.5, V: -5.5, W: -4, X: 3.5, Y: -2, Z: 2, '?': 25 };
-  function leaveValue(tiles) {
-    if (!tiles.length) return 0;
-    let v = 0, vowels = 0, cons = 0;
-    const seen = {};
+  // per extra copy of a letter, per extra blank, per point of vowel/consonant skew beyond one
+  const LEAVE_TUNE = { dup: -3, blankDup: -12, skew: -1.5 };
+  // The features leaveValue scores: letter counts, duplicates, skew. Shared
+  // with the tuning script so a fitted table means the same thing here.
+  function leaveFeatures(tiles) {
+    const counts = {};
+    let vowels = 0, cons = 0, dup = 0, blankDup = 0;
     for (const t of tiles) {
-      v += LEAVE[t];
-      seen[t] = (seen[t] || 0) + 1;
-      if (seen[t] > 1) v -= t === '?' ? 12 : 3;
+      counts[t] = (counts[t] || 0) + 1;
+      if (counts[t] > 1) { if (t === '?') blankDup++; else dup++; }
       if (t === '?') continue;
       if ('AEIOU'.includes(t)) vowels++; else cons++;
     }
-    const skew = Math.abs(vowels - cons) - 1;
-    if (tiles.length >= 3 && skew > 0) v -= 1.5 * skew;
+    const skew = tiles.length >= 3 ? Math.max(0, Math.abs(vowels - cons) - 1) : 0;
+    return { counts, dup, blankDup, skew };
+  }
+  function leaveValue(tiles) {
+    if (!tiles.length) return 0;
+    const f = leaveFeatures(tiles);
+    let v = 0;
+    for (const t in f.counts) v += LEAVE[t] * f.counts[t];
+    v += LEAVE_TUNE.dup * f.dup + LEAVE_TUNE.blankDup * f.blankDup + LEAVE_TUNE.skew * f.skew;
     return Math.round(v * 10) / 10;
   }
   function leaveAfter(rack, tiles) {
@@ -475,13 +488,63 @@
     return moves.sort((a, b) => b.equity - a.equity || b.score - a.score || a.word.localeCompare(b.word));
   }
 
+  // ---- endgame ------------------------------------------------------------
+  // With the bag empty the opponent's rack is known exactly, so the last
+  // turns can be searched instead of guessed. finalTurns 2: this move, then
+  // the opponent's last; pick what leaves them the least. finalTurns 1: this
+  // is the last move of the game, take the score. Passing is a candidate too.
+  function endgameMove(state, dict, width) {
+    const p = state.turn, rack = state.racks[p], opp = state.racks[1 - p];
+    const moves = generate(state.board, rack, dict);
+    if (state.finalTurns !== 2 || !opp.length) return moves.length ? { score: moves[0].score, move: { t: 'play', tiles: moves[0].tiles } } : null;
+    const replyNow = generate(state.board, opp, dict)[0];
+    let best = { t: 'pass' }, bestVal = -(replyNow ? replyNow.score : 0), bestScore = 0;
+    for (const m of moves.slice(0, width || 40)) {
+      const after = apply(state, { t: 'play', tiles: m.tiles }, null);
+      const reply = generate(after.board, opp, dict)[0];
+      const val = m.score - (reply ? reply.score : 0);
+      if (val > bestVal) { bestVal = val; best = { t: 'play', tiles: m.tiles }; bestScore = m.score; }
+    }
+    return { score: bestScore, margin: bestVal, move: best };
+  }
+
+  // ---- lookahead ------------------------------------------------------------
+  // A sampled one-ply reply: for the top candidates by equity, draw a few
+  // opponent racks from the unseen tiles (bag plus their rack, which the bot
+  // is not allowed to peek at), find their best reply on the resulting board
+  // and charge the candidate the average. Off by default: in self-play
+  // (tools/scrabble-mod-lab.mjs) it scored 48-49% against plain equity at
+  // 5x5 and 6x12 samples, i.e. no gain for a lot of work. Kept for
+  // experiments with deeper simulation.
+  function lookahead(state, cands, dict, rnd, samples, weight) {
+    const p = state.turn;
+    const unseen = state.bag.concat(state.racks[1 - p]);
+    const n = Math.min(RACK, unseen.length);
+    const racks = [];
+    for (let k = 0; k < samples; k++) racks.push(shuffle(unseen.slice(), rnd).slice(0, n));
+    let best = null, bestVal = -Infinity;
+    for (const m of cands) {
+      const after = apply(state, { t: 'play', tiles: m.tiles }, null);
+      let reply = 0;
+      for (const r of racks) { const top = generate(after.board, r, dict)[0]; if (top) reply += top.score; }
+      m.reply = Math.round(reply / racks.length * 10) / 10;
+      m.value = Math.round((m.equity - weight * m.reply) * 10) / 10;
+      if (m.value > bestVal) { bestVal = m.value; best = m; }
+    }
+    return best;
+  }
+
   // ---- the bot ------------------------------------------------------------
   // hard takes the play with the best equity; medium takes one of the next
   // few; easy plays a middling one by score. With nothing to play it swaps the
   // rack while the bag allows.
-  function botMove(state, level, rnd, dict) {
+  function botMove(state, level, rnd, dict, opts) {
     const p = state.turn, rack = state.racks[p];
     if (!rack.length) return { t: 'pass' };
+    if (level === 'hard' && state.bag.length === 0 && !(opts && opts.noEndgame)) {
+      const e = endgameMove(state, dict);
+      if (e) return e.move;
+    }
     const moves = level === 'easy' ? generate(state.board, rack, dict) : rank(generate(state.board, rack, dict), rack, state.bag.length === 0);
     if (!moves.length) {
       if (state.bag.length >= rack.length) return { t: 'swap', tiles: rack.slice() };
@@ -489,6 +552,11 @@
       return { t: 'pass' };
     }
     let pool;
+    if (level === 'hard' && opts && opts.sim && moves.length > 1 && state.bag.length > 0) {
+      const top = moves.slice(0, opts.sim.cands || 5);
+      const m = lookahead(state, top, dict, rnd, opts.sim.samples || 5, opts.sim.weight || 1);
+      return { t: 'play', tiles: m.tiles };
+    }
     if (level === 'hard') pool = moves.slice(0, 1);
     else if (level === 'medium') pool = moves.slice(Math.min(2, moves.length - 1), Math.min(10, moves.length));
     else pool = moves.slice(Math.floor(moves.length * 0.35), Math.max(Math.floor(moves.length * 0.35) + 1, Math.floor(moves.length * 0.75)));
@@ -497,5 +565,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, LEAVE, botMove, transpose };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE_TUNE, endgameMove, lookahead, botMove, transpose };
 });

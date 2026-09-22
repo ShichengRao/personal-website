@@ -317,3 +317,54 @@ test('equity counts the rack you keep, not just the score', () => {
   const endgame = C.rank(byScore.map((m) => Object.assign({}, m)), rack, true);
   for (const m of endgame) { assert.equal(m.leave, 0); assert.equal(m.equity, m.score); }
 });
+
+test('with the bag empty the hard bot searches the last turns exactly', () => {
+  const d = dict();
+  // reach a real endgame by self-play, then check the search's accounting
+  const rnd = C.seededRandom(7);
+  let s = C.newGame(77);
+  let n = 0;
+  while (!s.over && s.bag.length > 0 && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d, { noEndgame: true }), d);
+  assert.equal(s.bag.length, 0);
+  assert.equal(s.finalTurns, 2, 'the mover has one turn, then the opponent has the last');
+  const e = C.endgameMove(s, d);
+  assert.ok(e && e.move);
+  if (e.move.t === 'play') {
+    // margin is this move's score minus the opponent's best reply, and no other candidate does better
+    const after = C.apply(s, e.move, d);
+    const reply = C.generate(after.board, after.racks[after.turn], d)[0];
+    assert.equal(e.margin, e.score - (reply ? reply.score : 0));
+    const top = C.generate(s.board, s.racks[s.turn], d)[0];
+    const afterTop = C.apply(s, { t: 'play', tiles: top.tiles }, d);
+    const replyTop = C.generate(afterTop.board, afterTop.racks[afterTop.turn], d)[0];
+    assert.ok(e.margin >= top.score - (replyTop ? replyTop.score : 0), 'at least as good as the greedy play');
+  }
+  // the bot uses it
+  const move = C.botMove(s, 'hard', rnd, d);
+  assert.deepEqual(move, e.move);
+  // and on the very last move it just takes the points
+  const last = C.apply(s, e.move, d);
+  if (!last.over && last.racks[last.turn].length) {
+    const e2 = C.endgameMove(last, d);
+    const best = C.generate(last.board, last.racks[last.turn], d)[0];
+    if (best) assert.equal(e2.score, best.score);
+  }
+});
+
+test('the lookahead charges each candidate its sampled best reply', () => {
+  const d = dict();
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  const rack = s.racks[1];
+  const cands = C.rank(C.generate(s.board, rack, d), rack, false).slice(0, 4);
+  const pick = C.lookahead(s, cands, d, C.seededRandom(3), 3, 1);
+  assert.ok(cands.includes(pick));
+  for (const m of cands) {
+    assert.equal(typeof m.reply, 'number');
+    assert.ok(m.reply >= 0);
+    assert.equal(m.value, Math.round((m.equity - m.reply) * 10) / 10);
+    assert.ok(pick.value >= m.value);
+  }
+  const f = C.leaveFeatures(['A', 'A', 'E', '?', '?', 'X']);
+  assert.deepEqual(f, { counts: { A: 2, E: 1, '?': 2, X: 1 }, dup: 1, blankDup: 1, skew: 1 });
+});
