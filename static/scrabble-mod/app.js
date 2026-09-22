@@ -1064,7 +1064,7 @@
       html += '</div>';
     }
     if (user) html += '<div class="sm-note" id="sm-m-mine">Looking up your games…</div>';
-    if (Net.enabled) html += '<div style="margin-top:12px;display:flex;justify-content:center">' + authRowHtml('m') + '</div>';
+    if (Net.enabled) html += '<div style="margin-top:12px;display:flex;justify-content:center">' + authRowHtml() + '</div>';
     if (G) html += '<div class="sm-row" style="justify-content:center;margin-top:10px"><button id="sm-m-back">Back to the board</button></div>';
     openOverlay(html);
     if (Net.enabled) bindAuth(ui.overlay);
@@ -1248,7 +1248,7 @@
   function renderAuth() {
     if (!Net.enabled) { authPanel.style.display = 'none'; return; }
     authPanel.style.display = '';
-    authPanel.innerHTML = authRowHtml('') + (user ? '<div class="sm-note">Your games, stats and friends follow this account to any device.</div>' : '<div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>');
+    authPanel.innerHTML = authRowHtml() + (user ? '<div class="sm-note">Your games, stats and friends follow this account to any device.</div>' : '<div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>');
     bindAuth(authPanel);
   }
   function openMyProfile() { if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } }
@@ -1257,13 +1257,13 @@
     sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } });
   }
   // the same controls appear in the side panel and in the menu card (the card makes the panel unreachable)
-  function authRowHtml(prefix) {
+  function authRowHtml() {
     return user
-      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b>' + (user.handle ? ' <span class="sm-code">' + esc(user.handle) + '</span>' : '') + '<button class="small" data-auth="profile">Profile</button>' + (prefix ? '' : '<button class="small" id="sm-signout">Sign out</button>') + '</div>'
+      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b>' + (user.handle ? ' <span class="sm-code">' + esc(user.handle) + '</span>' : '') + '<button class="small" data-auth="profile">Profile</button><button class="small" data-auth="signout">Sign out</button></div>'
       : '<div class="sm-auth-row"><button class="small" data-auth="google">Sign in with Google</button><button class="small" data-auth="email">Email me a link</button></div>';
   }
   function bindAuth(root) {
-    const g = root.querySelector('[data-auth="google"]'), e = root.querySelector('[data-auth="email"]'), o = root.querySelector('#sm-signout'), pr = root.querySelector('[data-auth="profile"]');
+    const g = root.querySelector('[data-auth="google"]'), e = root.querySelector('[data-auth="email"]'), o = root.querySelector('[data-auth="signout"]'), pr = root.querySelector('[data-auth="profile"]');
     if (pr) pr.addEventListener('click', () => { closeOverlay(); openMyProfile(); });
     if (g) g.addEventListener('click', signInGoogle);
     if (e) e.addEventListener('click', async () => {
