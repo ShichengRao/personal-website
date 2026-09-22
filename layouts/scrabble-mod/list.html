@@ -134,6 +134,8 @@
 .sm-app .sm-games button{padding:7px 10px;text-align:left;font-size:13px}
 .sm-app .sm-games button small{display:block;color:var(--muted);font-size:12px}
 .sm-app .sm-games button b.now{color:var(--good)}
+.sm-app .sm-auth-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--soft)}
+.sm-app .sm-auth-row b{color:var(--text)}
 .sm-app .sm-final{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin:12px 0;font-size:15px}
 .sm-app .sm-final b{font-size:26px;display:block;font-variant-numeric:tabular-nums}
 .sm-app .sm-keys{font-size:13px;color:var(--soft);line-height:1.8;text-align:left}
@@ -155,6 +157,14 @@
 @keyframes sm-fall{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),70vh) rotate(720deg);opacity:0}}
 @media(prefers-reduced-motion:reduce){.sm-app .sm-bingo,.sm-app .sm-tile.bounce,.sm-app .sm-confetti i{animation-duration:.01s}}
 </style>
+<link rel="manifest" href="/scrabble-mod/manifest.webmanifest">
+<meta name="theme-color" content="#1f6f6a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Scrabble Mod">
+<link rel="apple-touch-icon" href="/scrabble-mod/icon-180.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 /* Online play needs a Supabase project (see plans/scrabble-mod-supabase.sql).
    Leave both blank and the page offers the bot and pass-and-play only. */
@@ -200,6 +210,7 @@ window.SM_CONFIG = { url: "https://ebbgvdomzqsmecryepon.supabase.co", key: "sb_p
         <ol class="sm-log" id="sm-log"></ol>
       </div>
       <div class="sm-panel" id="sm-online-panel" style="display:none"></div>
+      <div class="sm-panel" id="sm-auth" style="display:none"></div>
       <div class="sm-panel">
         <div class="sm-row" style="margin-top:0">
           <button id="sm-new">Games</button>

@@ -980,8 +980,26 @@
       }
       html += '</div>';
     }
+    if (user) html += '<div class="sm-note" id="sm-m-mine">Looking up your games…</div>';
     if (G) html += '<div class="sm-row" style="justify-content:center;margin-top:10px"><button id="sm-m-back">Back to the board</button></div>';
     openOverlay(html);
+    if (user) {
+      // games on the account that this browser has not seen (other devices, or a cleared browser)
+      Net.rpc('my_games').then((mine) => {
+        const note = $('sm-m-mine');
+        if (!note) return;
+        const extra = (mine || []).filter((m) => !games.get(m.id));
+        if (!extra.length) { note.remove(); return; }
+        let h = '<div class="sm-k" style="text-align:left;margin-top:10px">Your games on other devices</div><div class="sm-games">';
+        for (const m of extra) {
+          const who = m.p2_name ? m.p1_name + ' vs ' + m.p2_name : 'with ' + m.p1_name;
+          const when = m.resigned ? 'finished' : (m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player');
+          h += '<button data-open="' + esc(m.id) + '"><b' + (when === 'your turn' ? ' class="now"' : '') + '>Online: ' + esc(who) + '</b> <small>' + esc(when) + ' · ' + esc(m.id) + '</small></button>';
+        }
+        note.outerHTML = h + '</div>';
+        ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
+      }).catch(() => { const note = $('sm-m-mine'); if (note) note.textContent = 'Could not look up your games.'; });
+    }
     ui.overlay.querySelectorAll('button[data-bot]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); startLocal('bot', b.dataset.bot); }));
     ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
     $('sm-m-hotseat').addEventListener('click', () => { closeOverlay(); startLocal('hotseat'); });
@@ -1075,20 +1093,52 @@
   }
 
   // ---- online --------------------------------------------------------------------
+  // The Supabase client (loaded from a CDN in the layout) carries the signed-in
+  // user's token on every call, so the server can tie seats to an account.
+  const sb = CFG.url && CFG.key && window.supabase ? window.supabase.createClient(CFG.url, CFG.key) : null;
   const Net = {
-    enabled: !!(CFG.url && CFG.key),
-    headers() { return { apikey: CFG.key, Authorization: 'Bearer ' + CFG.key, 'Content-Type': 'application/json' }; },
+    enabled: !!sb,
     async rpc(fn, args) {
-      const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: this.headers(), body: JSON.stringify(args) });
-      const body = await r.json().catch(() => null);
-      if (!r.ok) throw new Error((body && (body.message || body.hint || body.error)) || ('HTTP ' + r.status));
-      return body;
+      const { data, error } = await sb.rpc(fn, args || {});
+      if (error) throw new Error(error.message || error.hint || 'request failed');
+      return data;
     }
   };
 
+  // ---- signing in ------------------------------------------------------------------
+  // Optional. With an account, seats and the games list follow the player to
+  // any device; without one, play by link works as before.
+  let user = null;   // { id, name, email }
+  const authPanel = $('sm-auth');
+  function setUser(u) {
+    user = u ? { id: u.id, email: u.email || '', name: (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || (u.email || '').split('@')[0] || 'Player' } : null;
+    if (user && !store.get('sm.name', '')) store.set('sm.name', user.name);
+    renderAuth();
+  }
+  function renderAuth() {
+    if (!Net.enabled) { authPanel.style.display = 'none'; return; }
+    authPanel.style.display = '';
+    authPanel.innerHTML = user
+      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b><button class="small" id="sm-signout">Sign out</button></div><div class="sm-note">Your online games open on any device you sign in on.</div>'
+      : '<div class="sm-auth-row"><button class="small" id="sm-google">Sign in with Google</button><button class="small" id="sm-email">Email me a link</button></div><div class="sm-note">Optional: keeps your online games together across devices.</div>';
+    const g = $('sm-google'), e = $('sm-email'), o = $('sm-signout');
+    if (g) g.addEventListener('click', () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } }));
+    if (e) e.addEventListener('click', async () => {
+      const email = await askText('Email me a sign-in link', 'A one-time link to sign in here. No password.', 'you@example.com', '');
+      if (!email) return;
+      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname + location.search } });
+      setStatus(error ? 'Could not send the link: ' + error.message : 'Check your email for the sign-in link.', error ? 'bad' : 'good');
+    });
+    if (o) o.addEventListener('click', async () => { await sb.auth.signOut(); });
+  }
+  if (sb) {
+    sb.auth.getSession().then(({ data }) => setUser(data.session && data.session.user));
+    sb.auth.onAuthStateChange((_event, session) => { setUser(session && session.user); if (G && G.kind === 'online') syncOnline(); });
+  } else renderAuth();
+
   async function createOnline() {
     const my = ++navGen;
-    const name = await askText('Your name', 'Shown to your opponent.', 'Name', store.get('sm.name', ''));
+    const name = user ? (store.get('sm.name', '') || user.name) : await askText('Your name', 'Shown to your opponent.', 'Name', store.get('sm.name', ''));
     if (my !== navGen) return;
     if (!name) { showMenu(); return; }
     store.set('sm.name', name);
@@ -1114,22 +1164,25 @@
   // link's token, or by joining the empty second seat.
   async function seatFor(id, row) {
     const rec = games.get(id);
-    if (rec && rec.online && rec.online.player !== null && rec.online.token) return { token: rec.online.token, player: rec.online.player };
     const urlToken = tokenFromUrl();
-    if (urlToken) {
-      history.replaceState(null, '', location.pathname + location.search);
-      try {
-        const player = await Net.rpc('join_game', { p_code: id, p_name: store.get('sm.name', '') || 'Player', p_token: urlToken });
-        return { token: urlToken, player };
-      } catch (e) { setStatus('That private link did not open a seat: ' + e.message, 'bad'); }
+    if (urlToken) history.replaceState(null, '', location.pathname + location.search);
+    const token = (rec && rec.online && rec.online.token) || urlToken || randomToken();
+    const holds = row.seat !== null && row.seat !== undefined;   // the account already has a seat here
+    const known = holds || (rec && rec.online && rec.online.token) || urlToken;
+    let name = store.get('sm.name', '') || (user && user.name) || '';
+    if (!known && row.full) return { token: null, player: null };
+    if (!known && !name) {
+      name = await askText('Join ' + esc(row.p1_name || 'the game'), 'Shown to your opponent.', 'Your name', '');
+      if (!name) return null;
+      store.set('sm.name', name);
     }
-    if (row.full) return { token: null, player: null };
-    const name = await askText('Join ' + esc(row.p1_name || 'the game'), 'Shown to your opponent.', 'Your name', store.get('sm.name', ''));
-    if (!name) return null;
-    store.set('sm.name', name);
-    const token = randomToken();
-    const player = await Net.rpc('join_game', { p_code: id, p_name: name, p_token: token });
-    return { token, player };
+    try {
+      const player = await Net.rpc('join_game', { p_code: id, p_name: name || 'Player', p_token: token });
+      return { token, player };
+    } catch (e) {
+      if (/two players/.test(e.message)) return { token: null, player: null };
+      throw e;
+    }
   }
   async function openOnline(id) {
     const my = ++navGen;
@@ -1231,6 +1284,7 @@
   setZoom(zoom);
 
   // ---- boot ----------------------------------------------------------------------
+  if ('serviceWorker' in navigator && !LOCAL_HOST) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => { /* no offline copy, nothing lost */ });
   ui.newBtn.addEventListener('click', showMenu);
   ui.help.addEventListener('click', showHelp);
   ui.bagBtn.addEventListener('click', () => { if (G) showUnseen(); });

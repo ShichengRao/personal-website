@@ -1,6 +1,7 @@
--- Scrabble Mod online play: one table of games plus a private table of player
--- tokens. Run this in the SQL editor of a fresh Supabase project, then put the
--- project URL and the publishable (anon) key into window.SM_CONFIG in
+-- Scrabble Mod online play: one table of games plus a private table of seats.
+-- Run this in the SQL editor of the Supabase project (safe to rerun: it only
+-- adds what is missing and replaces the functions), then keep the project URL
+-- and the publishable (anon) key in window.SM_CONFIG in
 -- layouts/scrabble-mod/list.html.
 --
 -- The page reconstructs every game from its seed and move list (core.js is
@@ -13,9 +14,13 @@
 -- could still decode the record and work out the opponent's rack; this is a
 -- game between friends, not a tournament.
 --
+-- A seat is held by a token (kept in the browser and in the private link) and,
+-- when the player is signed in, by their account too, so the same games open
+-- from any device. Signing in is optional: link play still works.
+--
 -- Nothing reads or writes the tables directly: RLS is on with no policies, and
 -- every access goes through the security-definer functions below, so a game
--- can only be read by someone who knows its id.
+-- can only be read by someone who knows its id or holds one of its seats.
 
 create table if not exists games (
   id         text primary key,
@@ -31,9 +36,12 @@ create table if not exists game_keys (
   game_id text not null references games(id) on delete cascade,
   player  smallint not null check (player in (0, 1)),
   token   text not null,
+  user_id uuid references auth.users(id) on delete set null,
   primary key (game_id, player)
 );
+alter table game_keys add column if not exists user_id uuid references auth.users(id) on delete set null;
 create index if not exists game_keys_token on game_keys (game_id, token);
+create index if not exists game_keys_user on game_keys (user_id);
 
 alter table games enable row level security;
 alter table game_keys enable row level security;
@@ -41,12 +49,34 @@ drop policy if exists "read games" on games;
 revoke all on games from anon, authenticated;
 revoke all on game_keys from anon, authenticated;
 
+-- The seat the caller holds in a game: by account when signed in, else by token.
+create or replace function seat_of(p_code text, p_token text)
+returns smallint language sql security definer set search_path = public stable as $$
+  select player from game_keys
+  where game_id = p_code
+    and ((auth.uid() is not null and user_id = auth.uid()) or (p_token is not null and token = p_token))
+  order by (user_id is not null and user_id = auth.uid()) desc
+  limit 1;
+$$;
+
 -- Everything a client needs to rebuild a game. Null when there is no such id.
 create or replace function get_game(p_code text)
 returns jsonb language sql security definer set search_path = public stable as $$
   select jsonb_build_object('id', id, 'seed', seed, 'moves', moves, 'p1_name', p1_name, 'p2_name', p2_name,
-                            'full', exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1))
+                            'full', exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1),
+                            'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1))
   from games g where id = p_code;
+$$;
+
+-- The signed-in caller's games, newest first. Empty when not signed in.
+create or replace function my_games()
+returns jsonb language sql security definer set search_path = public stable as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'seat', k.player, 'p1_name', g.p1_name, 'p2_name', g.p2_name,
+                                               'moves', jsonb_array_length(g.moves),
+                                               'resigned', exists (select 1 from jsonb_array_elements(g.moves) m where m->>'t' = 'resign'),
+                                               'updated_at', g.updated_at) order by g.updated_at desc), '[]'::jsonb)
+  from game_keys k join games g on g.id = k.game_id
+  where auth.uid() is not null and k.user_id = auth.uid();
 $$;
 
 create or replace function create_game(p_code text, p_seed text, p_name text, p_token text)
@@ -62,19 +92,26 @@ begin
   if p_token is null or length(p_token) < 16 then raise exception 'bad token'; end if;
   if exists (select 1 from games where id = p_code) then raise exception 'that id is taken'; end if;
   insert into games (id, seed, p1_name) values (p_code, p_seed, trim(p_name));
-  insert into game_keys (game_id, player, token) values (p_code, 0, p_token);
+  insert into game_keys (game_id, player, token, user_id) values (p_code, 0, p_token, auth.uid());
   return p_code;
 end $$;
 
--- Returns the seat (0 or 1) this token holds, claiming seat 1 if it is free.
+-- Returns the seat (0 or 1) the caller holds, claiming seat 1 if it is free.
+-- A signed-in caller opening a seat they held by link gets it attached to
+-- their account, so it follows them to other devices.
 create or replace function join_game(p_code text, p_name text, p_token text)
 returns integer language plpgsql security definer set search_path = public as $$
 declare
   existing smallint;
 begin
   if p_token is null or length(p_token) < 16 then raise exception 'bad token'; end if;
-  select player into existing from game_keys where game_id = p_code and token = p_token;
-  if existing is not null then return existing; end if;
+  existing := seat_of(p_code, p_token);
+  if existing is not null then
+    if auth.uid() is not null then
+      update game_keys set user_id = auth.uid() where game_id = p_code and player = existing and user_id is null;
+    end if;
+    return existing;
+  end if;
   if not exists (select 1 from games where id = p_code) then raise exception 'no such game'; end if;
   if exists (select 1 from game_keys where game_id = p_code and player = 1) then
     raise exception 'this game already has two players';
@@ -82,13 +119,15 @@ begin
   if p_name is null or length(trim(p_name)) = 0 or length(p_name) > 24 then
     raise exception 'name must be 1-24 characters';
   end if;
-  insert into game_keys (game_id, player, token) values (p_code, 1, p_token);
+  insert into game_keys (game_id, player, token, user_id) values (p_code, 1, p_token, auth.uid());
   update games set p2_name = trim(p_name), updated_at = now() where id = p_code;
   return 1;
 end $$;
 
--- Appends a move for the seat that owns p_token. The seat to move is derived
--- from the server's own move count; p_index is only a concurrency check.
+-- Appends a move for the caller's seat. The seat to move is derived from the
+-- server's own move count; p_index is only a concurrency check. The creator
+-- may play the first word before anyone joins; turn order keeps them from
+-- playing again until the second seat is taken.
 create or replace function play_move(p_code text, p_token text, p_index integer, p_move jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
@@ -104,10 +143,8 @@ begin
   if kind is null or kind not in ('play', 'swap', 'pass', 'resign') then raise exception 'bad move'; end if;
   if p_move->>'d' is null or length(p_move->>'d') > 4000 then raise exception 'bad move'; end if;
   if length(p_move::text) > 4200 then raise exception 'move too large'; end if;
-  select player into who from game_keys where game_id = p_code and token = p_token;
+  who := seat_of(p_code, p_token);
   if who is null then raise exception 'not a player in this game'; end if;
-  -- the creator may play the first word before anyone joins; the turn-order
-  -- check below keeps them from playing again until the second seat is taken
   select moves into cur from games where id = p_code for update;
   if cur is null then raise exception 'no such game'; end if;
   n := jsonb_array_length(cur);
@@ -121,11 +158,14 @@ begin
   return cur || jsonb_build_array(p_move);
 end $$;
 
+revoke all on function seat_of(text, text) from public;
 revoke all on function get_game(text) from public;
+revoke all on function my_games() from public;
 revoke all on function create_game(text, text, text, text) from public;
 revoke all on function join_game(text, text, text) from public;
 revoke all on function play_move(text, text, integer, jsonb) from public;
 grant execute on function get_game(text) to anon, authenticated;
+grant execute on function my_games() to anon, authenticated;
 grant execute on function create_game(text, text, text, text) to anon, authenticated;
 grant execute on function join_game(text, text, text) to anon, authenticated;
 grant execute on function play_move(text, text, integer, jsonb) to anon, authenticated;

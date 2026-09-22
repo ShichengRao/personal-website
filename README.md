@@ -109,6 +109,14 @@ ranking and Monte Carlo sim on positions sampled from self-play; its header
 says what MAGPIE needs (a layout file for this board, a letter distribution
 for these tiles, a KWG built from words.txt, and `-bb 40`).
 
+The page is an installable web app: `static/scrabble-mod/manifest.webmanifest`
+and `sw.js` give it a home-screen icon, a standalone window and an offline
+copy of the page, scripts and word lists (cached first, refreshed in the
+background). Signing in (Google, or a one-time email link, through Supabase
+Auth and the `supabase-js` browser build loaded from jsdelivr) is optional; it
+attaches online seats to the account so the same games open on any device,
+and the menu lists them. Link play without an account still works.
+
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id
 (`otter-slate-plum`) that is also its address, `/scrabble-mod/<id>`; the
