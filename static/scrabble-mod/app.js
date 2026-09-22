@@ -800,11 +800,12 @@
     let ref = commonList[0] || null;
     if (exch && (!ref || exch.equity > ref.equity)) ref = exch;
     const expert = list[0] && !list[0].common && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
-    const rate = (eq) => !ref ? 100 : ref.equity > 0 ? Math.max(0, Math.min(100, Math.round(100 * eq / ref.equity))) : Math.max(0, Math.min(100, Math.round(100 - 4 * (ref.equity - eq))));
+    // The best common play is 100. A rare word that beats it rates above 100: a brilliancy.
+    const rate = (eq) => !ref ? 100 : ref.equity > 0 ? Math.max(0, Math.round(100 * eq / ref.equity)) : Math.max(0, Math.round(100 - 4 * (ref.equity - eq)));
     for (const m of list) m.rating = rate(m.equity);
     if (exch) exch.rating = rate(exch.equity);
     const rating = rate(playedEquity);
-    const a = { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref || rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
+    const a = { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref ? 'best' : rating >= 110 ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
     R.cands.set(k, a);
     return a;
   }
@@ -836,7 +837,7 @@
       const what = e.t === 'play' ? esc(e.word) + (e.bingo ? ' <small style="color:var(--good)">bingo</small>' : '') : e.t === 'swap' ? 'swap ×' + e.n : e.t;
       const grade = R && R.summary ? (R.summary.rows.find((r) => r.k === i + 1) || {}).grade : null;
       html += '<li data-k="' + (i + 1) + '"' + (R && R.k === i + 1 ? ' class="cur"' : '') + '><span><span class="n">' + (i + 1) + '.</span><span class="who">' + esc(nameOf(e.p)) + '</span>' + what + '</span>' +
-        '<b>' + (e.t === 'play' ? '+' + e.score : '') + (grade === 'miss' ? ' <span style="color:var(--bad)">?</span>' : grade === 'best' ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
+        '<b>' + (e.t === 'play' ? '+' + e.score : '') + (grade === 'miss' ? ' <span style="color:var(--bad)">?</span>' : grade === 'brilliant' ? ' <span style="color:var(--good)">‼</span>' : grade === 'best' ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
     });
     ui.log.innerHTML = html || '<li><span class="who">No moves yet.</span></li>';
     ui.log.querySelectorAll('li[data-k]').forEach((li) => li.addEventListener('click', () => { if (!dict) return; if (R) reviewGo(+li.dataset.k); else enterReview(+li.dataset.k); }));
@@ -852,6 +853,7 @@
       const rankTxt = an.played === null || an.played < 0 ? '' : playedRare ? ' (a rare word: #' + (an.played + 1) + ' of ' + an.list.length + ' plays in the full list)' : ' (#' + (an.list.slice(0, an.played).filter((m) => m.common).length + 1) + ' of ' + an.commonList.length + ' common plays)';
       const refTxt = an.ref ? (an.ref.t === 'swap' ? 'exchanging ' + esc(an.ref.tiles.join('')) + ' and keeping ' + esc(an.ref.keeps || 'nothing') : esc(an.ref.word) + ' for ' + an.ref.score) : '';
       if (!an.ref) a += '<div class="sm-verdict">No play was available; ' + esc(who.toLowerCase() === 'you' ? 'you' : who) + ' ' + esc(an.playedLabel) + '.</div>';
+      else if (an.grade === 'brilliant') a += '<div class="sm-verdict best"><b>Brilliant: ' + esc(who) + ' beat every common play, rated ' + an.rating + '.</b> ' + esc(an.playedLabel) + rankTxt + ' The best common play was ' + refTxt + '.</div>';
       else if (an.grade === 'best') a += '<div class="sm-verdict best"><b>' + esc(who) + ' found the best play.</b> ' + esc(an.playedLabel) + rankTxt + (playedRare ? ' The best common play was ' + refTxt + '.' : '') + '</div>';
       else a += '<div class="sm-verdict ' + (an.grade === 'miss' ? 'miss' : '') + '"><b>' + esc(who) + ': ' + esc(an.playedLabel) + rankTxt + ', rated <b>' + an.rating + '</b>.</b> The best play was ' + refTxt + '.</div>';
       if (an.expert) a += '<div class="sm-note" style="margin:-2px 0 8px">With the full word list an expert had <b>' + esc(an.expert.word) + '</b> for ' + an.expert.score + '. Ratings do not count rare words against you.</div>';
@@ -876,16 +878,18 @@
           const rare = m.t !== 'swap' && !m.common ? ' <small style="color:var(--dw-ink)">rare word</small>' : '';
           a += '<div ' + (m.t === 'swap' ? '' : 'data-c="' + idx + '" ') + 'class="' + (isPlayed ? 'played' : '') + (R.ghost === m ? ' ghost' : '') + '"><span><b>' + esc(m.word) + '</b> <small>' + (m.keeps ? 'keeps ' + esc(m.keeps) : m.t === 'swap' ? 'keeps nothing' : 'plays out') + '</small>' + rare + '</span><span>' + m.score + '</span><span></span><b>' + m.rating + '</b></div>';
         });
-        a += '</div><div class="sm-note" style="margin:-4px 0 10px">The best play with common words rates 100; the rest by how they compare, counting the tiles each keeps. Click a play to see it on the board; click again to go back.</div>';
+        a += '</div><div class="sm-note" style="margin:-4px 0 10px">The best play with common words rates 100; the rest by how they compare, counting the tiles each keeps. A rare word that beats them all rates above 100. Click a play to see it on the board; click again to go back.</div>';
       }
     } else if (R.k > 0) a += '<div class="sm-verdict">' + esc(nameOf(s.history[R.k - 1].p)) + '’s turn. Their rack and options stay hidden until the game is over.</div>';
     if (R.summary) {
       const misses = R.summary.rows.filter((r) => r.grade === 'miss').sort((x, y) => x.rating - y.rating);
+      const brilliant = R.summary.rows.filter((r) => r.grade === 'brilliant').sort((x, y) => y.rating - x.rating);
       const bests = R.summary.rows.filter((r) => r.grade === 'best');
       const rated = R.summary.rows.length;
       a += '<div class="sm-k">Summary' + (R.summary.done ? '' : ' (working…)') + '</div><div class="sm-summary">';
       const avg = rated ? Math.round(R.summary.rows.reduce((t, r) => t + r.rating, 0) / rated) : 0;
-      a += '<div class="sm-note" style="margin:0 0 4px">' + rated + ' turn' + (rated === 1 ? '' : 's') + ' rated · average <b>' + avg + '</b> · ' + bests.length + ' best · ' + misses.length + ' miss' + (misses.length === 1 ? '' : 'es') + '</div>';
+      a += '<div class="sm-note" style="margin:0 0 4px">' + rated + ' turn' + (rated === 1 ? '' : 's') + ' rated · average <b>' + avg + '</b> · ' + (brilliant.length ? brilliant.length + ' brilliant · ' : '') + bests.length + ' best · ' + misses.length + ' to improve</div>';
+      if (brilliant.length) { a += '<div class="sm-k" style="margin-top:6px">Brilliancies</div>'; brilliant.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--good)">' + r.rating + '</b></div>'; }); }
       if (misses.length) { a += '<div class="sm-k" style="margin-top:6px">Could do better</div>'; misses.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--bad)">' + r.rating + '</b> <small>(best ' + esc(r.best.word) + (r.best.t === 'swap' ? '' : ' ' + r.best.score) + ')</small></div>'; }); }
       if (bests.length) { a += '<div class="sm-k" style="margin-top:6px">Best plays</div>'; bests.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--good)">★</b></div>'; }); }
       a += '</div>';
@@ -991,7 +995,7 @@
       '<div class="sm-keys">' +
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
-      '<div><b>Review:</b> click any move in the list to step through the game. <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words; a better play that needs a rare word is noted separately.</div>' +
+      '<div><b>Review:</b> click any move in the list to step through the game. <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
       '<div><b>Word lists:</b> plays are checked against ENABLE, the public-domain list. The easy and medium bots, and the ratings, use only its common words.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
