@@ -24,8 +24,8 @@
 .sm-app .sm-msg b{color:var(--text)}
 .sm-app .sm-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
 @media(max-width:860px){.sm-app .sm-cols{grid-template-columns:1fr}}
-.sm-app .sm-main{max-width:600px;margin:0 auto;width:100%}
-.sm-app .sm-boardwrap{position:relative;overflow:auto;max-height:84vh;border-radius:8px;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior:contain}
+.sm-app .sm-main{max-width:600px;margin:0 auto;width:100%;container-type:inline-size}
+.sm-app .sm-boardwrap{position:relative;overflow:auto;height:min(100cqw,84vh);border-radius:8px;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior:contain}
 .sm-app .sm-board{display:grid;grid-template-columns:repeat(15,1fr);gap:2px;padding:4px;background:var(--plane);
  border:1px solid var(--ring);border-radius:8px;aspect-ratio:1;outline:none;user-select:none;-webkit-user-select:none;touch-action:manipulation;
  width:calc(100% * var(--zoom,1));container-type:inline-size}
