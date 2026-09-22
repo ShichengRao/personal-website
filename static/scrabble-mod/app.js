@@ -226,7 +226,7 @@
       const rh = R.k > 0 ? s.history[R.k - 1] : null;
       ui.msg.innerHTML = R.k === 0 ? '<b>Review.</b> The start of the game.' : '<b>Move ' + R.k + '.</b> ' + describe(rh) + (R.ghost ? ' · <i>showing ' + esc(R.ghost.word) + ' instead</i>' : '');
     } else if (s.over) ui.msg.innerHTML = '<b>Game over.</b> ' + esc(verdict(s)) + '.';
-    else if (h) ui.msg.innerHTML = describe(h) + (s.finalTurns !== null ? ' · <i>bag empty, last turns</i>' : '');
+    else if (h) ui.msg.innerHTML = (G.kind === 'online' && G.me === null ? '<i>Watching.</i> ' : '') + describe(h) + (s.finalTurns !== null ? ' · <i>bag empty, last turns</i>' : '');
     else ui.msg.innerHTML = (isYou(s.turn) || G.kind === 'hotseat') ? 'Your move. The first word covers the center.' : esc(nameOf(s.turn)) + ' goes first.';
     renderBoard();
     renderRack();
@@ -1387,7 +1387,14 @@
       for (const r of recs) html += '<div' + (r.handle ? ' data-u="' + esc(r.handle) + '"' : '') + '><span>' + esc(r.name || 'a guest') + '</span> <b>' + r.w + '–' + r.l + (r.t ? '–' + r.t : '') + '</b></div>';
       html += '</div>';
     }
+    if (pr.live) {
+      html += '<div class="sm-k" style="text-align:left;margin-top:12px">Games in progress</div><div class="sm-summary">';
+      if (!pr.live.length) html += '<div class="sm-note">None right now.</div>';
+      for (const g of pr.live) html += '<div data-g="' + esc(g.id) + '"><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span><small>' + plural(g.moves, 'move') + (pr.mine ? '' : ' · watch') + '</small></div>';
+      html += '</div>';
+    }
     if (pr.mine) {
+      html += '<div class="sm-row" style="margin-top:8px"><label class="sm-note" style="margin:0"><input type="checkbox" id="sm-pr-public"' + (pr.public_games ? ' checked' : '') + '> Let anyone watch my games in progress from this page</label></div>';
       html += '<div class="sm-k" style="text-align:left;margin-top:12px">Friends</div><div class="sm-summary" id="sm-pr-friends">';
       if (!pr.friends.length) html += '<div class="sm-note">No friends yet. Add one by their code, or send them yours.</div>';
       for (const f of pr.friends) html += '<div data-u="' + esc(f.handle) + '"><span>' + esc(f.name) + ' <small>' + esc(f.handle) + '</small></span><b>›</b></div>';
@@ -1409,6 +1416,8 @@
     on('sm-pr-friend', async () => { try { await Net.rpc('add_friend', { p_handle: pr.handle }); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
     on('sm-pr-unfriend', async () => { try { await Net.rpc('remove_friend', { p_handle: pr.handle }); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
     on('sm-pr-challenge', () => { closeOverlay(); challengeFriend(pr.handle, pr.name); });
+    const pub = $('sm-pr-public');
+    if (pub) pub.addEventListener('change', async () => { try { await Net.rpc('set_visibility', { p_public: pub.checked }); } catch (e) { setStatus(e.message, 'bad'); pub.checked = !pub.checked; } });
     on('sm-pr-add', async () => { const code = ($('sm-pr-code').value || '').trim(); if (!code) return; try { const f = await Net.rpc('add_friend', { p_handle: code }); setStatus('Added ' + f.name + '.', 'good'); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
   }
   // A QR code of the profile link, drawn by a small library fetched on demand.

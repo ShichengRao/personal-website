@@ -46,11 +46,13 @@ alter table games add column if not exists next_game text;   -- the rematch, onc
 
 -- One row per account: a display name and a friend code.
 create table if not exists profiles (
-  user_id    uuid primary key references auth.users(id) on delete cascade,
-  handle     text unique not null,
-  name       text not null,
-  created_at timestamptz not null default now()
+  user_id      uuid primary key references auth.users(id) on delete cascade,
+  handle       text unique not null,
+  name         text not null,
+  public_games boolean not null default false,   -- list games in progress on the profile for anyone to watch
+  created_at   timestamptz not null default now()
 );
+alter table profiles add column if not exists public_games boolean not null default false;
 -- Friendships are mutual: adding by code inserts both directions.
 create table if not exists friends (
   user_id    uuid not null references auth.users(id) on delete cascade,
@@ -248,6 +250,15 @@ begin
   if u is null then return null; end if;
   return jsonb_build_object(
     'handle', h, 'name', nm, 'mine', auth.uid() = u,
+    'public_games', (select public_games from profiles where user_id = u),
+    -- games in progress, for watching: shown to the owner, and to everyone when the owner allows it
+    'live', case when auth.uid() = u or (select public_games from profiles where user_id = u) then
+      (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'p1_name', g.p1_name, 'p2_name', g.p2_name, 'moves', jsonb_array_length(g.moves), 'updated_at', g.updated_at) order by g.updated_at desc), '[]'::jsonb)
+       from game_keys k join games g on g.id = k.game_id
+       where k.user_id = u and g.p2_name is not null
+         and not exists (select 1 from game_results r where r.game_id = g.id)
+         and not exists (select 1 from jsonb_array_elements(g.moves) m where m->>'t' = 'resign'))
+      else null end,
     'is_friend', exists (select 1 from friends f where f.user_id = auth.uid() and f.friend_id = u),
     'results', (select coalesce(jsonb_agg(jsonb_build_object(
         'game_id', r.game_id, 'seat', case when r.p0_user = u then 0 else 1 end,
@@ -262,6 +273,14 @@ begin
       from (select * from game_results where p0_user = u or p1_user = u order by finished_at desc limit 500) r),
     'friends', case when auth.uid() = u then (select coalesce(jsonb_agg(jsonb_build_object('handle', p.handle, 'name', p.name) order by p.name), '[]'::jsonb)
                                               from friends f join profiles p on p.user_id = f.friend_id where f.user_id = u) else null end);
+end $$;
+
+create or replace function set_visibility(p_public boolean)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  update profiles set public_games = coalesce(p_public, false) where user_id = auth.uid();
+  return (select jsonb_build_object('handle', handle, 'public_games', public_games) from profiles where user_id = auth.uid());
 end $$;
 
 create or replace function add_friend(p_handle text)
@@ -367,6 +386,7 @@ grant execute on function join_game(text, text, text) to anon, authenticated;
 grant execute on function play_move(text, text, integer, jsonb) to anon, authenticated;
 revoke all on function ensure_profile(text) from public;
 revoke all on function set_name(text) from public;
+revoke all on function set_visibility(boolean) from public;
 revoke all on function profile(text) from public;
 revoke all on function add_friend(text) from public;
 revoke all on function remove_friend(text) from public;
@@ -375,6 +395,7 @@ revoke all on function rematch(text, text, text, text) from public;
 revoke all on function challenge(text, text, text, text, text) from public;
 grant execute on function ensure_profile(text) to authenticated;
 grant execute on function set_name(text) to authenticated;
+grant execute on function set_visibility(boolean) to authenticated;
 grant execute on function profile(text) to anon, authenticated;
 grant execute on function add_friend(text) to authenticated;
 grant execute on function remove_friend(text) to authenticated;
