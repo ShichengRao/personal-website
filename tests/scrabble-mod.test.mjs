@@ -276,3 +276,44 @@ test('the Scrabble Mod page has its layout and scripts', () => {
   assert.match(layout, /scrabble-mod\/core\.js/);
   assert.match(layout, /scrabble-mod\/app\.js/);
 });
+
+test('a stored game replays without the word list, so a list change cannot strand it', () => {
+  const d = dict();
+  let s = C.newGame(21);
+  const first = C.generate(s.board, s.racks[0], d)[0];
+  s = C.apply(s, { t: 'play', tiles: first.tiles }, d);
+  const stricter = C.buildDict('aa\nab');
+  assert.throws(() => C.replay(s.seed, s.moves, stricter), /not in the word list/);
+  const back = C.replay(s.seed, s.moves);
+  assert.deepEqual(back.board, s.board);
+  assert.deepEqual(back.scores, s.scores);
+  assert.deepEqual(back.racks, s.racks);
+  const pos = C.positions(s.seed, s.moves);
+  assert.equal(pos.length, s.moves.length + 1);
+  assert.deepEqual(pos[pos.length - 1].board, s.board);
+  assert.equal(pos[0].history.length, 0);
+});
+
+test('equity counts the rack you keep, not just the score', () => {
+  assert.ok(C.leaveValue(['S', '?']) > 30);
+  assert.ok(C.leaveValue(['Q', 'U', 'U', 'V']) < -20);
+  assert.ok(C.leaveValue(['A', 'E', 'I', 'O', 'U']) < C.leaveValue(['A', 'E', 'R', 'S', 'T']), 'all vowels is a bad leave');
+  assert.equal(C.leaveValue([]), 0);
+  // With QUILT on the board and a rack of S ? Q A: dumping the Q for a small
+  // score should rank above a slightly bigger score that keeps it.
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), small);
+  const rack = ['Q', 'I', 'S', '?', 'A', 'B', 'X'];
+  const byScore = C.generate(s.board, rack, small);
+  const byEquity = C.rank(byScore.map((m) => Object.assign({}, m)), rack, false);
+  for (const m of byEquity) {
+    assert.equal(typeof m.leave, 'number');
+    assert.equal(m.equity, Math.round((m.score + m.leave) * 10) / 10);
+  }
+  for (let i = 1; i < byEquity.length; i++) assert.ok(byEquity[i - 1].equity >= byEquity[i].equity);
+  const keepsS = byEquity.filter((m) => m.keeps.includes('S') && m.keeps.includes('?'));
+  assert.ok(keepsS.length, 'some plays keep S and the blank');
+  // once the bag is empty the leave is worth nothing
+  const endgame = C.rank(byScore.map((m) => Object.assign({}, m)), rack, true);
+  for (const m of endgame) { assert.equal(m.leave, 0); assert.equal(m.equity, m.score); }
+});

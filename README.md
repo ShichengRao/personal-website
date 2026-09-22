@@ -77,10 +77,13 @@ ending of the New York Times' Crossplay, none of its branding, and the
 public-domain ENABLE word list (`static/scrabble-mod/words.txt`, one word per
 line; swap the file to change lists). `static/scrabble-mod/core.js` holds the
 rules with no DOM in them: the layout, the seeded bag, placement checks,
-scoring, a trie over the word list and an Appel–Jacobson move generator that
-powers the bot and the end-of-game review. It loads in Node, which is how the
-tests check it. `app.js` is the page: board and rack, the bot, pass-and-play,
-and online games.
+scoring, a trie over the word list, an Appel–Jacobson move generator and a
+rack-leave heuristic that turns raw scores into equity. The hard bot and the
+review both pick by equity. It loads in Node, which is how the tests check it.
+`app.js` is the page: board and rack (typing, clicking or dragging), the bot,
+pass-and-play, online games, and a move-by-move review with the top plays for
+every position. Stored games are replayed without the word list, so swapping
+the list never makes an old game unreadable.
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id

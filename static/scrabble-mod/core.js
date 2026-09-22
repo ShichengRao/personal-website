@@ -235,10 +235,20 @@
     return s;
   }
 
+  // Rebuild a game from its record. Stored moves were checked against the
+  // word list when they were made, so they are replayed without it: a later
+  // change of list must not make an old game unreadable. Geometry and racks
+  // are still checked. Pass a dict to validate anyway.
   function replay(seed, moves, dict) {
     let s = newGame(seed);
-    for (const m of moves) s = apply(s, m, dict);
+    for (const m of moves) s = apply(s, m, dict || null);
     return s;
+  }
+  // Every position of a game: states[k] is the board after k moves.
+  function positions(seed, moves) {
+    const out = [newGame(seed)];
+    for (const m of moves) out.push(apply(out[out.length - 1], m, null));
+    return out;
   }
 
   // 0 or 1 for the winner of a finished game, -1 for a tie, null while it runs.
@@ -426,13 +436,53 @@
     }
   }
 
+  // ---- rack leave and equity ------------------------------------------------
+  // What the tiles you keep are worth next turn: a static per-letter value,
+  // a penalty for duplicates and for a lopsided vowel/consonant mix. A rough
+  // heuristic, but it is what separates "the highest score" from "the best
+  // play": dumping a Q for 11 beats a 14 that keeps the Q.
+  const LEAVE = { A: 1, B: -3.5, C: -0.5, D: 0, E: 4, F: -2, G: -2, H: 0.5, I: -0.5, J: -3, K: -2.5, L: -1, M: -0.5,
+                  N: 0.5, O: -1.5, P: -1.5, Q: -11.5, R: 1.5, S: 8, T: 0, U: -4.5, V: -5.5, W: -4, X: 3.5, Y: -2, Z: 2, '?': 25 };
+  function leaveValue(tiles) {
+    if (!tiles.length) return 0;
+    let v = 0, vowels = 0, cons = 0;
+    const seen = {};
+    for (const t of tiles) {
+      v += LEAVE[t];
+      seen[t] = (seen[t] || 0) + 1;
+      if (seen[t] > 1) v -= t === '?' ? 12 : 3;
+      if (t === '?') continue;
+      if ('AEIOU'.includes(t)) vowels++; else cons++;
+    }
+    const skew = Math.abs(vowels - cons) - 1;
+    if (tiles.length >= 3 && skew > 0) v -= 1.5 * skew;
+    return Math.round(v * 10) / 10;
+  }
+  function leaveAfter(rack, tiles) {
+    const left = rack.slice();
+    for (const t of tiles) left.splice(left.indexOf(t.b ? '?' : t.l), 1);
+    return left;
+  }
+  // Adds leave and equity to generated moves and sorts by equity. Once the
+  // bag is empty the leave is worth nothing (leftovers cost nothing either).
+  function rank(moves, rack, bagEmpty) {
+    for (const m of moves) {
+      const left = leaveAfter(rack, m.tiles);
+      m.leave = bagEmpty ? 0 : leaveValue(left);
+      m.keeps = left.join('');
+      m.equity = Math.round((m.score + m.leave) * 10) / 10;
+    }
+    return moves.sort((a, b) => b.equity - a.equity || b.score - a.score || a.word.localeCompare(b.word));
+  }
+
   // ---- the bot ------------------------------------------------------------
-  // hard takes the best play; medium takes one of the next few; easy plays a
-  // middling one. With nothing to play it swaps the rack while the bag allows.
+  // hard takes the play with the best equity; medium takes one of the next
+  // few; easy plays a middling one by score. With nothing to play it swaps the
+  // rack while the bag allows.
   function botMove(state, level, rnd, dict) {
     const p = state.turn, rack = state.racks[p];
     if (!rack.length) return { t: 'pass' };
-    const moves = generate(state.board, rack, dict);
+    const moves = level === 'easy' ? generate(state.board, rack, dict) : rank(generate(state.board, rack, dict), rack, state.bag.length === 0);
     if (!moves.length) {
       if (state.bag.length >= rack.length) return { t: 'swap', tiles: rack.slice() };
       if (state.bag.length > 0) return { t: 'swap', tiles: rack.slice(0, state.bag.length) };
@@ -447,5 +497,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, options, winner, buildDict, generate, botMove, transpose };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, LEAVE, botMove, transpose };
 });
