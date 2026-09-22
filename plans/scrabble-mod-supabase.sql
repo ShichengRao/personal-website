@@ -102,6 +102,41 @@ returns smallint language sql security definer set search_path = public stable a
   limit 1;
 $$;
 
+-- The seat the caller holds, or null. Lets a page check a private link
+-- before deciding whether the visitor is a player or a spectator.
+create or replace function my_seat(p_code text, p_token text)
+returns smallint language sql security definer set search_path = public stable as $$
+  select seat_of(p_code, p_token);
+$$;
+
+-- A game is over when someone resigned, when the last four moves were all
+-- passes, or when the bag ran out (plays carry their tile count in the
+-- clear: 100 tiles, 14 dealt, so the bag is empty once 86 have been played)
+-- and both players took their last turn after that. Null when it cannot be
+-- told from the record (old games whose plays carry no count).
+create or replace function game_over(p_moves jsonb)
+returns boolean language plpgsql immutable as $$
+declare
+  n int := jsonb_array_length(p_moves);
+  played int := 0;
+  emptied int := null;
+  i int;
+  m jsonb;
+begin
+  if exists (select 1 from jsonb_array_elements(p_moves) x where x->>'t' = 'resign') then return true; end if;
+  if n >= 4 and (select bool_and(x->>'t' = 'pass') from jsonb_array_elements(p_moves) with ordinality o(x, k) where k > n - 4) then return true; end if;
+  for i in 0 .. n - 1 loop
+    m := p_moves -> i;
+    if m->>'t' = 'play' then
+      if m->>'n' is null then return null; end if;
+      played := played + (m->>'n')::int;
+      if emptied is null and played >= 86 then emptied := i; end if;
+    end if;
+  end loop;
+  if emptied is not null then return n >= emptied + 3; end if;
+  return false;
+end $$;
+
 -- Everything a client needs to rebuild a game. Null when there is no such id.
 create or replace function get_game(p_code text)
 returns jsonb language sql security definer set search_path = public stable as $$
@@ -118,6 +153,7 @@ returns jsonb language sql security definer set search_path = public stable as $
   select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'seat', k.player, 'p1_name', g.p1_name, 'p2_name', g.p2_name,
                                                'moves', jsonb_array_length(g.moves),
                                                'resigned', exists (select 1 from jsonb_array_elements(g.moves) m where m->>'t' = 'resign'),
+                                               'finished', exists (select 1 from game_results r where r.game_id = g.id) or coalesce(game_over(g.moves), false),
                                                'updated_at', g.updated_at) order by g.updated_at desc), '[]'::jsonb)
   from game_keys k join games g on g.id = k.game_id
   where auth.uid() is not null and k.user_id = auth.uid();
@@ -186,6 +222,7 @@ begin
   kind := p_move->>'t';
   if kind is null or kind not in ('play', 'swap', 'pass', 'resign') then raise exception 'bad move'; end if;
   if p_move->>'d' is null or length(p_move->>'d') > 4000 then raise exception 'bad move'; end if;
+  if kind = 'play' and ((p_move->>'n') is null or (p_move->>'n')::int < 1 or (p_move->>'n')::int > 7) then raise exception 'bad move'; end if;
   if length(p_move::text) > 4200 then raise exception 'move too large'; end if;
   who := seat_of(p_code, p_token);
   if who is null then raise exception 'not a player in this game'; end if;
@@ -257,7 +294,7 @@ begin
        from game_keys k join games g on g.id = k.game_id
        where k.user_id = u and g.p2_name is not null
          and not exists (select 1 from game_results r where r.game_id = g.id)
-         and not exists (select 1 from jsonb_array_elements(g.moves) m where m->>'t' = 'resign'))
+         and not coalesce(game_over(g.moves), false))
       else null end,
     'is_friend', exists (select 1 from friends f where f.user_id = auth.uid() and f.friend_id = u),
     'results', (select coalesce(jsonb_agg(jsonb_build_object(
@@ -320,7 +357,8 @@ begin
     return (select to_jsonb(r) from game_results r where game_id = p_code);
   end if;
   select * into g from games where id = p_code;
-  if (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
+  if (p_result->>'moves') is null or (p_result->>'moves')::int <> jsonb_array_length(g.moves) then raise exception 'the report does not match the game'; end if;
+  if game_over(g.moves) is false then raise exception 'the game is not over'; end if;
   if length(p_result::text) > 4000 then raise exception 'report too large'; end if;
   insert into game_results (game_id, p0_user, p1_user, p0_name, p1_name, p0_score, p1_score, winner, end_reason, moves, stats)
   values (p_code,
@@ -374,11 +412,14 @@ begin
 end $$;
 
 revoke all on function seat_of(text, text) from public;
+revoke all on function my_seat(text, text) from public;
+revoke all on function game_over(jsonb) from public;
 revoke all on function get_game(text) from public;
 revoke all on function my_games() from public;
 revoke all on function create_game(text, text, text, text) from public;
 revoke all on function join_game(text, text, text) from public;
 revoke all on function play_move(text, text, integer, jsonb) from public;
+grant execute on function my_seat(text, text) to anon, authenticated;
 grant execute on function get_game(text) to anon, authenticated;
 grant execute on function my_games() to anon, authenticated;
 grant execute on function create_game(text, text, text, text) to anon, authenticated;

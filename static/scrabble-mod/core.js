@@ -626,6 +626,75 @@
     return best;
   }
 
+  // ---- rating a turn ------------------------------------------------------------
+  // Everything a review says about one turn: the plays that were available
+  // before it (ranked by equity), which of them use only common words, the
+  // best exchange, the yardstick (best common play or the exchange), the
+  // expert play a rare word would have given, and the played move's rating:
+  // the yardstick is 100, everything else its share, a rare word that beats
+  // it rates above 100. `common` may be null, in which case every word counts
+  // as common.
+  function evaluateTurn(before, move, h, dict, common) {
+    const p = before.turn, rack = before.racks[p];
+    const list = rank(generate(before.board, rack, dict), rack, before.bag.length === 0);
+    const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
+    for (const m of list) m.common = isCommon(m);
+    const exch = bestExchange(rack, before.bag.length);
+    const commonList = list.filter((m) => m.common);
+    const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+    let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
+    if (move.t === 'play') {
+      const pk = key(move.tiles);
+      played = list.findIndex((m) => key(m.tiles) === pk);
+      playedEquity = played >= 0 ? list[played].equity : h.score;
+      playedLabel = h.word + ' for ' + h.score;
+    } else if (move.t === 'swap') {
+      const kept = rack.slice();
+      for (const t of move.tiles) kept.splice(kept.indexOf(t), 1);
+      playedEquity = before.bag.length ? leaveValue(kept) : 0;
+      playedLabel = 'exchanged ' + move.tiles.join('') + ', kept ' + (kept.join('') || 'nothing');
+      playedSwap = true;
+    } else if (move.t === 'pass') {
+      playedEquity = before.bag.length ? leaveValue(rack) : 0;
+      playedLabel = 'passed';
+    }
+    let ref = commonList[0] || null;
+    if (exch && (!ref || exch.equity > ref.equity)) ref = exch;
+    // the expert play: a rare-word play better than the yardstick, unless the player found it themselves
+    const expert = list[0] && !list[0].common && played !== 0 && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
+    const rate = (eq) => !ref ? 100 : ref.equity > 0 ? Math.max(0, Math.round(100 * eq / ref.equity)) : Math.max(0, Math.round(100 - 4 * (ref.equity - eq)));
+    for (const m of list) m.rating = rate(m.equity);
+    if (exch) exch.rating = rate(exch.equity);
+    const rating = rate(playedEquity);
+    return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref ? 'best' : rating >= 110 ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
+  }
+  // The outcome of a finished game for the results table: scores, winner and
+  // each seat's plays, points, bingos, best word and brilliancies. `step` is
+  // called between turns when given, so a page can spread the work out.
+  function computeResult(state, dict, common, step) {
+    const positions_ = positions(state.seed, state.moves);
+    const stats = { p0: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 }, p1: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 } };
+    const turn = (i) => {
+      const m = state.moves[i], before = positions_[i], h = state.history[i], st = stats['p' + before.turn];
+      if (m.t !== 'play') return;
+      st.plays++; st.points += h.score;
+      if (h.bingo) st.bingos++;
+      if (h.score > st.best_score) { st.best_score = h.score; st.best_word = h.word; }
+      if (dict && evaluateTurn(before, m, h, dict, common).grade === 'brilliant') st.brilliancies++;
+    };
+    const result = () => ({ moves: state.moves.length, p0_score: state.scores[0], p1_score: state.scores[1], winner: winner(state), end_reason: state.endReason, stats });
+    if (!step) { for (let i = 0; i < state.moves.length; i++) turn(i); return result(); }
+    return new Promise((resolve) => {
+      let i = 0;
+      const go = () => {
+        const t0 = Date.now();
+        while (i < state.moves.length && Date.now() - t0 < 30) turn(i++);
+        if (i < state.moves.length) step(go); else resolve(result());
+      };
+      go();
+    });
+  }
+
   // ---- the bot ------------------------------------------------------------
   // hard takes the play with the best equity from the whole word list;
   // medium one of the next few by equity, easy one of the eleventh to
@@ -662,5 +731,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, endgameMove, lookahead, botMove, transpose, pack, unpack };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, transpose, pack, unpack };
 });

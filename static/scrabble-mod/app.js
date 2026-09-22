@@ -648,7 +648,7 @@
     busy = true; render(); setStatus('Sending…');
     let moves;
     try {
-      moves = await Net.rpc('play_move', { p_code: G.id, p_token: G.online.token, p_index: idx, p_move: { t: move.t, d: C.pack(G.id, move) } });
+      moves = await Net.rpc('play_move', { p_code: G.id, p_token: G.online.token, p_index: idx, p_move: Object.assign({ t: move.t, d: C.pack(G.id, move) }, move.t === 'play' ? { n: move.tiles.length } : {}) });
     } catch (e) {
       if (!alive(s)) return;
       busy = false; setStatus('Could not send that move: ' + e.message, 'bad'); render();
@@ -683,14 +683,23 @@
     if (!G || G.kind !== 'online' || !G.state.over || G.me === null || G.reported) return;
     G.reported = true;
     const s = G.session;
-    await dictReady;
-    if (!alive(s)) return;
-    try { await Net.rpc('finish_game', { p_code: G.id, p_token: G.online.token, p_result: computeResult(G.state) }); }
-    catch (e) { if (alive(s)) G.reported = false; }
+    await dictReady; await commonReady;
+    if (!alive(s) || !dict) return;
+    try {
+      // spread the per-turn analysis over frames so the game-over screen stays responsive
+      const result = await C.computeResult(G.state, dict, common, (go) => setTimeout(go, 0));
+      if (!alive(s)) return;
+      await Net.rpc('finish_game', { p_code: G.id, p_token: G.online.token, p_result: result });
+    } catch (e) { if (alive(s)) G.reported = false; }
   }
+  commonReady.then(() => {
+    if (!R) return;
+    for (const [k, a] of R.cands) if (a.provisional) R.cands.delete(k);
+    R.summary = null; computeSummary(); render();
+  });
   function afterMove() {
     celebrateNew();
-    if (G.state.over) { stopPolling(); reportResult(); showGameOver(); return; }
+    if (G.state.over) { stopPolling(); reportResult(); showGameOver(); if (G.kind === 'online') startPolling(); return; }
     if (G.kind === 'bot' && G.state.turn !== G.me) scheduleBot();
     else if (G.kind === 'hotseat') showHandoff();
     else if (G.kind === 'online') {
@@ -788,62 +797,11 @@
   function analysis(k) {
     if (R.cands.has(k)) return R.cands.get(k);
     const a = evaluateTurn(R.states[k - 1], G.state.moves[k - 1], G.state.history[k - 1]);
+    if (!common) a.provisional = true;   // rated against the full list; redone once common.txt arrives
     R.cands.set(k, a);
     return a;
   }
-  // Everything the review says about one turn, from the position before it,
-  // the move and its history entry. Pure: no review state needed.
-  function evaluateTurn(before, move, h) {
-    const p = before.turn;
-    const rack = before.racks[p];
-    const list = C.rank(C.generate(before.board, rack, dict), rack, before.bag.length === 0);
-    const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
-    for (const m of list) m.common = isCommon(m);
-    const exch = C.bestExchange(rack, before.bag.length);
-    const commonList = list.filter((m) => m.common);
-    const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
-    let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
-    if (move.t === 'play') {
-      const pk = key(move.tiles);
-      played = list.findIndex((m) => key(m.tiles) === pk);
-      playedEquity = played >= 0 ? list[played].equity : h.score;
-      playedLabel = h.word + ' for ' + h.score;
-    } else if (move.t === 'swap') {
-      const kept = rack.slice();
-      for (const t of move.tiles) kept.splice(kept.indexOf(t), 1);
-      playedEquity = before.bag.length ? C.leaveValue(kept) : 0;
-      playedLabel = 'exchanged ' + move.tiles.join('') + ', kept ' + (kept.join('') || 'nothing');
-      playedSwap = true;
-    } else if (move.t === 'pass') {
-      playedEquity = before.bag.length ? C.leaveValue(rack) : 0;
-      playedLabel = 'passed';
-    }
-    // the yardstick: the best common play, or the exchange if that beats it
-    let ref = commonList[0] || null;
-    if (exch && (!ref || exch.equity > ref.equity)) ref = exch;
-    const expert = list[0] && !list[0].common && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
-    // The best common play is 100. A rare word that beats it rates above 100: a brilliancy.
-    const rate = (eq) => !ref ? 100 : ref.equity > 0 ? Math.max(0, Math.round(100 * eq / ref.equity)) : Math.max(0, Math.round(100 - 4 * (ref.equity - eq)));
-    for (const m of list) m.rating = rate(m.equity);
-    if (exch) exch.rating = rate(exch.equity);
-    const rating = rate(playedEquity);
-    return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref ? 'best' : rating >= 110 ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
-  }
-  // The outcome of a finished game for the results table: scores, winner and
-  // each seat's plays, points, bingos, best word and brilliancies.
-  function computeResult(state) {
-    const positions = C.positions(state.seed, state.moves);
-    const stats = { p0: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 }, p1: { plays: 0, points: 0, bingos: 0, brilliancies: 0, best_word: null, best_score: 0 } };
-    state.moves.forEach((m, i) => {
-      const before = positions[i], h = state.history[i], st = stats['p' + before.turn];
-      if (m.t !== 'play') return;
-      st.plays++; st.points += h.score;
-      if (h.bingo) st.bingos++;
-      if (h.score > st.best_score) { st.best_score = h.score; st.best_word = h.word; }
-      if (dict && evaluateTurn(before, m, h).grade === 'brilliant') st.brilliancies++;
-    });
-    return { moves: state.moves.length, p0_score: state.scores[0], p1_score: state.scores[1], winner: C.winner(state), end_reason: state.endReason, stats };
-  }
+  const evaluateTurn = (before, move, h) => C.evaluateTurn(before, move, h, dict, common);
   function computeSummary() {
     const session = G.session, states = R.states;
     const rows = [];
@@ -1024,7 +982,7 @@
         let h = '<div class="sm-k" style="text-align:left;margin-top:10px">Your games on other devices</div><div class="sm-games">';
         for (const m of extra) {
           const who = m.p2_name ? m.p1_name + ' vs ' + m.p2_name : 'with ' + m.p1_name;
-          const when = m.resigned ? 'finished' : (m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player');
+          const when = (m.finished || m.resigned) ? 'finished' : (m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player');
           h += '<button data-open="' + esc(m.id) + '"><b' + (when === 'your turn' ? ' class="now"' : '') + '>Online: ' + esc(who) + '</b> <small>' + esc(when) + ' · ' + esc(m.id) + '</small></button>';
         }
         note.outerHTML = h + '</div>';
@@ -1122,8 +1080,24 @@
     const rec = games.get(id);
     if (rec && rec.kind !== 'online') { resumeLocal(rec); return; }
     if (Net.enabled) { openOnline(id); return; }
-    setStatus('There is no game called ' + id + ' in this browser.', 'bad');
+    if (rec && rec.seed) { showCachedOnline(rec); return; }
+    setStatus(rec ? 'That game lives online and this page is offline; open it once you are connected.' : 'There is no game called ' + id + ' in this browser.', 'bad');
     showMenu();
+  }
+  // Offline (or the Supabase script did not load): the game as it was last
+  // seen, read-only, from the browser's copy of the record.
+  async function showCachedOnline(rec) {
+    const my = ++navGen;
+    await dictReady;
+    if (my !== navGen) return;
+    leaveGame();
+    let state;
+    try { state = C.replay(rec.seed, rec.moves); } catch (e) { setStatus('The saved copy of ' + rec.id + ' could not be read.', 'bad'); showMenu(); return; }
+    G = { id: rec.id, kind: 'online', level: null, names: rec.names || ['Player 1', 'Player 2'], handles: {}, nextGame: null, state, me: null, online: { token: null }, hidden: false, session: ++sessions, offline: true };
+    seenMoves = state.history.length;
+    setUrl(rec.id);
+    render();
+    setStatus('Offline: this is the game as it was last seen here. Moves need a connection.', 'bad');
   }
 
   // ---- online --------------------------------------------------------------------
@@ -1150,7 +1124,7 @@
     if (user && !store.get('sm.name', '')) store.set('sm.name', user.name);
     renderAuth();
     if (user && user.id !== was) {
-      Net.rpc('ensure_profile', { p_name: store.get('sm.name', '') || user.name }).then((p) => { if (user && p) { user.handle = p.handle; user.name = p.name; store.set('sm.name', p.name); renderAuth(); } }).catch(() => {});
+      Net.rpc('ensure_profile', { p_name: user.name }).then((p) => { if (user && p) { user.handle = p.handle; user.name = p.name; store.set('sm.name', p.name); renderAuth(); } }).catch(() => {});
     }
   }
   function renderAuth() {
@@ -1203,8 +1177,14 @@
   // link's token, or by joining the empty second seat.
   async function seatFor(id, row) {
     const rec = games.get(id);
-    const urlToken = tokenFromUrl();
-    if (urlToken) history.replaceState(null, '', location.pathname + location.search);
+    let urlToken = tokenFromUrl();
+    if (urlToken) {
+      history.replaceState(null, '', location.pathname + location.search);
+      // a private link must name a seat that exists; a stale or wrong one is not a way in
+      let seat = null;
+      try { seat = await Net.rpc('my_seat', { p_code: id, p_token: urlToken }); } catch (e) { /* treated as unknown */ }
+      if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; }
+    }
     const token = (rec && rec.online && rec.online.token) || urlToken || randomToken();
     const holds = row.seat !== null && row.seat !== undefined;   // the account already has a seat here
     const known = holds || (rec && rec.online && rec.online.token) || urlToken;
@@ -1249,7 +1229,7 @@
     setUrl(id);
     render();
     setStatus(seat.player === null ? 'Watching: this game already has two players.' : '');
-    if (G.state.over) { reportResult(); showGameOver(); }
+    if (G.state.over) { reportResult(); showGameOver(); startPolling(); }
     else { startPolling(); if (G.state.turn === G.me && C.options(G.state).mustPass) commit({ t: 'pass' }); }
   }
   // Fold the server's move list into ours. Idempotent: moves we already have
@@ -1257,7 +1237,7 @@
   // Server moves are trusted like stored ones; only our own are validated.
   function integrate(moves, names, row) {
     if (names) G.names = names;
-    if (row) { G.handles = row.handles || G.handles || {}; if (row.next_game && !G.nextGame) { G.nextGame = row.next_game; } }
+    if (row) { G.handles = row.handles || G.handles || {}; if (row.next_game && !G.nextGame) { G.nextGame = row.next_game; if (G.state.over) { stopPolling(); setStatus('A rematch is waiting: open it from the panel.', 'good'); } } }
     moves = moves || [];
     let s = G.state;
     try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, C.unpack(G.id, moves[i].d), null); }
@@ -1313,11 +1293,13 @@
   }
   function startPolling() {
     stopPolling();
-    if (!G || G.kind !== 'online' || G.state.over) return;
-    // a background tab keeps polling too (slower), so a game left open on a
-    // desktop is current when you come back to it
+    if (!G || G.kind !== 'online') return;
+    // a finished game keeps a slow poll going until a rematch shows up, so
+    // the other side's "play again" reaches this page; a background tab keeps
+    // polling too (slower), so a game left open is current when you come back
+    if (G.state.over && (G.nextGame || G.me === null)) return;
     const tick = () => { if (document.visibilityState === 'visible' || Date.now() - lastHiddenPoll > 30000) { lastHiddenPoll = Date.now(); syncOnline(); } };
-    pollTimer = setInterval(tick, G.state.turn === G.me ? 15000 : 5000);
+    pollTimer = setInterval(tick, G.state.over ? 15000 : G.state.turn === G.me ? 15000 : 5000);
   }
   function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && G && G.kind === 'online') syncOnline(); });
@@ -1354,7 +1336,7 @@
     return st;
   }
   async function showProfile(handle) {
-    if (!Net.enabled) return;
+    if (!Net.enabled) { openOverlay('<h2>Profile</h2><p>Profiles need a connection, and this page is offline.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', () => { closeOverlay(); if (!G) showMenu(); }); return; }
     openOverlay('<h2>Profile</h2><p>Loading…</p>');
     let pr;
     const back = () => { closeOverlay(); if (!G) showMenu(); };

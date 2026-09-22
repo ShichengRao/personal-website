@@ -454,3 +454,51 @@ test('online records are packed per game and unpack to the same thing', () => {
   assert.throws(() => JSON.parse(C.unpack('otter-slate-bob', packed) && 'x'), /./, 'the wrong key does not decode to the move');
   assert.equal(C.unpack('otter-slate-plum', C.pack('otter-slate-plum', 123456789)), 123456789);
 });
+
+test('a turn is rated against the best common play, and rare words can beat it', () => {
+  const d = dict();
+  const tiny = C.buildDict(['quilt', 'lit', 'tilt', 'it', 'ti', 'quit', 'tin', 'nit', 'lint', 'tint', 'unit', 'until'].join('\n'));
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  const before = withRack(s, 'NTIUSEA');
+  const best = C.rank(C.generate(before.board, before.racks[1], d), before.racks[1], false)[0];
+  const after = C.apply(before, { t: 'play', tiles: best.tiles }, d);
+  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[0], d, tiny);
+  assert.ok(a.ref, 'a common yardstick exists');
+  assert.ok(a.commonList.every((m) => m.common));
+  if (!best.words.every((w) => tiny.has(w.word))) {
+    assert.ok(a.rating >= 100, 'the best full-list play rates at least the best common play');
+    assert.equal(a.expert, null, 'no expert note when the player found the rare word');
+  }
+  // without a common list every play is common and the best play is exactly 100
+  const b = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[0], d, null);
+  assert.equal(b.rating, 100);
+  assert.equal(b.grade, 'best');
+  // a pass is rated by the rack it keeps against that yardstick
+  const c = C.evaluateTurn(before, { t: 'pass' }, { t: 'pass', p: 1 }, d, tiny);
+  assert.equal(c.playedLabel, 'passed');
+  assert.ok(c.rating < 100);
+});
+
+test('the result report attributes plays, bingos and best words to the right seat', async () => {
+  const d = dict();
+  const rnd = C.seededRandom(31);
+  let s = C.newGame(3131);
+  let n = 0;
+  while (!s.over && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d), d);
+  const r = C.computeResult(s, d, null);
+  assert.equal(r.moves, s.moves.length);
+  assert.deepEqual([r.p0_score, r.p1_score], s.scores);
+  assert.equal(r.winner, C.winner(s));
+  for (const p of [0, 1]) {
+    const mine = s.history.filter((h) => h.p === p && h.t === 'play');
+    const st = r.stats['p' + p];
+    assert.equal(st.plays, mine.length);
+    assert.equal(st.points, mine.reduce((t, h) => t + h.score, 0));
+    assert.equal(st.bingos, mine.filter((h) => h.bingo).length);
+    assert.equal(st.best_score, Math.max(0, ...mine.map((h) => h.score)));
+  }
+  // the sliced form gives the same answer
+  const sliced = await C.computeResult(s, d, null, (go) => setTimeout(go, 0));
+  assert.deepEqual(sliced, r);
+});
