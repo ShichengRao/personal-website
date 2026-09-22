@@ -1251,7 +1251,7 @@
     authPanel.innerHTML = authRowHtml() + (user ? '<div class="sm-note">Your games, stats and friends follow this account to any device.</div>' : '<div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>');
     bindAuth(authPanel);
   }
-  function openMyProfile() { if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } }
+  function openMyProfile() { if (!user) return; if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } }
   function signInGoogle() {
     try { if (linkToken && linkGame) sessionStorage.setItem('sm.linkToken', JSON.stringify({ id: linkGame, token: linkToken })); } catch (e) { /* ignore */ }
     sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } });
@@ -1284,16 +1284,19 @@
     sb.auth.onAuthStateChange((event, session) => {
       const before = user && user.id;
       setUser(session && session.user);
+      const menuOpen = ui.overlay.classList.contains('is-open') && !!$('sm-m-hotseat');   // the card carries the account row: redraw it
       if (event === 'SIGNED_OUT') {
         // a shared device: the seats this browser opened while signed in must not stay playable.
         // Only a sign-out this person asked for does that; a session that merely expired keeps them.
         const asked = Date.now() - (store.get('sm.signout', 0) || 0) < 15000;
         if (asked) {
           for (const rec of games.list()) if (rec.kind === 'online') games.remove(rec.id);
-          if (G && G.kind === 'online') { leaveGame(); setUrl(null); showMenu(); }
-        } else if (G && G.kind === 'online') render();
+          if (G && G.kind === 'online') { leaveGame(); setUrl(null); showMenu(); return; }
+        }
+        if (menuOpen) showMenu(); else if (G) render();
         return;
       }
+      if (menuOpen && (user && user.id) !== before) showMenu();
       if (user && user.id !== before) attachSeats();
       if (G && G.kind === 'online') syncOnline();
     });
