@@ -466,56 +466,58 @@
   // heuristic, but it is what separates "the highest score" from "the best
   // play": dumping a Q for 11 beats a 14 that keeps the Q.
   // Fitted to leave values that MAGPIE's leavegen produced for this exact
-  // board and tile set (three generations, 3.3 million self-play games), by
-  // least squares over singles, pairs and skew: tools/scrabble-mod-lab.mjs
-  // fitklv, output in tools/leaves-gen3.json. Against the hand-written table
-  // the generation-1 fit won a 600-game arena 55.3%; the generation-3 fit
-  // plays it level but agrees with MAGPIE's own ranking far more often
-  // (top play 85%, top three 97%). Duplicates are handled by the pair terms.
-  const LEAVE = { '?': 21.2, A: -0.7, B: -0.3, C: -0.7, D: -1, E: 0.4, F: -3.1, G: 0.1, H: -2.3, I: -2.4, J: 3.2, K: 1.9, L: 0.6, M: -0.8, N: -1, O: -2.5, P: -1.6, Q: -10.2, R: -0.3, S: 5.3, T: -1.7, U: -2.2, V: -1.9, W: -0.7, X: 2.7, Y: -0.2, Z: 4.4 };
-  const LEAVE_TUNE = { dup: 0, blankDup: 0, skew: -0.2 };
+  // board, tile set and word list (three generations, 2 million self-play
+  // games, regenerated after the NWL short words such as QI and ZA joined
+  // the list, which took the Q from -10 to -7 kept), by least squares over
+  // singles, pairs and skew: tools/scrabble-mod-lab.mjs fitklv, output in
+  // tools/leaves-gen3.json. Against the hand-written table the first such
+  // fit won a 600-game arena 55.3%; this one beats the previous fit 51.6%
+  // over 1,000 games and agrees with MAGPIE's own ranking on the top play
+  // about 85% of the time. Duplicates are handled by the pair terms.
+  const LEAVE = { '?': 21, A: -0.7, B: -0.5, C: -0.8, D: -1, E: 0.5, F: -3, G: 0.2, H: -2.6, I: -2.1, J: 3, K: 2.4, L: 0.5, M: -0.9, N: -1.2, O: -2.5, P: -1.6, Q: -7.4, R: -0.4, S: 5.2, T: -1.8, U: -2.5, V: -2.2, W: -0.5, X: 2.3, Y: -0.4, Z: 5.4 };
+  const LEAVE_TUNE = { dup: 0, blankDup: 0, skew: -0.1 };
   // Pair synergies, keyed by the two tiles in order ('?' first, then A-Z):
   // what holding both is worth beyond the two singles (QU is the classic;
   // doubled letters are the big negatives).
   const LEAVE2 = {
-    '??': -4.2, '?A': 1, '?B': -0.7, '?D': -0.6, '?E': 1.2, '?F': -1.2, '?G': -0.4, '?H': -0.7, '?I': 1.1,
-    '?J': -1.6, '?K': -0.8, '?L': 0.4, '?M': -0.7, '?O': 0.7, '?P': -0.8, '?Q': -2, '?V': -1.9, '?W': -1.6,
-    '?X': -2.2, '?Y': -0.8, '?Z': -0.9, 'AA': -5.1, 'AB': 1.4, 'AC': 1.3, 'AD': 1, 'AE': -0.7, 'AF': 0.6,
-    'AG': 1.3, 'AH': 1.1, 'AI': -0.9, 'AJ': 2.2, 'AK': 1.2, 'AL': 1.7, 'AM': 1.8, 'AN': 1.3, 'AO': -1.7, 'AP': 1,
-    'AQ': 1.9, 'AR': 1.5, 'AS': 1.1, 'AT': 1.3, 'AU': -1, 'AV': 1.9, 'AW': 1.4, 'AX': 1.7, 'AZ': 1.9, 'BB': -2.8,
-    'BC': -1.3, 'BD': -1, 'BE': 1, 'BF': -1.3, 'BG': -1.3, 'BH': -1.1, 'BI': 0.9, 'BK': -0.6, 'BM': -0.7,
-    'BN': -1.2, 'BO': 1.9, 'BP': -2.5, 'BQ': -1, 'BS': -0.8, 'BT': -1.1, 'BU': 1.6, 'BV': -2, 'BW': -1.1,
-    'BX': -1.1, 'BY': 0.6, 'BZ': -0.8, 'CC': -5.8, 'CD': -1.3, 'CE': 0.6, 'CF': -1.1, 'CG': -2.6, 'CH': 1.8,
-    'CI': 1.3, 'CJ': -2, 'CK': 2.5, 'CL': -0.6, 'CM': -1, 'CN': -0.8, 'CO': 1.4, 'CP': -1, 'CQ': -1.6,
-    'CR': -0.5, 'CS': -0.9, 'CT': -0.7, 'CU': 0.8, 'CV': -1.4, 'CW': -1.6, 'CX': -1.3, 'CZ': -1.9, 'DD': -4.1,
-    'DE': 2.5, 'DF': -0.8, 'DG': -1, 'DH': -0.9, 'DI': 1.3, 'DJ': -1, 'DK': -1.2, 'DL': -1.1, 'DM': -1.2,
-    'DN': -0.8, 'DO': 1.3, 'DP': -1.3, 'DQ': -0.6, 'DR': -0.9, 'DS': -1.3, 'DT': -1.5, 'DU': 0.8, 'DV': -1.1,
-    'DX': -1.2, 'DZ': -1.1, 'EE': -4.5, 'EF': 0.5, 'EG': 0.4, 'EH': 0.4, 'EI': -0.6, 'EJ': 1.2, 'EK': 1,
-    'EL': 1.4, 'EM': 0.6, 'EN': 0.8, 'EO': -1, 'EP': 0.9, 'EQ': -0.7, 'ER': 2.2, 'ES': 1.5, 'ET': 1.3,
-    'EU': -0.7, 'EV': 2.1, 'EW': 0.9, 'EX': 1.7, 'EY': -0.5, 'EZ': 1.6, 'FF': 1.6, 'FG': -0.9, 'FH': -0.8,
-    'FI': 1.4, 'FJ': -0.9, 'FK': -1, 'FL': 0.3, 'FM': -1.4, 'FN': -1.1, 'FO': 1, 'FP': -1.7, 'FS': -0.8,
-    'FT': -0.4, 'FU': 1.5, 'FV': -1.7, 'FW': -0.5, 'FY': 0.4, 'FZ': -0.3, 'GG': -3.1, 'GH': -0.4, 'GI': 1.8,
-    'GJ': -0.7, 'GK': -2.1, 'GL': -0.5, 'GM': -1, 'GN': 1.4, 'GO': 1.1, 'GP': -1.5, 'GQ': -1.3, 'GR': -0.5,
-    'GS': -0.9, 'GT': -1.5, 'GU': 1.4, 'GV': -1.1, 'GW': -0.9, 'GX': -2, 'GY': 0.7, 'GZ': -1.3, 'HH': -4.5,
-    'HI': 0.3, 'HJ': -0.8, 'HK': -0.3, 'HL': -1, 'HN': -0.9, 'HO': 0.9, 'HP': 0.4, 'HR': -0.9, 'HS': 0.3,
-    'HT': 0.5, 'HU': 0.3, 'HV': -1.3, 'HW': 1.2, 'HX': -1, 'HY': 0.3, 'HZ': -0.8, 'II': -5.9, 'IJ': 0.6,
-    'IK': 0.9, 'IL': 1.3, 'IM': 1.5, 'IN': 2.6, 'IO': -1.3, 'IP': 1.1, 'IQ': 0.8, 'IR': 0.6, 'IS': 1.3,
-    'IT': 1.3, 'IU': -1.6, 'IV': 2.2, 'IX': 1.8, 'IY': -0.9, 'IZ': 2.1, 'JL': -1.5, 'JM': -0.8, 'JN': -0.5,
-    'JO': 2.1, 'JP': -1.2, 'JQ': -0.5, 'JR': -1.5, 'JS': -1, 'JT': -0.8, 'JU': 2.3, 'JV': -1.3, 'JW': -0.3,
-    'JX': -1, 'JZ': -2.1, 'KL': -0.7, 'KM': -1.4, 'KO': 1.1, 'KP': -0.8, 'KQ': -0.3, 'KR': -0.5, 'KT': -1.6,
-    'KU': 0.9, 'KV': -2, 'KX': -1.8, 'KY': 0.6, 'KZ': -1.5, 'LL': -4.5, 'LM': -1.1, 'LN': -1.6, 'LO': 1.1,
-    'LP': -0.5, 'LQ': -1.8, 'LR': -2, 'LS': -0.7, 'LT': -1.1, 'LU': 1.1, 'LV': -0.6, 'LW': -0.4, 'LX': -0.9,
-    'LY': 1.5, 'LZ': -1.6, 'MM': -3.8, 'MN': -1.1, 'MO': 1.5, 'MP': -0.4, 'MQ': -1.2, 'MR': -0.7, 'MS': -0.4,
-    'MT': -1.2, 'MU': 1.4, 'MV': -1.8, 'MW': -1.1, 'MX': -0.6, 'MY': 0.8, 'MZ': -1.1, 'NN': -4.9, 'NO': 1.2,
-    'NP': -1.2, 'NQ': -1.3, 'NR': -1.5, 'NS': -0.9, 'NT': -0.7, 'NU': 0.8, 'NV': -1.2, 'NX': -1, 'NY': 0.3,
-    'NZ': -1.1, 'OO': -4, 'OP': 1.3, 'OR': 1.1, 'OS': 0.9, 'OT': 1, 'OU': -1, 'OV': 1, 'OW': 1.8, 'OX': 2.1,
-    'OY': 0.6, 'OZ': 2.3, 'PP': -3.6, 'PT': -0.6, 'PU': 1, 'PV': -1.9, 'PW': -1, 'PX': -0.3, 'PY': 1.3, 'PZ': -1,
-    'QR': -1.4, 'QS': -1.4, 'QT': 0.3, 'QU': 10.9, 'QV': -0.3, 'QX': 0.3, 'RR': -5.4, 'RS': -0.6, 'RT': -0.3,
-    'RU': 0.7, 'RV': -0.4, 'RW': -0.3, 'RX': -1.7, 'RY': 0.3, 'RZ': -1.1, 'SS': -5.9, 'SU': 1.2, 'SV': -1.2,
-    'SW': -0.4, 'SX': -1.8, 'SY': -0.6, 'SZ': -1.8, 'TT': -4.2, 'TU': 1, 'TV': -1.3, 'TW': -0.8, 'TX': -0.7,
-    'TZ': -0.9, 'UU': -7.3, 'UW': -1.6, 'UX': 0.7, 'UY': -0.6, 'UZ': -0.3, 'VV': -3.7, 'VW': -0.8, 'VX': -0.6,
-    'VY': 0.4, 'VZ': -2.3, 'WW': -5, 'WX': -1, 'WY': 0.7, 'WZ': -1.4, 'XY': 0.5, 'XZ': -1.7, 'YY': -6.5,
-    'YZ': 0.4
+    '??': -4.2, '?A': 0.9, '?B': -0.7, '?D': -0.5, '?E': 1.2, '?F': -1.2, '?G': -0.4, '?H': -0.7, '?I': 1.1,
+    '?J': -1.6, '?K': -0.9, '?L': 0.4, '?M': -0.7, '?O': 0.7, '?P': -0.8, '?Q': -1.9, '?V': -1.9, '?W': -1.6,
+    '?X': -2.1, '?Y': -0.8, '?Z': -0.9, 'AA': -5.2, 'AB': 1.5, 'AC': 1.3, 'AD': 1.1, 'AE': -0.8, 'AF': 0.7,
+    'AG': 1.4, 'AH': 1.1, 'AI': -1, 'AJ': 2.2, 'AK': 1.4, 'AL': 1.7, 'AM': 1.8, 'AN': 1.3, 'AO': -1.8, 'AP': 1.1,
+    'AQ': 2, 'AR': 1.5, 'AS': 1.1, 'AT': 1.3, 'AU': -1, 'AV': 1.9, 'AW': 1.4, 'AX': 1.7, 'AZ': 2.2, 'BB': -2.9,
+    'BC': -1.4, 'BD': -1.1, 'BE': 1, 'BF': -1.4, 'BG': -1.4, 'BH': -1.1, 'BI': 0.9, 'BK': -0.6, 'BM': -0.7,
+    'BN': -1.2, 'BO': 1.9, 'BP': -2.5, 'BQ': -1.1, 'BS': -0.8, 'BT': -1.1, 'BU': 1.7, 'BV': -2, 'BW': -1.1,
+    'BX': -1.1, 'BY': 0.6, 'BZ': -0.9, 'CC': -5.8, 'CD': -1.3, 'CE': 0.6, 'CF': -1.2, 'CG': -2.6, 'CH': 1.8,
+    'CI': 1.3, 'CJ': -2, 'CK': 2.3, 'CL': -0.6, 'CM': -1, 'CN': -0.8, 'CO': 1.4, 'CP': -1, 'CQ': -1.8,
+    'CR': -0.5, 'CS': -0.9, 'CT': -0.7, 'CU': 0.9, 'CV': -1.4, 'CW': -1.6, 'CX': -1.3, 'CZ': -1.7, 'DD': -4.2,
+    'DE': 2.6, 'DF': -0.9, 'DG': -1.1, 'DH': -0.9, 'DI': 1.3, 'DJ': -1, 'DK': -1.3, 'DL': -1.1, 'DM': -1.3,
+    'DN': -0.8, 'DO': 1.3, 'DP': -1.3, 'DQ': -0.8, 'DR': -0.9, 'DS': -1.4, 'DT': -1.6, 'DU': 0.9, 'DV': -1.1,
+    'DW': -0.3, 'DX': -1.2, 'DZ': -1.2, 'EE': -4.6, 'EF': 0.6, 'EG': 0.5, 'EH': 0.4, 'EI': -0.6, 'EJ': 1.3,
+    'EK': 1.1, 'EL': 1.4, 'EM': 0.7, 'EN': 0.9, 'EO': -1, 'EP': 0.9, 'EQ': -0.7, 'ER': 2.3, 'ES': 1.5, 'ET': 1.3,
+    'EU': -0.8, 'EV': 2.1, 'EW': 0.9, 'EX': 1.8, 'EY': -0.5, 'EZ': 1.7, 'FF': 1.5, 'FG': -1, 'FH': -0.8,
+    'FI': 1.4, 'FJ': -1, 'FK': -1, 'FL': 0.3, 'FM': -1.4, 'FN': -1.2, 'FO': 1, 'FP': -1.8, 'FQ': -0.5,
+    'FS': -0.9, 'FT': -0.4, 'FU': 1.6, 'FV': -1.7, 'FW': -0.6, 'FY': 0.3, 'FZ': -0.3, 'GG': -3.2, 'GH': -0.4,
+    'GI': 1.8, 'GJ': -0.6, 'GK': -2.2, 'GL': -0.6, 'GM': -1.1, 'GN': 1.3, 'GO': 1.2, 'GP': -1.5, 'GQ': -1.6,
+    'GR': -0.6, 'GS': -1, 'GT': -1.5, 'GU': 1.5, 'GV': -1.1, 'GW': -0.9, 'GX': -2.1, 'GY': 0.8, 'GZ': -1.3,
+    'HH': -4.5, 'HI': 0.3, 'HJ': -0.8, 'HK': -0.4, 'HL': -1.1, 'HN': -0.9, 'HO': 0.9, 'HP': 0.4, 'HQ': -0.4,
+    'HR': -0.9, 'HT': 0.5, 'HU': 0.4, 'HV': -1.3, 'HW': 1.2, 'HX': -1, 'HY': 0.4, 'HZ': -0.9, 'II': -6,
+    'IJ': 0.6, 'IK': 1, 'IL': 1.3, 'IM': 1.5, 'IN': 2.6, 'IO': -1.4, 'IP': 1.1, 'IQ': 2.6, 'IR': 0.7, 'IS': 1.4,
+    'IT': 1.3, 'IU': -1.9, 'IV': 2.2, 'IX': 1.8, 'IY': -0.9, 'IZ': 2, 'JL': -1.5, 'JM': -0.8, 'JN': -0.5,
+    'JO': 2.1, 'JP': -1.2, 'JQ': -0.9, 'JR': -1.6, 'JS': -1, 'JT': -0.8, 'JU': 2.5, 'JV': -1.3, 'JW': -0.4,
+    'JX': -1, 'JZ': -2, 'KL': -0.8, 'KM': -1.5, 'KO': 1.2, 'KP': -0.8, 'KQ': -0.6, 'KR': -0.6, 'KT': -1.6,
+    'KU': 0.9, 'KV': -2, 'KX': -1.9, 'KY': 0.6, 'KZ': -1.6, 'LL': -4.6, 'LM': -1.1, 'LN': -1.7, 'LO': 1.1,
+    'LP': -0.5, 'LQ': -1.8, 'LR': -2, 'LS': -0.7, 'LT': -1.1, 'LU': 1.2, 'LV': -0.7, 'LW': -0.4, 'LX': -0.9,
+    'LY': 1.5, 'LZ': -1.6, 'MM': -3.8, 'MN': -1.1, 'MO': 1.5, 'MP': -0.4, 'MQ': -1.6, 'MR': -0.7, 'MS': -0.5,
+    'MT': -1.2, 'MU': 1.5, 'MV': -1.8, 'MW': -1.1, 'MX': -0.6, 'MY': 0.8, 'MZ': -1.2, 'NN': -4.9, 'NO': 1.2,
+    'NP': -1.2, 'NQ': -1.5, 'NR': -1.5, 'NS': -0.9, 'NT': -0.7, 'NU': 0.8, 'NV': -1.2, 'NW': -0.3, 'NX': -1,
+    'NY': 0.3, 'NZ': -1, 'OO': -4, 'OP': 1.3, 'OR': 1.1, 'OS': 1, 'OT': 1, 'OU': -1.1, 'OV': 1, 'OW': 1.9,
+    'OX': 2, 'OY': 0.6, 'OZ': 2.2, 'PP': -3.6, 'PQ': -0.6, 'PT': -0.7, 'PU': 1.1, 'PV': -1.9, 'PW': -1,
+    'PX': -0.3, 'PY': 1.3, 'PZ': -1, 'QR': -1.5, 'QS': -1.1, 'QU': 9.5, 'QV': -0.8, 'QW': -0.3, 'QX': -0.4,
+    'QZ': -0.4, 'RR': -5.4, 'RS': -0.6, 'RT': -0.3, 'RU': 0.7, 'RV': -0.4, 'RW': -0.3, 'RX': -1.8, 'RY': 0.3,
+    'RZ': -1.1, 'SS': -5.8, 'SU': 1.2, 'SV': -1.2, 'SW': -0.5, 'SX': -1.8, 'SY': -0.6, 'SZ': -1.8, 'TT': -4.2,
+    'TU': 1.1, 'TV': -1.4, 'TW': -0.8, 'TX': -0.7, 'TZ': -1, 'UU': -7.1, 'UW': -1.5, 'UX': 0.7, 'UY': -0.6,
+    'VV': -3.7, 'VW': -0.8, 'VX': -0.5, 'VY': 0.4, 'VZ': -2.3, 'WW': -5.1, 'WX': -1.2, 'WY': 0.7, 'WZ': -1.4,
+    'XY': 0.6, 'XZ': -1.7, 'YY': -6.6
   };
   const pairKey = (a, b) => (a <= b ? a + b : b + a);
   // The features leaveValue scores: letter counts, pairs, duplicates, skew.
