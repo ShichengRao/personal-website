@@ -44,7 +44,7 @@ function useLeaves(l) { Object.assign(C.LEAVE, l.table); Object.assign(C.LEAVE_T
 // ---- worker side -----------------------------------------------------------
 if (!isMainThread) {
   const dict = C.buildDict(readFileSync(join(root, 'static', 'scrabble-mod', 'words.txt'), 'utf8'));
-  const { job, seed, games, a, b } = workerData;
+  const { job, seed, games, offset, a, b } = workerData;
   const rnd = C.seededRandom(seed);
   const bots = [a, b].map((spec) => spec && parseProfile(spec));
   const out = [];
@@ -52,7 +52,7 @@ if (!isMainThread) {
   let moves = 0;
   const t0 = Date.now();
   for (let g = 0; g < games; g++) {
-    const first = job === 'arena' ? g % 2 : 0;       // who plays as bot A
+    const first = job === 'arena' ? (offset + g) % 2 : 0;   // who plays as bot A: alternates over the whole run, not per worker
     let s = C.newGame(Math.floor(rnd() * 0x7fffffff) || 1);
     const pendingSample = [null, null];               // per player: feature vector waiting for its next score
     let n = 0;
@@ -80,7 +80,7 @@ if (!isMainThread) {
     if (job === 'arena') {
       const w = C.winner(s);
       const aIdx = first, bIdx = 1 - first;
-      out.push({ winner: w === -1 ? 'tie' : w === aIdx ? 'A' : 'B', margin: s.scores[aIdx] - s.scores[bIdx], firstWon: w === -1 ? null : w === 0 });
+      out.push({ winner: w === -1 ? 'tie' : w === aIdx ? 'A' : 'B', margin: s.scores[aIdx] - s.scores[bIdx], firstWon: w === -1 ? null : w === 0, aFirst: first === 0 });
     }
   }
   parentPort.postMessage({ out, samples, moves, ms: Date.now() - t0 });
@@ -91,7 +91,7 @@ function run(job, games, a, b) {
   const workers = Math.max(1, Math.min(cpus().length - 2, games));   // leave two cores for the rest of the machine
   const per = Math.ceil(games / workers);
   return Promise.all(Array.from({ length: workers }, (_, i) => new Promise((resolve, reject) => {
-    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { job, seed: 1000 + i * 7919, games: Math.min(per, games - i * per), a, b } });
+    const w = new Worker(fileURLToPath(import.meta.url), { workerData: { job, seed: 1000 + i * 7919, games: Math.min(per, games - i * per), offset: i * per, a, b } });
     w.on('message', resolve); w.on('error', reject);
   })));
 }
@@ -106,7 +106,8 @@ async function arena(a, b, games) {
   const n = all.length, pa = wins.A / n, se = Math.sqrt(pa * (1 - pa) / n);
   console.log(`${a}  vs  ${b}: ${n} games in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   console.log(`  A wins ${wins.A} (${(pa * 100).toFixed(1)}% ± ${(se * 196).toFixed(1)}), B wins ${wins.B}, ties ${wins.tie}`);
-  console.log(`  A's average margin ${(margin / n).toFixed(1)} points; first mover won ${(firstWins / decided * 100).toFixed(1)}% of decided games`);
+  const aStarts = all.filter((g) => g.aFirst).length;
+  console.log(`  A's average margin ${(margin / n).toFixed(1)} points; A started ${aStarts} of ${n}; first mover won ${(firstWins / decided * 100).toFixed(1)}% of decided games`);
 }
 
 // Least squares: next-turn score ~ intercept + letter counts + duplicates + skew.

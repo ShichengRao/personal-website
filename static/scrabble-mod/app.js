@@ -172,7 +172,7 @@
     const used = new Set(pending.map((t) => t.ri));
     let html = '';
     for (let i = 0; i < C.RACK; i++) {
-      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : '', drag && drag.active && drag.src.kind === 'rack' && drag.src.i === i ? 'lifted' : ''].join(' ').trim();
+      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : ''].join(' ').trim();
       const t = rack[i];
       // while hidden between pass-and-play turns, show anonymous backs: the letters must not reach the page at all
       const inner = G.hidden ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
@@ -341,8 +341,14 @@
   // A tile lifted from the rack (or a placed tile) follows the finger. While
   // it is over the rack band the other tiles slide out of its way live, so
   // dropping anywhere in the band reorders the rack; over an empty square it
-  // is placed. The band is generous above and below the rack.
-  let drag = null;   // { src: {kind:'rack', i} | {kind:'pending', pi}, x, y, active, ghost, over, pointerId }
+  // is placed. The band is generous above and below the rack, but a real
+  // square always wins over it.
+  //
+  // Nothing under the finger is re-rendered while a drag is in progress:
+  // touch browsers drop the pointer stream when its target leaves the DOM,
+  // so the rack is rearranged by moving its tile nodes, and the full render
+  // waits for the release.
+  let drag = null;   // { src: {kind:'rack', i} | {kind:'pending', pi}, x, y, active, ghost, over, pointerId, lifted }
   const BAND = 70;
   function rackBand(x, y) {
     const r = ui.rack.getBoundingClientRect();
@@ -360,88 +366,108 @@
     if (cell && ui.board.contains(cell)) return { kind: 'cell', el: cell, i: +cell.dataset.i };
     return null;
   }
-  // Slide the rack's tiles from where they were to where they are now.
-  function animateRack(order) {
-    const slots = [...ui.rack.querySelectorAll('.sm-slot')];
-    slots.forEach((slot, j) => {
-      const tile = slot.querySelector('.sm-tile');
-      if (!tile || order[j] === undefined || order[j] === j) return;
-      const from = slots[order[j]].getBoundingClientRect(), to = slot.getBoundingClientRect();
-      const dx = from.left - to.left;
-      if (!dx) return;
-      tile.style.transition = 'none';
-      tile.style.transform = 'translateX(' + dx + 'px)';
-      tile.getBoundingClientRect();
-      tile.style.transition = 'transform .16s ease-out';
-      tile.style.transform = '';
-    });
+  function setLifted(slot) {
+    if (drag && drag.lifted) drag.lifted.classList.remove('lifted');
+    if (slot) slot.classList.add('lifted');
+    if (drag) drag.lifted = slot;
   }
+  // Rearrange the rack's tile nodes to match a reorder and slide them over.
   function liveReorder(rack, from, to) {
-    const order = rack.map((_, i) => i);
+    const slots = [...ui.rack.querySelectorAll('.sm-slot')];
+    const tiles = slots.map((sl) => sl.querySelector('.sm-tile'));
+    const rects = tiles.map((t) => t && t.getBoundingClientRect());
+    const order = tiles.map((_, i) => i);
     const [m] = order.splice(from, 1);
-    order.splice(to, 0, m);
+    order.splice(to, 0, m);            // order[newIndex] = oldIndex
     reorderRack(rack, from, to);
-    renderRack();
-    animateRack(order);   // order[newIndex] = oldIndex
+    slots.forEach((slot, j) => {
+      const node = tiles[order[j]] || null;
+      const cur = slot.querySelector('.sm-tile');
+      if (cur && cur !== node && !tiles.includes(cur)) cur.remove();
+      if (node && node.parentNode !== slot) slot.appendChild(node);
+    });
+    slots.forEach((slot, j) => {
+      const node = tiles[order[j]];
+      const before = rects[order[j]];
+      if (!node || !before) return;
+      const dx = before.left - slot.getBoundingClientRect().left;
+      if (!dx) return;
+      node.style.transition = 'none';
+      node.style.transform = 'translateX(' + dx + 'px)';
+      node.getBoundingClientRect();
+      node.style.transition = 'transform .16s ease-out';
+      node.style.transform = '';
+    });
+    setLifted(slots[to]);
   }
   function endDrag(d) {
     if (d.ghost) d.ghost.remove();
     if (d.over) d.over.el.classList.remove('drop');
+    if (d.lifted) d.lifted.classList.remove('lifted');
+    if (d.hiddenNode) d.hiddenNode.style.visibility = '';
     drag = null;
   }
   function onPointerDown(e) {
-    if (!G || R || G.hidden || viewer() === null || swapMode || e.button !== 0 || pinch.size) return;
+    if (!G || R || G.hidden || viewer() === null || swapMode || e.button !== 0 || pinch.active) return;
     const tile = e.target.closest('.sm-tile');
     if (!tile) return;
     const slot = tile.closest('.sm-slot');
     let src = null;
-    if (slot && ui.rack.contains(slot)) src = { kind: 'rack', i: +slot.dataset.i };
+    if (slot && ui.rack.contains(slot)) src = { kind: 'rack', i: +slot.dataset.i, slot };
     else if (tile.classList.contains('pending')) {
       const cell = tile.closest('.sm-cell');
       const pi = pending.findIndex((t) => t.r * N + t.c === +cell.dataset.i);
       if (pi < 0 || !myTurn()) return;
-      src = { kind: 'pending', pi };
+      src = { kind: 'pending', pi, node: tile };
     }
     if (!src) return;
     if (src.kind === 'rack' && pending.some((t) => t.ri === src.i)) return;
-    drag = { src, x: e.clientX, y: e.clientY, active: false, ghost: null, over: null, pointerId: e.pointerId };
+    drag = { src, x: e.clientX, y: e.clientY, active: false, ghost: null, over: null, pointerId: e.pointerId, lifted: null, hiddenNode: null };
+  }
+  function activateDrag() {
+    const rack = G.state.racks[viewer()];
+    const t = drag.src.kind === 'rack' ? rack[drag.src.i] : pending[drag.src.pi].l;
+    const b = drag.src.kind === 'rack' ? t === '?' : pending[drag.src.pi].b;
+    const ghost = document.createElement('div');
+    ghost.className = 'sm-drag';
+    ghost.innerHTML = tileHtml(t === '?' ? '?' : t, b, '');
+    ui.app.appendChild(ghost);
+    drag.ghost = ghost;
+    drag.active = true;
+    if (drag.src.kind === 'rack') setLifted(drag.src.slot);
+    else { drag.hiddenNode = drag.src.node; drag.src.node.style.visibility = 'hidden'; }
+  }
+  // A placed tile carried into the rack becomes a rack tile mid-drag: the
+  // model changes now, the board cell only hides its node until the release.
+  function pendingToRack() {
+    const t = pending[drag.src.pi];
+    pending.splice(drag.src.pi, 1);
+    cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false };
+    draftChanged();
+    const slot = ui.rack.querySelectorAll('.sm-slot')[t.ri];
+    if (slot && !slot.querySelector('.sm-tile')) slot.innerHTML = tileHtml(t.b ? '?' : t.l, t.b, '');
+    drag.src = { kind: 'rack', i: t.ri, slot };
+    setLifted(slot);
   }
   function onPointerMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
-    if (pinch.size > 1) { endDrag(drag); render(); return; }
+    if (pinch.active) { endDrag(drag); render(); return; }
     const rack = G.state.racks[viewer()];
     if (!drag.active) {
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
-      drag.active = true;
-      const t = drag.src.kind === 'rack' ? rack[drag.src.i] : pending[drag.src.pi].l;
-      const b = drag.src.kind === 'rack' ? t === '?' : pending[drag.src.pi].b;
-      const ghost = document.createElement('div');
-      ghost.className = 'sm-drag';
-      ghost.innerHTML = tileHtml(t === '?' ? '?' : t, b, '');
-      ui.app.appendChild(ghost);
-      drag.ghost = ghost;
-      try { e.target.setPointerCapture(drag.pointerId); } catch (err) { /* fine */ }
-      render();
+      activateDrag();
     }
     e.preventDefault();
     drag.ghost.style.left = e.clientX + 'px';
     drag.ghost.style.top = e.clientY + 'px';
-    if (rackBand(e.clientX, e.clientY)) {
+    const target = dropTarget(e.clientX, e.clientY);
+    if (!target && rackBand(e.clientX, e.clientY)) {
       if (drag.over) { drag.over.el.classList.remove('drop'); drag.over = null; }
-      if (drag.src.kind === 'pending') {
-        // back into the rack: it becomes a rack tile and slides in where the finger is
-        const t = pending[drag.src.pi];
-        pending.splice(drag.src.pi, 1);
-        cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false };
-        draftChanged();
-        drag.src = { kind: 'rack', i: t.ri };
-        render();
-      }
+      if (drag.src.kind === 'pending') pendingToRack();
       const idx = slotIndexAt(e.clientX, rack.length);
       if (idx !== drag.src.i) { const from = drag.src.i; drag.src.i = idx; liveReorder(rack, from, idx); }
       return;
     }
-    const target = dropTarget(e.clientX, e.clientY);
     if (drag.over && (!target || drag.over.el !== target.el)) drag.over.el.classList.remove('drop');
     if (target && (!drag.over || drag.over.el !== target.el)) {
       const ok = myTurn() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i);
@@ -454,16 +480,16 @@
     const d = drag;
     if (!d.active && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) { drag = null; return; }   // a plain click; the click handlers take it
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
-    endDrag(d);
+    if (!d.active) activateDrag();   // a press-and-release jump with no moves between (some pointers do that)
     const rack = G.state.racks[viewer()];
-    if (rackBand(e.clientX, e.clientY)) {
-      // a press-and-release jump with no moves in between (some pointers do that): settle it here
-      if (d.src.kind === 'pending') { const t = pending[d.src.pi]; pending.splice(d.src.pi, 1); cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false }; draftChanged(); d.src = { kind: 'rack', i: t.ri }; }
+    const target = dropTarget(e.clientX, e.clientY);
+    if (!target && rackBand(e.clientX, e.clientY)) {
+      if (d.src.kind === 'pending') pendingToRack();
       const idx = slotIndexAt(e.clientX, rack.length);
       if (idx !== d.src.i) reorderRack(rack, d.src.i, idx);
-      render(); return;
+      endDrag(d); render(); return;
     }
-    const target = dropTarget(e.clientX, e.clientY);
+    endDrag(d);
     if (!target || !myTurn()) { render(); return; }
     const r = Math.floor(target.i / N), c = target.i % N;
     if (G.state.board[target.i] || pending.some((t) => t.r === r && t.c === c)) { render(); return; }
@@ -487,34 +513,31 @@
 
   // ---- pinch to zoom the board ---------------------------------------------------
   // Two fingers on the board frame scale it between 1x and 3x around the
-  // pinch midpoint; the frame's touch-action leaves single-finger scrolling
-  // to the browser and keeps its page zoom out of it.
-  const pinch = new Map();
-  let pinchStart = null;
-  ui.wrap.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch') return;
-    pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinch.size === 2) {
-      const [a, b] = [...pinch.values()];
-      pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
-      if (drag) { endDrag(drag); render(); }
-    }
-  }, true);
-  ui.wrap.addEventListener('pointermove', (e) => {
-    if (!pinch.has(e.pointerId)) return;
-    pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinch.size !== 2 || !pinchStart) return;
+  // pinch midpoint. Touch events rather than pointer events: preventDefault
+  // on touchmove is what actually stops the frame and the page scrolling
+  // under the gesture, and updates are applied once per frame.
+  const pinch = { active: false, dist: 0, zoom: 1, next: null, raf: 0 };
+  const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  ui.wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 2) return;
+    if (drag) { endDrag(drag); render(); }
+    pinch.active = true; pinch.dist = touchDist(e.touches); pinch.zoom = zoom;
     e.preventDefault();
-    const [a, b] = [...pinch.values()];
-    const dist = Math.hypot(a.x - b.x, a.y - b.y);
-    const next = Math.max(1, Math.min(3, pinchStart.zoom * dist / pinchStart.dist));
-    const wr = ui.wrap.getBoundingClientRect();
-    const mx = (a.x + b.x) / 2 - wr.left, my = (a.y + b.y) / 2 - wr.top;
-    setZoom(next, mx, my, false);
   }, { passive: false });
-  const pinchEnd = (e) => { if (!pinch.has(e.pointerId)) return; pinch.delete(e.pointerId); if (pinch.size < 2) { pinchStart = null; store.set('sm.zoom', zoom); } };
-  ui.wrap.addEventListener('pointerup', pinchEnd, true);
-  ui.wrap.addEventListener('pointercancel', pinchEnd, true);
+  ui.wrap.addEventListener('touchmove', (e) => {
+    if (!pinch.active || e.touches.length !== 2) return;
+    e.preventDefault();
+    const wr = ui.wrap.getBoundingClientRect();
+    pinch.next = {
+      zoom: pinch.zoom * touchDist(e.touches) / pinch.dist,
+      fx: (e.touches[0].clientX + e.touches[1].clientX) / 2 - wr.left,
+      fy: (e.touches[0].clientY + e.touches[1].clientY) / 2 - wr.top
+    };
+    if (!pinch.raf) pinch.raf = requestAnimationFrame(() => { pinch.raf = 0; if (pinch.next) setZoom(pinch.next.zoom, pinch.next.fx, pinch.next.fy, false); });
+  }, { passive: false });
+  const pinchEnd = (e) => { if (pinch.active && e.touches.length < 2) { pinch.active = false; pinch.next = null; store.set('sm.zoom', zoom); } };
+  ui.wrap.addEventListener('touchend', pinchEnd);
+  ui.wrap.addEventListener('touchcancel', pinchEnd);
 
   // ---- keyboard ------------------------------------------------------------------
   document.addEventListener('keydown', (e) => {
