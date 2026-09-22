@@ -71,10 +71,11 @@
   // dict: every legal word. common: the words most people know, which the
   // easy and medium bots are limited to and which the review rates against.
   let dict = null, common = null;
+  let dictFailed = false;
   const dictReady = fetch(BASE + 'words.txt')
     .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
     .then((t) => { dict = C.buildDict(t); })
-    .catch((e) => { setStatus('The word list failed to load (' + e.message + '). Reload to try again.', 'bad'); });
+    .catch((e) => { dictFailed = true; setStatus('The word list failed to load (' + e.message + '). Reload to try again.', 'bad'); if (ui.overlay.classList.contains('is-open') && $('sm-m-hotseat')) showMenu(); });
   const commonReady = fetch(BASE + 'common.txt')
     .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
     .then((t) => { common = C.buildDict(t); })
@@ -109,7 +110,7 @@
     stickyError = kind === 'bad' ? text : null;
   }
   function draftChanged() { stickyError = null; }
-  function resetTurnUi() { pending = []; sel = -1; cursor = null; swapMode = false; marks = new Set(); stickyError = null; }
+  function resetTurnUi() { if (drag && drag.src && drag.src.kind === 'pending') endDrag(drag); pending = []; sel = -1; cursor = null; swapMode = false; marks = new Set(); stickyError = null; }
   function leaveGame() {
     clearTimeout(botTimer); botTimer = null;
     stopPolling();
@@ -155,7 +156,10 @@
       else if (g) html = tileHtml(g.l, g.b, 'ghost');
       else if (p) html = tileHtml(p.l, p.b, 'pending');
       else html = bonus === '*' ? '' : esc(bonus);
-      if (cellHtml[i] !== html) { d.innerHTML = html; cellHtml[i] = html; }
+      if (cellHtml[i] !== html) {
+        if (drag && drag.active && drag.hiddenNode && d.contains(drag.hiddenNode)) { boardDirty = true; continue; }   // the node under the finger stays until release
+        d.innerHTML = html; cellHtml[i] = html;
+      }
       const isCur = !!cursor && cursor.r * N + cursor.c === i && myTurn();
       d.classList.toggle('cursor', isCur);
       d.classList.toggle('down', isCur && cursor.down);
@@ -173,7 +177,7 @@
     const p = viewer();
     return p === null ? [] : G.state.racks[p];
   }
-  let rackDirty = false;   // a render was skipped mid-drag; redo it at release
+  let rackDirty = false, boardDirty = false;   // a render was skipped mid-drag; redo it at release
   function renderRack() {
     if (drag && drag.active) { rackDirty = true; return; }
     const rack = rackShown();
@@ -392,10 +396,10 @@
   }
   // Rearrange the rack's tile nodes to match a reorder and slide them over.
   function liveReorder(rack, from, to) {
-    const slots = [...ui.rack.querySelectorAll('.sm-slot')];
+    const slots = [...ui.rack.querySelectorAll('.sm-slot')].slice(0, rack.length);
     const tiles = slots.map((sl) => sl.querySelector('.sm-tile'));
     const rects = tiles.map((t) => t && t.getBoundingClientRect());
-    const order = tiles.map((_, i) => i);
+    const order = rack.map((_, i) => i);   // over the rack's own length: an endgame rack is shorter than the seven slots
     const [m] = order.splice(from, 1);
     order.splice(to, 0, m);            // order[newIndex] = oldIndex
     permuteRack(rack, order);
@@ -425,7 +429,7 @@
     if (d.lifted) d.lifted.classList.remove('lifted');
     if (d.hiddenNode) d.hiddenNode.style.visibility = '';
     drag = null;
-    if (rackDirty) { rackDirty = false; renderRack(); }
+    if (rackDirty || boardDirty) { rackDirty = boardDirty = false; if (G) render(); }
   }
   function onPointerDown(e) {
     if (drag) { endDrag(drag); render(); }   // a drag whose release never arrived
@@ -462,6 +466,7 @@
   // model changes now, the board cell only hides its node until the release.
   function pendingToRack() {
     const t = pending[drag.src.pi];
+    if (!t) { endDrag(drag); render(); return; }
     pending.splice(drag.src.pi, 1);
     cursor = { r: t.r, c: t.c, down: cursor ? cursor.down : false };
     draftChanged();
@@ -484,7 +489,7 @@
     const target = dropTarget(e.clientX, e.clientY);
     if (!target && rackBand(e.clientX, e.clientY)) {
       if (drag.over) { drag.over.el.classList.remove('drop'); drag.over = null; }
-      if (drag.src.kind === 'pending') pendingToRack();
+      if (drag.src.kind === 'pending') { pendingToRack(); if (!drag) return; }
       const idx = slotIndexAt(e.clientX, rack.length);
       if (idx !== drag.src.i) { const from = drag.src.i; drag.src.i = idx; liveReorder(rack, from, idx); }
       return;
@@ -505,7 +510,7 @@
     const rack = G.state.racks[viewer()];
     const target = dropTarget(e.clientX, e.clientY);
     if (!target && rackBand(e.clientX, e.clientY)) {
-      if (d.src.kind === 'pending') pendingToRack();
+      if (d.src.kind === 'pending') { pendingToRack(); if (!drag) return; }
       const idx = slotIndexAt(e.clientX, rack.length);
       if (idx !== d.src.i) reorderRack(rack, d.src.i, idx);
       endDrag(d); render(); return;
@@ -514,8 +519,9 @@
     if (!target || !myTurn()) { render(); return; }
     const r = Math.floor(target.i / N), c = target.i % N;
     if (G.state.board[target.i] || pending.some((t) => t.r === r && t.c === c)) { render(); return; }
-    if (d.src.kind === 'rack') { place(r, c, d.src.i, rack[d.src.i] === '?'); return; }
+    if (d.src.kind === 'rack') { if (d.src.i < rack.length) place(r, c, d.src.i, rack[d.src.i] === '?'); else render(); return; }
     const t = pending[d.src.pi];
+    if (!t) { render(); return; }
     t.r = r; t.c = c;
     cursor = { r, c, down: cursor ? cursor.down : false };
     advance();
@@ -572,7 +578,7 @@
       return;
     }
     if (!myTurn() || swapMode) return;
-    if (e.key === 'Enter') { if (e.target && e.target.tagName === 'BUTTON') return; e.preventDefault(); play(); return; }
+    if (e.key === 'Enter') { if (e.target && /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return; e.preventDefault(); play(); return; }
     if (e.key === 'Escape') { recall(); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') { if (pending.length) { e.preventDefault(); backspace(); } return; }
     if (/^Arrow(Up|Down|Left|Right)$/.test(e.key) && cursor) {
@@ -967,11 +973,12 @@
   function showMenu() {
     setUrl(null);
     const list = games.list();
-    let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p><div class="sm-choices">' +
-      '<button data-bot="easy"><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
-      '<button data-bot="medium"><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
-      '<button data-bot="hard"><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
-      '<button id="sm-m-hotseat"><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
+    const noDict = dictFailed ? ' disabled' : '';
+    let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p>' + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
+      '<button data-bot="easy"' + noDict + '><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
+      '<button data-bot="medium"' + noDict + '><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
+      '<button data-bot="hard"' + noDict + '><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
+      '<button id="sm-m-hotseat"' + noDict + '><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
     if (list.length) {
@@ -998,8 +1005,11 @@
           const when = (m.finished || m.resigned) ? 'finished' : (m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player');
           h += '<button data-open="' + esc(m.id) + '"><b' + (when === 'your turn' ? ' class="now"' : '') + '>Online: ' + esc(who) + '</b> <small>' + esc(when) + ' · ' + esc(m.id) + '</small></button>';
         }
-        note.outerHTML = h + '</div>';
-        ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
+        const holder = document.createElement('div');
+        holder.innerHTML = h + '</div>';
+        const added = [...holder.querySelectorAll('button[data-open]')];
+        note.replaceWith(...holder.childNodes);
+        added.forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
       }).catch(() => { const note = $('sm-m-mine'); if (note) note.textContent = 'Could not look up your games.'; });
     }
     ui.overlay.querySelectorAll('button[data-bot]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); startLocal('bot', b.dataset.bot); }));
@@ -1138,6 +1148,15 @@
     renderAuth();
     if (user) loadProfile();
   }
+  // On sign-in, every seat this browser holds by link gets attached to the
+  // account (join_game is idempotent for a held seat), so the games follow
+  // the account to other devices without being reopened here first.
+  async function attachSeats() {
+    const name = store.get('sm.name', '') || (user && user.name) || 'Player';
+    for (const rec of games.list().filter((r) => r.kind === 'online' && r.online && r.online.token).slice(0, 30)) {
+      try { await Net.rpc('join_game', { p_code: rec.id, p_name: name, p_token: rec.online.token }); } catch (e) { /* finished or gone: nothing to attach */ }
+    }
+  }
   function loadProfile() {
     const id = user.id;
     Net.rpc('ensure_profile', { p_name: user.name }).then((p) => { if (user && user.id === id && p) { user.handle = p.handle; user.name = p.name; store.set('sm.name', p.name); renderAuth(); } }).catch(() => {});
@@ -1161,7 +1180,18 @@
   }
   if (sb) {
     sb.auth.getSession().then(({ data }) => setUser(data.session && data.session.user));
-    sb.auth.onAuthStateChange((_event, session) => { setUser(session && session.user); if (G && G.kind === 'online') syncOnline(); });
+    sb.auth.onAuthStateChange((event, session) => {
+      const before = user && user.id;
+      setUser(session && session.user);
+      if (event === 'SIGNED_OUT') {
+        // a shared device: the seats this browser opened while signed in must not stay playable
+        for (const rec of games.list()) if (rec.kind === 'online') games.remove(rec.id);
+        if (G && G.kind === 'online') { leaveGame(); showMenu(); }
+        return;
+      }
+      if (user && user.id !== before) attachSeats();
+      if (G && G.kind === 'online') syncOnline();
+    });
   } else renderAuth();
 
   async function createOnline() {
@@ -1270,7 +1300,7 @@
     try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, C.unpack(G.id, moves[i].d), null); }
     catch (e) { setStatus('The game record no longer matches this page: ' + e.message, 'bad'); return; }
     const changed = s !== G.state;
-    if (changed) { G.state = s; extendReview(); resetTurnUi(); }
+    if (changed) { G.state = s; extendReview(); resetTurnUi(); setStatus(''); }
     persist();
     render();
     if (changed) afterMove();
@@ -1290,11 +1320,14 @@
     const old = G, my = ++navGen;
     let id = old.nextGame;
     if (!id) {
-      id = newId();
       setStatus('Starting the rematch…');
-      try { id = await Net.rpc('rematch', { p_old: old.id, p_token: old.online.token, p_new: id, p_seed: C.pack(id, randomSeed()) }); }
-      catch (e) { if (my !== navGen) return; setStatus('Could not start a rematch: ' + e.message, 'bad'); return; }
+      for (let attempt = 0; attempt < 5 && !id; attempt++) {
+        const fresh = newId();
+        try { id = await Net.rpc('rematch', { p_old: old.id, p_token: old.online.token, p_new: fresh, p_seed: C.pack(fresh, randomSeed()) }); }
+        catch (e) { if (my !== navGen) return; if (/taken/.test(e.message)) continue; setStatus('Could not start a rematch: ' + e.message, 'bad'); return; }
+      }
       if (my !== navGen) return;
+      if (!id) { setStatus('Could not find a free game id; try again.', 'bad'); return; }
     }
     games.put({ id, kind: 'online', names: [old.names[1], old.names[0]], seed: null, moves: [], over: false, online: { token: old.online.token, player: 1 - old.me } });
     openOnline(id);
@@ -1314,9 +1347,10 @@
       } catch (e) {
         if (my !== navGen) return;
         if (/taken/.test(e.message)) continue;
-        setStatus('Could not start the game: ' + e.message, 'bad'); return;
+        setStatus('Could not start the game: ' + e.message, 'bad'); if (!G) showMenu(); return;
       }
     }
+    setStatus('Could not find a free game id; try again.', 'bad'); if (!G) showMenu();
   }
   function startPolling() {
     stopPolling();
@@ -1353,12 +1387,13 @@
   const profileUrl = (handle) => location.origin + (LOCAL_HOST ? BASE + '?u=' + handle : BASE + 'u/' + handle);
   function statsOf(results) {
     const st = { games: results.length, wins: 0, losses: 0, ties: 0, best: 0, total: 0, plays: 0, points: 0, bingos: 0, brilliancies: 0, bestWord: null, bestWordScore: 0 };
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);   // whatever the server holds, only a number is ever shown
     for (const r of results) {
       if (r.won === true) st.wins++; else if (r.won === false) st.losses++; else st.ties++;
-      st.total += r.my_score; st.best = Math.max(st.best, r.my_score);
+      st.total += num(r.my_score); st.best = Math.max(st.best, num(r.my_score));
       const x = r.stats || {};
-      st.plays += x.plays || 0; st.points += x.points || 0; st.bingos += x.bingos || 0; st.brilliancies += x.brilliancies || 0;
-      if ((x.best_score || 0) > st.bestWordScore) { st.bestWordScore = x.best_score; st.bestWord = x.best_word; }
+      st.plays += num(x.plays); st.points += num(x.points); st.bingos += num(x.bingos); st.brilliancies += num(x.brilliancies);
+      if (num(x.best_score) > st.bestWordScore) { st.bestWordScore = num(x.best_score); st.bestWord = String(x.best_word || ''); }
     }
     return st;
   }
@@ -1370,11 +1405,11 @@
     try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
     if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
     const st = statsOf(pr.results);
-    const num = (v) => (Math.round(v * 10) / 10).toString();
+    const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : 0).toString();
     const records = {};
     for (const r of pr.results) {
       const k = r.their_handle || ('~' + r.their_name);
-      const rec = records[k] || (records[k] = { name: r.their_name, handle: r.their_handle, w: 0, l: 0, t: 0 });
+      const rec = records[k] || (records[k] = { name: String(r.their_name || ''), handle: r.their_handle ? String(r.their_handle) : null, w: 0, l: 0, t: 0 });
       if (r.won === true) rec.w++; else if (r.won === false) rec.l++; else rec.t++;
     }
     let html = '<h2>' + esc(pr.name) + '</h2><p>Friend code <span class="sm-code">' + esc(pr.handle) + '</span></p>' +
@@ -1399,7 +1434,7 @@
     if (pr.live) {
       html += '<div class="sm-k" style="text-align:left;margin-top:12px">Games in progress</div><div class="sm-summary">';
       if (!pr.live.length) html += '<div class="sm-note">None right now.</div>';
-      for (const g of pr.live) html += '<div data-g="' + esc(g.id) + '"><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span><small>' + plural(g.moves, 'move') + (pr.mine ? '' : ' · watch') + '</small></div>';
+      for (const g of pr.live) html += '<div data-g="' + esc(g.id) + '"><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span><small>' + plural(num(g.moves), 'move') + (pr.mine ? '' : ' · watch') + '</small></div>';
       html += '</div>';
     }
     if (pr.mine) {
@@ -1411,7 +1446,7 @@
     }
     if (pr.results.length) {
       html += '<div class="sm-k" style="text-align:left;margin-top:12px">Past games</div><div class="sm-summary">';
-      for (const r of pr.results.slice(0, 30)) html += '<div data-g="' + esc(r.game_id) + '"><span>' + (r.won === true ? 'Won' : r.won === false ? 'Lost' : 'Tied') + ' ' + r.my_score + '–' + r.their_score + ' vs ' + esc(r.their_name || 'a guest') + '</span><small>' + esc(new Date(r.finished_at).toLocaleDateString()) + '</small></div>';
+      for (const r of pr.results.slice(0, 30)) html += '<div data-g="' + esc(r.game_id) + '"><span>' + (r.won === true ? 'Won' : r.won === false ? 'Lost' : 'Tied') + ' ' + num(r.my_score) + '–' + num(r.their_score) + ' vs ' + esc(r.their_name || 'a guest') + '</span><small>' + esc(new Date(r.finished_at).toLocaleDateString()) + '</small></div>';
       html += '</div>';
     }
     html += '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-pr-close">Close</button></div>';

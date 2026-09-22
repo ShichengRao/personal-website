@@ -64,7 +64,7 @@ create table if not exists friends (
 -- it end (the record is deterministic, so both sides compute the same thing).
 -- stats: {"p0": {plays, points, bingos, brilliancies, best_word, best_score}, "p1": {...}}
 create table if not exists game_results (
-  game_id     text primary key references games(id) on delete cascade,
+  game_id     text primary key references games(id),   -- no cascade: a result is a record in its own right
   p0_user     uuid,
   p1_user     uuid,
   p0_name     text,
@@ -77,6 +77,8 @@ create table if not exists game_results (
   stats       jsonb not null,
   finished_at timestamptz not null default now()
 );
+alter table game_results drop constraint if exists game_results_game_id_fkey;
+alter table game_results add constraint game_results_game_id_fkey foreign key (game_id) references games(id);
 create index if not exists game_results_p0 on game_results (p0_user);
 create index if not exists game_results_p1 on game_results (p1_user);
 
@@ -237,8 +239,9 @@ begin
   select moves into cur from games where id = p_code for update;
   if cur is null then raise exception 'no such game'; end if;
   n := jsonb_array_length(cur);
-  if n >= 400 then raise exception 'game too long'; end if;
   if coalesce(game_over(cur), false) then raise exception 'the game is over'; end if;
+  if kind = 'resign' and not exists (select 1 from game_keys where game_id = p_code and player = 1) then raise exception 'nobody to resign to'; end if;
+  if n >= 400 and kind <> 'resign' then raise exception 'game too long: resign to end it'; end if;
   if n <> p_index then raise exception 'out of date: the game has moved on'; end if;
   if n % 2 <> who then raise exception 'not your turn'; end if;
   update games set moves = cur || jsonb_build_array(p_move), updated_at = now() where id = p_code;
@@ -304,16 +307,17 @@ begin
       else null end,
     'is_friend', exists (select 1 from friends f where f.user_id = auth.uid() and f.friend_id = u),
     'results', (select coalesce(jsonb_agg(jsonb_build_object(
-        'game_id', r.game_id, 'seat', case when r.p0_user = u then 0 else 1 end,
-        'my_score', case when r.p0_user = u then r.p0_score else r.p1_score end,
-        'their_score', case when r.p0_user = u then r.p1_score else r.p0_score end,
-        'their_name', case when r.p0_user = u then r.p1_name else r.p0_name end,
-        'their_handle', (select handle from profiles where user_id = case when r.p0_user = u then r.p1_user else r.p0_user end),
-        'won', case when r.winner = -1 then null else r.winner = (case when r.p0_user = u then 0 else 1 end) end,
+        'game_id', r.game_id, 'seat', r.seat,
+        'my_score', case when r.seat = 0 then r.p0_score else r.p1_score end,
+        'their_score', case when r.seat = 0 then r.p1_score else r.p0_score end,
+        'their_name', case when r.seat = 0 then r.p1_name else r.p0_name end,
+        'their_handle', (select p.handle from game_keys k2 join profiles p on p.user_id = k2.user_id where k2.game_id = r.game_id and k2.player = 1 - r.seat),
+        'won', case when r.winner = -1 then null else r.winner = r.seat end,
         'end_reason', r.end_reason,
-        'stats', r.stats -> (case when r.p0_user = u then 'p0' else 'p1' end),
+        'stats', r.stats -> (case when r.seat = 0 then 'p0' else 'p1' end),
         'finished_at', r.finished_at) order by r.finished_at desc), '[]'::jsonb)
-      from (select * from game_results where p0_user = u or p1_user = u order by finished_at desc limit 500) r),
+      -- the seat is whoever holds it now, so a link player who signs in later still gets their games
+      from (select gr.*, k.player as seat from game_results gr join game_keys k on k.game_id = gr.game_id and k.user_id = u order by gr.finished_at desc limit 500) r),
     'friends', case when auth.uid() = u then (select coalesce(jsonb_agg(jsonb_build_object('handle', p.handle, 'name', p.name) order by p.name), '[]'::jsonb)
                                               from friends f join profiles p on p.user_id = f.friend_id where f.user_id = u) else null end);
 end $$;
@@ -349,6 +353,27 @@ begin
   delete from friends where (user_id = auth.uid() and friend_id = other) or (user_id = other and friend_id = auth.uid());
 end $$;
 
+-- A seat's stats as the fixed shape the profile page expects: integers and one
+-- word of letters, whatever the client sent.
+create or replace function stat_int(v text)
+returns int language sql immutable as $$
+  select case when v ~ '^-?\d{1,6}$' then v::int else 0 end;
+$$;
+create or replace function seat_stats(p jsonb)
+returns jsonb language sql immutable as $$
+  select jsonb_build_object(
+    'plays', stat_int(p->>'plays'),
+    'points', stat_int(p->>'points'),
+    'bingos', stat_int(p->>'bingos'),
+    'brilliancies', stat_int(p->>'brilliancies'),
+    'best_score', stat_int(p->>'best_score'),
+    'best_word', case when p->>'best_word' ~ '^[A-Z]{2,15}$' then p->>'best_word' else null end);
+$$;
+create or replace function stats_shape(p jsonb)
+returns jsonb language sql immutable as $$
+  select jsonb_build_object('p0', seat_stats(coalesce(p->'p0', '{}'::jsonb)), 'p1', seat_stats(coalesce(p->'p1', '{}'::jsonb)));
+$$;
+
 -- Records a finished game. Idempotent: the first report stands. The caller
 -- must hold a seat, and the report must cover every move on the server.
 create or replace function finish_game(p_code text, p_token text, p_result jsonb)
@@ -373,7 +398,7 @@ begin
           (select user_id from game_keys where game_id = p_code and player = 1),
           g.p1_name, g.p2_name,
           (p_result->>'p0_score')::int, (p_result->>'p1_score')::int, (p_result->>'winner')::smallint, p_result->>'end_reason',
-          (p_result->>'moves')::int, coalesce(p_result->'stats', '{}'::jsonb))
+          (p_result->>'moves')::int, stats_shape(p_result->'stats'))
   on conflict (game_id) do nothing;   -- two clients finishing at once: the first stands
   return (select to_jsonb(r) from game_results r where game_id = p_code);
 end $$;
@@ -393,7 +418,8 @@ begin
   if g.next_game is not null then return g.next_game; end if;
   if not exists (select 1 from game_keys where game_id = p_old and player = 1) then raise exception 'nobody to rematch'; end if;
   if not coalesce(game_over(g.moves), false) and not exists (select 1 from game_results r where r.game_id = p_old) then raise exception 'the game is not over yet'; end if;
-  if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or exists (select 1 from games where id = p_new) then raise exception 'that id is taken'; end if;
+  if p_new is null or p_new !~ '^[a-z]+(-[a-z]+){2}$' or length(p_new) > 40 then raise exception 'bad game id'; end if;
+  if exists (select 1 from games where id = p_new) then raise exception 'that id is taken'; end if;
   if p_seed is null or length(p_seed) = 0 or length(p_seed) > 200 then raise exception 'bad seed'; end if;
   insert into games (id, seed, p1_name, p2_name) values (p_new, p_seed, g.p2_name, g.p1_name);
   insert into game_keys (game_id, player, token, user_id)
@@ -422,6 +448,9 @@ begin
 end $$;
 
 revoke all on function seat_of(text, text) from public;
+revoke all on function stat_int(text) from public;
+revoke all on function seat_stats(jsonb) from public;
+revoke all on function stats_shape(jsonb) from public;
 revoke all on function my_seat(text, text) from public;
 revoke all on function game_over(jsonb) from public;
 revoke all on function get_game(text) from public;
@@ -454,5 +483,7 @@ grant execute on function finish_game(text, text, jsonb) to anon, authenticated;
 grant execute on function rematch(text, text, text, text) to anon, authenticated;
 grant execute on function challenge(text, text, text, text, text) to authenticated;
 
--- Optional housekeeping: drop games nobody has touched for three months.
--- delete from games where updated_at < now() - interval '90 days';
+-- Optional housekeeping: drop abandoned games (three months untouched, never
+-- finished). Finished games stay: their results feed profiles and records.
+-- delete from games g where g.updated_at < now() - interval '90 days'
+--   and not exists (select 1 from game_results r where r.game_id = g.id);

@@ -479,7 +479,8 @@ test('a turn is rated against the best common play, and rare words can beat it',
   const before = withRack(s, 'NTIUSEA');
   const best = C.rank(C.generate(before.board, before.racks[1], d), before.racks[1], false)[0];
   const after = C.apply(before, { t: 'play', tiles: best.tiles }, d);
-  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[0], d, tiny);
+  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, tiny);
+  assert.equal(a.playedLabel, best.word + ' for ' + best.score);
   assert.ok(a.ref, 'a common yardstick exists');
   assert.ok(a.commonList.every((m) => m.common));
   if (!best.words.every((w) => tiny.has(w.word))) {
@@ -487,7 +488,7 @@ test('a turn is rated against the best common play, and rare words can beat it',
     assert.equal(a.expert, null, 'no expert note when the player found the rare word');
   }
   // without a common list every play is common and the best play is exactly 100
-  const b = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[0], d, null);
+  const b = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, null);
   assert.equal(b.rating, 100);
   assert.equal(b.grade, 'best');
   // a pass is rated by the rack it keeps against that yardstick
@@ -528,7 +529,7 @@ test('in the last turns a play is rated by its margin over the known reply, not 
   while (!s.over && !(s.bag.length === 0 && s.finalTurns === 2) && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d, { noEndgame: true }), d);
   assert.equal(s.finalTurns, 2);
   const e = C.endgameMove(s, d);
-  if (e.move.t !== 'play') return;
+  assert.equal(e.move.t, 'play', 'seed 703 has a playable endgame');
   const after = C.apply(s, e.move, d);
   const a = C.evaluateTurn(s, e.move, after.history[after.history.length - 1], d, null);
   assert.equal(a.endgame, true);
@@ -536,8 +537,16 @@ test('in the last turns a play is rated by its margin over the known reply, not 
   const greedy = C.generate(s.board, s.racks[s.turn], d)[0];
   const afterG = C.apply(s, { t: 'play', tiles: greedy.tiles }, d);
   const g = C.evaluateTurn(s, { t: 'play', tiles: greedy.tiles }, afterG.history[afterG.history.length - 1], d, null);
-  assert.ok(g.rating <= 100);
+  assert.ok(g.rating < 100, 'the greedy play gives more back and rates below the best');
   assert.equal(a.list[0].equity, e.margin, 'the yardstick is the searched margin');
+  // a modest play far down the list by score is rated by its own margin, not written off
+  const all = C.generate(s.board, s.racks[s.turn], d);
+  const low = all[all.length - 1];
+  const afterL = C.apply(s, { t: 'play', tiles: low.tiles }, d);
+  const l = C.evaluateTurn(s, { t: 'play', tiles: low.tiles }, afterL.history[afterL.history.length - 1], d, null);
+  assert.ok(l.played >= 0, 'the played move is in the examined list');
+  const replyL = C.generate(afterL.board, afterL.racks[afterL.turn], d)[0];
+  assert.equal(l.playedEquity, low.score - (replyL ? replyL.score : 0), 'rated by its real margin');
 });
 
 test('a brilliancy needs a rare word with a clear edge, and a malformed move is refused, not a crash', () => {
@@ -553,7 +562,10 @@ test('a brilliancy needs a rare word with a clear edge, and a malformed move is 
   const before = withRack(s, 'NTIUSEA');
   const best = C.rank(C.generate(before.board, before.racks[1], tiny), before.racks[1], false)[0];
   const after = C.apply(before, { t: 'play', tiles: best.tiles }, d);
-  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[0], d, tiny);
-  assert.notEqual(a.grade, 'brilliant');
+  const a = C.evaluateTurn(before, { t: 'play', tiles: best.tiles }, after.history[after.history.length - 1], d, tiny);
+  assert.equal(a.grade, 'best');
   assert.equal(a.rating, 100);
+  // and the rating scale is one straight line: three points per point of equity, best at 100
+  const r2 = a.list[1];
+  if (r2) assert.equal(r2.rating, Math.max(0, Math.round(100 + 3 * (r2.equity - a.ref.equity))));
 });

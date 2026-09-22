@@ -100,7 +100,7 @@
     if (!Array.isArray(tiles)) return bad('Not a play.');
     for (const t of tiles) {
       if (!t || typeof t !== 'object') return bad('Not a play.');
-      if (!(t.r >= 0 && t.r < N && t.c >= 0 && t.c < N)) return bad('That square is off the board.');
+      if (!(Number.isInteger(t.r) && Number.isInteger(t.c) && t.r >= 0 && t.r < N && t.c >= 0 && t.c < N)) return bad('That square is off the board.');
       const i = t.r * N + t.c;
       if (board[i]) return bad('That square is already taken.');
       if (placed.has(i)) return bad('Two tiles landed on one square.');
@@ -642,27 +642,27 @@
     // in the last turns the opponent's rack is known, so a play is worth its
     // score minus their best reply (what the bot's endgame search uses too)
     const endgame = bagEmpty && before.finalTurns === 2 && before.racks[1 - p].length > 0;
-    const list = rank(generate(before.board, rack, dict), rack, bagEmpty);
-    if (endgame) {
-      const opp = before.racks[1 - p];
-      for (const m of list.slice(0, 40)) {
-        const after = apply(before, { t: 'play', tiles: m.tiles }, null);
-        const reply = generate(after.board, opp, dict)[0];
-        m.reply = reply ? reply.score : 0;
-        m.equity = m.score - m.reply;
-      }
-      for (const m of list.slice(40)) { m.reply = null; m.equity = m.score - 99; }   // unexamined: rated well below the searched ones
-      list.sort((a, b) => b.equity - a.equity || b.score - a.score);
-    }
+    let list = rank(generate(before.board, rack, dict), rack, bagEmpty);
     const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
     for (const m of list) m.common = isCommon(m);
+    const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+    const pk = move.t === 'play' ? key(move.tiles) : null;
+    if (endgame) {
+      // search the top plays by score, the top common ones, and whatever was played; the rest are left out
+      const opp = before.racks[1 - p];
+      const margin = (m) => { const after = apply(before, { t: 'play', tiles: m.tiles }, null); const reply = generate(after.board, opp, dict)[0]; return m.score - (reply ? reply.score : 0); };
+      const examined = new Set(list.slice(0, 40));
+      for (const m of list.filter((m) => m.common).slice(0, 40)) examined.add(m);
+      const playedMove = pk && list.find((m) => key(m.tiles) === pk);
+      if (playedMove) examined.add(playedMove);
+      for (const m of examined) { m.equity = margin(m); m.reply = m.score - m.equity; }
+      list = [...examined].sort((a, b) => b.equity - a.equity || b.score - a.score);
+    }
     const exch = bestExchange(rack, before.bag.length);
     const commonList = list.filter((m) => m.common);
-    const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
     const replyNow = endgame ? (generate(before.board, before.racks[1 - p], dict)[0] || { score: 0 }).score : 0;
     let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
     if (move.t === 'play') {
-      const pk = key(move.tiles);
       played = list.findIndex((m) => key(m.tiles) === pk);
       if (played >= 0) playedEquity = list[played].equity;
       else {   // not in the generated list (a word since dropped from the list): rate it like any other play
@@ -687,14 +687,14 @@
     if (exch && (!ref || exch.equity > ref.equity + 1)) ref = exch;
     // the expert play: a rare-word play better than the yardstick, unless the player found it themselves
     const expert = list[0] && !list[0].common && played !== 0 && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
-    // ratings: the yardstick is 100; otherwise a share of it, or, when shares make no sense
-    // (endgame margins, a yardstick under ten points), four points per point of equity
-    const rate = (eq) => !ref ? 100 : (!endgame && ref.equity >= 10) ? Math.max(0, Math.round(100 * eq / ref.equity)) : Math.max(0, Math.round(100 - 4 * (ref.equity - eq)));
+    // ratings: the yardstick is 100 and every point of equity above or below it is worth three,
+    // so ten points behind rates 70 and a third of the board's value behind rates 0
+    const rate = (eq) => !ref ? 100 : Math.max(0, Math.round(100 + 3 * (eq - ref.equity)));
     for (const m of list) m.rating = rate(m.equity);
     if (exch) exch.rating = rate(exch.equity);
     const rating = rate(playedEquity);
-    // a brilliancy is a rare word that beats every common play by a clear margin
-    const brilliant = ref && played !== null && played >= 0 && !list[played].common && rating >= 120;
+    // a brilliancy is a rare word that beats every common play by five points or more
+    const brilliant = ref && played !== null && played >= 0 && !list[played].common && rating >= 115;
     return { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, endgame, rating, grade: !ref ? 'best' : brilliant ? 'brilliant' : rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
   }
   // The outcome of a finished game for the results table: scores, winner and
@@ -713,12 +713,14 @@
     };
     const result = () => ({ moves: state.moves.length, p0_score: state.scores[0], p1_score: state.scores[1], winner: winner(state), end_reason: state.endReason, stats });
     if (!step) { for (let i = 0; i < state.moves.length; i++) turn(i); return result(); }
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let i = 0;
       const go = () => {
-        const t0 = Date.now();
-        while (i < state.moves.length && Date.now() - t0 < 30) turn(i++);
-        if (i < state.moves.length) step(go); else resolve(result());
+        try {
+          const t0 = Date.now();
+          while (i < state.moves.length && Date.now() - t0 < 30) turn(i++);
+          if (i < state.moves.length) step(go); else resolve(result());
+        } catch (e) { reject(e); }
       };
       go();
     });
