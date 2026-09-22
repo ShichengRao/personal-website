@@ -12,6 +12,7 @@
      hard:leaves=file.json   use a fitted leave table (from the leaves command)
      hard:sim=5x5x1          sampled lookahead: 5 candidates, 5 opponent racks, weight 1
      hard:scale=2            multiply the leave table in use by 2 (after leaves=)
+     medium:vocab=file.txt   limit easy/medium to the words in a file (hard ignores it)
    The tables are swapped into core.js's LEAVE before each move, so two
    profiles with different tables can play each other. */
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -29,12 +30,13 @@ const ZERO = { table: Object.fromEntries(Object.keys(C.LEAVE).map((k) => [k, 0])
 
 function parseProfile(spec) {
   const [level, ...opts] = spec.split(':');
-  const p = { level, noEndgame: false, leaves: BASE, sim: null, spec };
+  const p = { level, noEndgame: false, leaves: BASE, sim: null, vocab: null, spec };
   for (const o of opts) {
     if (o === 'noendgame') p.noEndgame = true;
     else if (o === 'score') p.leaves = ZERO;
     else if (o.startsWith('leaves=')) p.leaves = JSON.parse(readFileSync(o.slice(7), 'utf8'));
     else if (o.startsWith('scale=')) { const k = Number(o.slice(6)); const sc = (obj) => Object.fromEntries(Object.entries(obj || {}).map(([a, v]) => [a, v * k])); p.leaves = { table: sc(p.leaves.table), pairs: sc(p.leaves.pairs), tune: sc(p.leaves.tune) }; }
+    else if (o.startsWith('vocab=')) p.vocab = o.slice(6);
     else if (o.startsWith('sim=')) { const [c, n, w] = o.slice(4).split('x').map(Number); p.sim = { cands: c, samples: n, weight: w || 1 }; }
     else throw new Error('unknown option ' + o);
   }
@@ -52,6 +54,8 @@ if (!isMainThread) {
   const { job, seed, games, offset, a, b } = workerData;
   const rnd = C.seededRandom(seed);
   const bots = [a, b].map((spec) => spec && parseProfile(spec));
+  const vocabs = {};
+  for (const bot of bots) if (bot && bot.vocab && !vocabs[bot.vocab]) vocabs[bot.vocab] = C.buildDict(readFileSync(bot.vocab, 'utf8'));
   const out = [];
   const samples = [];
   let moves = 0;
@@ -65,7 +69,7 @@ if (!isMainThread) {
       const p = s.turn;
       const bot = bots[job === 'arena' ? (p === first ? 0 : 1) : 0];
       useLeaves(bot.leaves);
-      const move = C.botMove(s, bot.level, rnd, dict, { noEndgame: bot.noEndgame, sim: bot.sim });
+      const move = C.botMove(s, bot.level, rnd, dict, { noEndgame: bot.noEndgame, sim: bot.sim, vocab: bot.vocab ? vocabs[bot.vocab] : null });
       const before = s;
       s = C.apply(s, move, null);
       moves++;

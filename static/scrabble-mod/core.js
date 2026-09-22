@@ -583,10 +583,31 @@
     return best;
   }
 
+  // ---- exchanging ------------------------------------------------------------
+  // The best exchange on offer: the tiles to give back whose kept tiles are
+  // worth the most next turn. Shaped like a generated play so it can sit in
+  // the same ranked list (score 0, equity = the leave). Null with an empty bag.
+  function bestExchange(rack, bagLen) {
+    if (!bagLen || !rack.length) return null;
+    let best = null;
+    for (let m = 1; m < (1 << rack.length); m++) {
+      const swap = [], kept = [];
+      for (let i = 0; i < rack.length; i++) (m & (1 << i) ? swap : kept).push(rack[i]);
+      if (swap.length > bagLen) continue;
+      const v = leaveValue(kept);
+      if (!best || v > best.equity) best = { t: 'swap', tiles: swap, keeps: kept.join(''), word: 'Exchange ' + swap.join(''), score: 0, leave: v, equity: v, words: [] };
+    }
+    return best;
+  }
+
   // ---- the bot ------------------------------------------------------------
-  // hard takes the play with the best equity; medium takes one of the next
-  // few; easy plays a middling one by score. With nothing to play it swaps the
-  // rack while the bag allows.
+  // hard takes the play with the best equity from the whole word list;
+  // medium one of the next few by equity, easy one of the eleventh to
+  // thirtieth by score, both from opts.vocab when given (a smaller list of
+  // common words). Against hard in self-play that is roughly 430, 260 and
+  // 190 points a game. Any level exchanges instead when the kept rack is
+  // worth more than the best play.
+  const EASY_POOL = [10, 30];   // easy picks among these ranks by score (0-based, end exclusive)
   function botMove(state, level, rnd, dict, opts) {
     const p = state.turn, rack = state.racks[p];
     if (!rack.length) return { t: 'pass' };
@@ -594,12 +615,13 @@
       const e = endgameMove(state, dict);
       if (e) return e.move;
     }
-    const moves = level === 'easy' ? generate(state.board, rack, dict) : rank(generate(state.board, rack, dict), rack, state.bag.length === 0);
-    if (!moves.length) {
-      if (state.bag.length >= rack.length) return { t: 'swap', tiles: rack.slice() };
-      if (state.bag.length > 0) return { t: 'swap', tiles: rack.slice(0, state.bag.length) };
-      return { t: 'pass' };
-    }
+    const vocab = (opts && opts.vocab && level !== 'hard') ? opts.vocab : dict;
+    const byScore = generate(state.board, rack, vocab);
+    const moves = rank(byScore.slice(), rack, state.bag.length === 0);
+    const exch = bestExchange(rack, state.bag.length);
+    // an exchange has to be clearly better than playing; ties go to the board
+    if (exch && (!moves.length || exch.equity > moves[0].equity + 1)) return { t: 'swap', tiles: exch.tiles };
+    if (!moves.length) return { t: 'pass' };
     let pool;
     if (level === 'hard' && opts && opts.sim && moves.length > 1 && state.bag.length > 0) {
       const top = moves.slice(0, opts.sim.cands || 5);
@@ -608,11 +630,11 @@
     }
     if (level === 'hard') pool = moves.slice(0, 1);
     else if (level === 'medium') pool = moves.slice(Math.min(2, moves.length - 1), Math.min(10, moves.length));
-    else pool = moves.slice(Math.floor(moves.length * 0.35), Math.max(Math.floor(moves.length * 0.35) + 1, Math.floor(moves.length * 0.75)));
+    else { const [lo, hi] = (opts && opts.easyPool) || EASY_POOL; pool = byScore.slice(Math.min(lo, byScore.length - 1), Math.min(hi, byScore.length)); }   // a casual play, by score alone
     const pick = pool[Math.floor(rnd() * pool.length)] || moves[moves.length - 1];
     return { t: 'play', tiles: pick.tiles };
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, endgameMove, lookahead, botMove, transpose };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, endgameMove, lookahead, botMove, transpose };
 });

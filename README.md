@@ -87,7 +87,14 @@ every position. Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
 
 The hard bot plays by equity (score plus leave), and once the bag is empty it
-searches the last turns exactly, since the opponent's rack is then known. The
+searches the last turns exactly, since the opponent's rack is then known. It
+also exchanges when the kept rack is worth more than any play. The easy and
+medium bots are limited to `static/scrabble-mod/common.txt`, the ENABLE words
+that appear among the 50,000 most frequent English words in
+[hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
+(OpenSubtitles 2018, MIT licence), about 32,500 words; the review rates a
+move against the best play made of those common words and reports a better
+rare-word play separately, so an ordinary vocabulary is not marked down. The
 leave values (singles and pair synergies in `core.js`) were fitted to a leave
 file that MAGPIE's leavegen produced for this board and tile set; the fit is
 `tools/scrabble-mod-lab.mjs fitklv` and its output is `tools/leaves-gen3.json`.

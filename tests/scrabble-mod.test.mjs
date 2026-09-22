@@ -379,3 +379,58 @@ test('the lookahead charges each candidate its sampled best reply', () => {
   assert.equal(C.leaveValue(['E', 'R']), Math.round((before + 2.5) * 10) / 10);
   C.LEAVE2.ER = had;
 });
+
+test('the common-word list is a subset of the word list and draws the line sensibly', () => {
+  const text = readFileSync(join(dir, 'common.txt'), 'utf8');
+  const words = text.split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
+  const all = new Set(readFileSync(join(dir, 'words.txt'), 'utf8').split('\n'));
+  assert.ok(words.length > 20000 && words.length < 60000, 'a few tens of thousands of words');
+  for (const w of words) assert.ok(all.has(w), w + ' is not in the word list');
+  const c = C.buildDict(text);
+  for (const w of ['LOVE', 'QUILT', 'VARNISH', 'JUMP', 'ZEBRA']) assert.equal(c.has(w), true, w);
+  for (const w of ['FOVEAL', 'LOVAT', 'HUED', 'CLEW', 'OXO', 'ZAX']) assert.equal(c.has(w), false, w);
+});
+
+test('an exchange is a candidate: the bot swaps a stuck rack and keeps what is worth keeping', () => {
+  const rack = ['Q', 'V', 'W', 'U', 'I', 'I', 'S'];
+  const e = C.bestExchange(rack, 40);
+  assert.equal(e.t, 'swap');
+  assert.ok(e.tiles.length >= 1 && e.tiles.length <= 7);
+  assert.equal(e.equity, C.leaveValue(e.keeps.split('')));
+  assert.ok(e.keeps.includes('S'), 'the S stays');
+  assert.ok(!e.tiles.includes('S'));
+  for (let m = 1; m < 128; m++) {   // nothing kept is worth more
+    const kept = rack.filter((_, i) => !(m & (1 << i)));
+    assert.ok(C.leaveValue(kept) <= e.equity + 1e-9);
+  }
+  assert.equal(C.bestExchange(rack, 0), null, 'no exchange from an empty bag');
+  assert.ok(C.bestExchange(rack, 2).tiles.length <= 2, 'never more tiles than the bag holds');
+  // with only QUILT playable, a rack of vowels has no play: the bot exchanges rather than passes
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), small);
+  s = withRack(s, 'UUIIOOA');
+  const move = C.botMove(s, 'hard', C.seededRandom(1), small);
+  assert.equal(move.t, 'swap');
+  assert.ok(move.tiles.length >= 1);
+});
+
+test('easy and medium bots stay inside their vocabulary; hard uses everything', () => {
+  const d = dict();
+  const tiny = C.buildDict(['quilt', 'lit', 'tilt', 'it', 'ti', 'quit', 'quilts', 'tin', 'nit', 'lint', 'tint', 'unit', 'until'].join('\n'));
+  let s = withRack(C.newGame(1), 'QUILTAB');
+  s = C.apply(s, play('QUILT', 7, 7, false), d);
+  s = withRack(s, 'NTIUSEA');
+  const rnd = C.seededRandom(9);
+  for (const level of ['easy', 'medium']) {
+    for (let i = 0; i < 5; i++) {
+      const m = C.botMove(s, level, rnd, d, { vocab: tiny });
+      if (m.t !== 'play') continue;
+      const r = C.check(s, m, d);
+      assert.equal(r.ok, true);
+      for (const w of r.words) assert.equal(tiny.has(w.word), true, level + ' played ' + w.word + ', outside its vocabulary');
+    }
+  }
+  const hardMove = C.botMove(s, 'hard', rnd, d, { vocab: tiny });
+  const hardBest = C.rank(C.generate(s.board, s.racks[1], d), s.racks[1], false)[0];
+  assert.deepEqual(hardMove.tiles, hardBest.tiles, 'hard ignores the vocabulary limit');
+});

@@ -68,11 +68,17 @@
   })();
 
   // ---- dictionary --------------------------------------------------------
-  let dict = null;
+  // dict: every legal word. common: the words most people know, which the
+  // easy and medium bots are limited to and which the review rates against.
+  let dict = null, common = null;
   const dictReady = fetch(BASE + 'words.txt')
     .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
     .then((t) => { dict = C.buildDict(t); })
     .catch((e) => { setStatus('The word list failed to load (' + e.message + '). Reload to try again.', 'bad'); });
+  const commonReady = fetch(BASE + 'common.txt')
+    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then((t) => { common = C.buildDict(t); })
+    .catch(() => { /* the full list stands in */ });
 
   // ---- session -----------------------------------------------------------
   // G: { id, kind: 'bot'|'hotseat'|'online', level, names, state, me, online: {token}, hidden, session }
@@ -686,10 +692,10 @@
     busy = true; render();
     setStatus(nameOf(1 - G.me) + ' is thinking…');
     botTimer = setTimeout(async () => {
-      await dictReady;
+      await dictReady; await commonReady;
       if (!alive(s)) return;
       if (G.kind !== 'bot' || G.state.over || G.state.turn === G.me || !dict) { busy = false; render(); return; }
-      const move = C.botMove(G.state, G.level, Math.random, dict);
+      const move = C.botMove(G.state, G.level, Math.random, dict, { vocab: common || dict });
       busy = false;
       applyLocal(move);
     }, 650);
@@ -759,15 +765,22 @@
     R.ghost = null;
     render();
   }
-  // Every play available before move k, ranked by equity, with the played one found.
+  // Every play available before move k, ranked by equity, with the played one
+  // found. Ratings are measured against the best play made of common words
+  // (or an exchange, when that is the best common option); a better play that
+  // needs a rare word is reported separately as the expert play.
   function analysis(k) {
     if (R.cands.has(k)) return R.cands.get(k);
     const before = R.states[k - 1], p = before.turn;
     const rack = before.racks[p];
     const list = C.rank(C.generate(before.board, rack, dict), rack, before.bag.length === 0);
+    const isCommon = (m) => !common || m.words.every((w) => common.has(w.word));
+    for (const m of list) m.common = isCommon(m);
+    const exch = C.bestExchange(rack, before.bag.length);
+    const commonList = list.filter((m) => m.common);
     const move = G.state.moves[k - 1], h = G.state.history[k - 1];
     const key = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
-    let played = null, playedEquity = 0, playedLabel = h.t;
+    let played = null, playedEquity = 0, playedLabel = h.t, playedSwap = false;
     if (move.t === 'play') {
       const pk = key(move.tiles);
       played = list.findIndex((m) => key(m.tiles) === pk);
@@ -777,17 +790,21 @@
       const kept = rack.slice();
       for (const t of move.tiles) kept.splice(kept.indexOf(t), 1);
       playedEquity = before.bag.length ? C.leaveValue(kept) : 0;
-      playedLabel = 'swapped ' + plural(move.tiles.length, 'tile');
+      playedLabel = 'exchanged ' + move.tiles.join('') + ', kept ' + (kept.join('') || 'nothing');
+      playedSwap = true;
     } else if (move.t === 'pass') {
       playedEquity = before.bag.length ? C.leaveValue(rack) : 0;
       playedLabel = 'passed';
     }
-    const best = list[0] || null;
-    // Ratings: the best play is 100, every other play its share of that.
-    const rate = (eq) => !best ? 100 : best.equity > 0 ? Math.max(0, Math.round(100 * eq / best.equity)) : Math.max(0, Math.round(100 - 4 * (best.equity - eq)));
+    // the yardstick: the best common play, or the exchange if that beats it
+    let ref = commonList[0] || null;
+    if (exch && (!ref || exch.equity > ref.equity)) ref = exch;
+    const expert = list[0] && !list[0].common && (!ref || list[0].equity > ref.equity + 0.5) ? list[0] : null;
+    const rate = (eq) => !ref ? 100 : ref.equity > 0 ? Math.max(0, Math.min(100, Math.round(100 * eq / ref.equity))) : Math.max(0, Math.min(100, Math.round(100 - 4 * (ref.equity - eq))));
     for (const m of list) m.rating = rate(m.equity);
+    if (exch) exch.rating = rate(exch.equity);
     const rating = rate(playedEquity);
-    const a = { list, played, playedEquity, playedLabel, best, rating, grade: !best || rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
+    const a = { list, commonList, exch, played, playedEquity, playedLabel, playedSwap, ref, expert, rating, grade: !ref || rating >= 99 ? 'best' : rating < 75 ? 'miss' : 'ok' };
     R.cands.set(k, a);
     return a;
   }
@@ -799,7 +816,7 @@
       if (!alive(session) || !R || R.states !== states) return;
       const t0 = Date.now();
       while (k <= G.state.moves.length && Date.now() - t0 < 40) {
-        if (canAnalyze(k) && G.state.moves[k - 1].t !== 'resign') { const a = analysis(k); rows.push({ k, p: states[k - 1].turn, grade: a.grade, rating: a.rating, label: a.playedLabel, best: a.best }); }
+        if (canAnalyze(k) && G.state.moves[k - 1].t !== 'resign') { const a = analysis(k); rows.push({ k, p: states[k - 1].turn, grade: a.grade, rating: a.rating, label: a.playedLabel, best: a.ref }); }
         k++;
       }
       R.summary = { rows, done: k > G.state.moves.length };
@@ -831,14 +848,17 @@
     let a = '';
     if (R.k > 0 && canAnalyze(R.k) && s.moves[R.k - 1].t !== 'resign') {
       const an = analysis(R.k), who = isYou(s.history[R.k - 1].p) ? 'You' : nameOf(s.history[R.k - 1].p);
-      const rankTxt = an.played === null ? '' : an.played < 0 ? '' : ' (#' + (an.played + 1) + ' of ' + an.list.length + ')';
-      if (!an.best) a += '<div class="sm-verdict">No play was available; ' + esc(who.toLowerCase() === 'you' ? 'you' : who) + ' ' + esc(an.playedLabel) + '.</div>';
-      else if (an.grade === 'best') a += '<div class="sm-verdict best"><b>' + esc(who) + ' found the best play.</b> ' + esc(an.playedLabel) + rankTxt + '.</div>';
-      else a += '<div class="sm-verdict ' + (an.grade === 'miss' ? 'miss' : '') + '"><b>' + esc(who) + ': ' + esc(an.playedLabel) + rankTxt + ', rated <b>' + an.rating + '</b>.</b> The best play was ' + esc(an.best.word) + ' for ' + an.best.score + '.</div>';
+      const playedRare = an.played >= 0 && !an.list[an.played].common;
+      const rankTxt = an.played === null || an.played < 0 ? '' : playedRare ? ' (a rare word: #' + (an.played + 1) + ' of ' + an.list.length + ' plays in the full list)' : ' (#' + (an.list.slice(0, an.played).filter((m) => m.common).length + 1) + ' of ' + an.commonList.length + ' common plays)';
+      const refTxt = an.ref ? (an.ref.t === 'swap' ? 'exchanging ' + esc(an.ref.tiles.join('')) + ' and keeping ' + esc(an.ref.keeps || 'nothing') : esc(an.ref.word) + ' for ' + an.ref.score) : '';
+      if (!an.ref) a += '<div class="sm-verdict">No play was available; ' + esc(who.toLowerCase() === 'you' ? 'you' : who) + ' ' + esc(an.playedLabel) + '.</div>';
+      else if (an.grade === 'best') a += '<div class="sm-verdict best"><b>' + esc(who) + ' found the best play.</b> ' + esc(an.playedLabel) + rankTxt + (playedRare ? ' The best common play was ' + refTxt + '.' : '') + '</div>';
+      else a += '<div class="sm-verdict ' + (an.grade === 'miss' ? 'miss' : '') + '"><b>' + esc(who) + ': ' + esc(an.playedLabel) + rankTxt + ', rated <b>' + an.rating + '</b>.</b> The best play was ' + refTxt + '.</div>';
+      if (an.expert) a += '<div class="sm-note" style="margin:-2px 0 8px">With the full word list an expert had <b>' + esc(an.expert.word) + '</b> for ' + an.expert.score + '. Ratings do not count rare words against you.</div>';
       // the same word in several spots with the same score is one line, unless one of them is the played spot
       const top = [];
       const seenKey = new Set();
-      for (const m of an.list) {
+      for (const m of an.commonList) {
         const key = m.word + '|' + m.score + '|' + m.keeps;
         const idx = an.list.indexOf(m);
         if (idx === an.played) { top.push(m); seenKey.add(key); continue; }
@@ -846,14 +866,17 @@
         if (top.length >= 5) break;
         seenKey.add(key); top.push(m);
       }
+      if (an.exch && (an.playedSwap || top.length < 5 || an.exch.equity > top[top.length - 1].equity)) { top.push(an.exch); top.sort((x, y) => y.equity - x.equity); }
       if (an.played >= 0 && !top.includes(an.list[an.played])) top.push(an.list[an.played]);
       if (top.length) {
         a += '<div class="sm-cands"><div class="head"><span>Top plays</span><span>score</span><span></span><span>rating</span></div>';
         top.forEach((m) => {
           const idx = an.list.indexOf(m);
-          a += '<div data-c="' + idx + '" class="' + (idx === an.played ? 'played' : '') + (R.ghost === m ? ' ghost' : '') + '"><span><b>' + esc(m.word) + '</b> <small>' + (m.keeps ? 'keeps ' + esc(m.keeps) : 'plays out') + '</small></span><span>' + m.score + '</span><span></span><b>' + m.rating + '</b></div>';
+          const isPlayed = m.t === 'swap' ? an.playedSwap && G.state.moves[R.k - 1].tiles.slice().sort().join('') === m.tiles.slice().sort().join('') : idx === an.played;
+          const rare = m.t !== 'swap' && !m.common ? ' <small style="color:var(--dw-ink)">rare word</small>' : '';
+          a += '<div ' + (m.t === 'swap' ? '' : 'data-c="' + idx + '" ') + 'class="' + (isPlayed ? 'played' : '') + (R.ghost === m ? ' ghost' : '') + '"><span><b>' + esc(m.word) + '</b> <small>' + (m.keeps ? 'keeps ' + esc(m.keeps) : m.t === 'swap' ? 'keeps nothing' : 'plays out') + '</small>' + rare + '</span><span>' + m.score + '</span><span></span><b>' + m.rating + '</b></div>';
         });
-        a += '</div><div class="sm-note" style="margin:-4px 0 10px">The best play rates 100; the rest by how they compare, counting the tiles each keeps. Click a play to see it on the board; click again to go back.</div>';
+        a += '</div><div class="sm-note" style="margin:-4px 0 10px">The best play with common words rates 100; the rest by how they compare, counting the tiles each keeps. Click a play to see it on the board; click again to go back.</div>';
       }
     } else if (R.k > 0) a += '<div class="sm-verdict">' + esc(nameOf(s.history[R.k - 1].p)) + '’s turn. Their rack and options stay hidden until the game is over.</div>';
     if (R.summary) {
@@ -863,7 +886,7 @@
       a += '<div class="sm-k">Summary' + (R.summary.done ? '' : ' (working…)') + '</div><div class="sm-summary">';
       const avg = rated ? Math.round(R.summary.rows.reduce((t, r) => t + r.rating, 0) / rated) : 0;
       a += '<div class="sm-note" style="margin:0 0 4px">' + rated + ' turn' + (rated === 1 ? '' : 's') + ' rated · average <b>' + avg + '</b> · ' + bests.length + ' best · ' + misses.length + ' miss' + (misses.length === 1 ? '' : 'es') + '</div>';
-      if (misses.length) { a += '<div class="sm-k" style="margin-top:6px">Mistakes</div>'; misses.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--bad)">' + r.rating + '</b> <small>(best ' + esc(r.best.word) + ' ' + r.best.score + ')</small></div>'; }); }
+      if (misses.length) { a += '<div class="sm-k" style="margin-top:6px">Could do better</div>'; misses.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--bad)">' + r.rating + '</b> <small>(best ' + esc(r.best.word) + (r.best.t === 'swap' ? '' : ' ' + r.best.score) + ')</small></div>'; }); }
       if (bests.length) { a += '<div class="sm-k" style="margin-top:6px">Best plays</div>'; bests.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--good)">★</b></div>'; }); }
       a += '</div>';
     }
@@ -933,9 +956,9 @@
     setUrl(null);
     const list = games.list();
     let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p><div class="sm-choices">' +
-      '<button data-bot="easy"><b>Play the bot: easy</b><small>plays middling words</small></button>' +
-      '<button data-bot="medium"><b>Play the bot: medium</b><small>plays a good move, rarely the best</small></button>' +
-      '<button data-bot="hard"><b>Play the bot: hard</b><small>plays the strongest move it can find</small></button>' +
+      '<button data-bot="easy"><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
+      '<button data-bot="medium"><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
+      '<button data-bot="hard"><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
       '<button id="sm-m-hotseat"><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (Net.enabled ? 'share a link; take turns whenever' : 'not set up on this site yet') + '</small></button>' +
       '</div>';
@@ -968,8 +991,8 @@
       '<div class="sm-keys">' +
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
-      '<div><b>Review:</b> click any move in the list to step through the game. <kbd>←</kbd> <kbd>→</kbd> move between turns.</div>' +
-      '<div><b>Word list:</b> ENABLE, the public-domain list.</div>' +
+      '<div><b>Review:</b> click any move in the list to step through the game. <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words; a better play that needs a rare word is noted separately.</div>' +
+      '<div><b>Word lists:</b> plays are checked against ENABLE, the public-domain list. The easy and medium bots, and the ratings, use only its common words.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
     $('sm-help-ok').addEventListener('click', closeOverlay);
