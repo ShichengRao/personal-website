@@ -91,7 +91,7 @@
   let swapMode = false;
   let marks = new Set();   // rack slots marked for a swap
   let busy = false;        // a move is in flight (bot thinking, server call, list loading)
-  let pollTimer = null, botTimer = null;
+  let pollTimer = null, botTimer = null, lastHiddenPoll = 0;
   let statusIsPreview = false, stickyError = null;
   let R = null;            // review mode, see below
   let seenMoves = 0;       // history length already shown, for the bingo animation
@@ -1180,7 +1180,9 @@
   function startPolling() {
     stopPolling();
     if (!G || G.kind !== 'online' || G.state.over) return;
-    const tick = () => { if (document.visibilityState === 'visible') syncOnline(); };
+    // a background tab keeps polling too (slower), so a game left open on a
+    // desktop is current when you come back to it
+    const tick = () => { if (document.visibilityState === 'visible' || Date.now() - lastHiddenPoll > 30000) { lastHiddenPoll = Date.now(); syncOnline(); } };
     pollTimer = setInterval(tick, G.state.turn === G.me ? 15000 : 5000);
   }
   function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
