@@ -106,9 +106,8 @@ begin
   if length(p_move::text) > 4200 then raise exception 'move too large'; end if;
   select player into who from game_keys where game_id = p_code and token = p_token;
   if who is null then raise exception 'not a player in this game'; end if;
-  if not exists (select 1 from game_keys where game_id = p_code and player = 1) then
-    raise exception 'waiting for a second player';
-  end if;
+  -- the creator may play the first word before anyone joins; the turn-order
+  -- check below keeps them from playing again until the second seat is taken
   select moves into cur from games where id = p_code for update;
   if cur is null then raise exception 'no such game'; end if;
   n := jsonb_array_length(cur);

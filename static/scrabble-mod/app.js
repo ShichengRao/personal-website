@@ -1193,7 +1193,7 @@
     const invite = linkFor(G.id), mine = G.online.token ? linkFor(G.id, G.online.token) : null;
     ui.online.innerHTML = '<div class="sm-k">Online game</div><div>Game <span class="sm-code">' + esc(G.id) + '</span></div>' +
       (G.names[1] ? '<div class="sm-note">' + esc(G.names[0]) + ' vs ' + esc(G.names[1]) + '. This page checks for new moves every few seconds while it is open; come back any time.</div>'
-                  : '<div class="sm-note">Waiting for a second player. Send them this link:</div><input type="text" readonly value="' + esc(invite) + '" id="sm-link"><div class="sm-row"><button id="sm-copy" data-link="' + esc(invite) + '">Copy invite link</button></div>') +
+                  : '<div class="sm-note">' + (G.state.moves.length ? 'Waiting for a second player to take their turn.' : 'Play your first word, then') + ' Send them this link:</div><input type="text" readonly value="' + esc(invite) + '" id="sm-link"><div class="sm-row"><button id="sm-copy" data-link="' + esc(invite) + '">Copy invite link</button></div>') +
       (mine ? '<div class="sm-note" style="margin-top:10px">Your private link opens <i>your</i> seat on another device. Keep it to yourself.</div><div class="sm-row"><button id="sm-copy-mine" data-link="' + esc(mine) + '">Copy private link</button></div>' : '') +
       '<div class="sm-row"><button id="sm-refresh">Refresh</button></div>';
     ui.online.querySelectorAll('button[data-link]').forEach((b) => b.addEventListener('click', async () => {
