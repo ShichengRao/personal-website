@@ -82,7 +82,7 @@ create table if not exists game_results (
 -- from a lone report once the other side has had a day to speak up; a pair
 -- that disagree never becomes a result.
 create table if not exists game_reports (
-  game_id     text not null references games(id),
+  game_id     text not null references games(id) on delete cascade,
   seat        smallint not null check (seat in (0, 1)),
   p0_score    integer not null,
   p1_score    integer not null,
@@ -93,6 +93,8 @@ create table if not exists game_reports (
   reported_at timestamptz not null default now(),
   primary key (game_id, seat)
 );
+alter table game_reports drop constraint if exists game_reports_game_id_fkey;
+alter table game_reports add constraint game_reports_game_id_fkey foreign key (game_id) references games(id) on delete cascade;
 alter table game_reports enable row level security;
 revoke all on game_reports from anon, authenticated;
 alter table game_results drop constraint if exists game_results_game_id_fkey;
@@ -187,7 +189,7 @@ begin
   base := jsonb_build_object('id', g.id, 'p1_name', g.p1_name, 'p2_name', g.p2_name, 'full', is_full,
     'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1),
     'handles', (select jsonb_object_agg(k.player, p.handle) from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id));
-  if not visible then return base || jsonb_build_object('private', true); end if;
+  if not visible then return (base - 'handles') || jsonb_build_object('private', true); end if;
   return base || jsonb_build_object('seed', g.seed, 'moves', g.moves)
     || case when who is not null and g.next_game is not null then jsonb_build_object('next_game', g.next_game) else '{}'::jsonb end;
 end $$;
@@ -454,7 +456,10 @@ returns jsonb language sql security definer set search_path = public stable as $
 $$;
 
 -- Turns the reports on a game into its result when they allow it: both seats
--- agree, or one seat reported and the other has been silent for a day.
+-- agree, or one seat reported and the other has been silent for a day. The
+-- server cannot score a game itself, so this is an honour system with a
+-- tripwire: a doctored client can turn its own loss into a disputed game
+-- (counted for nobody), but never into a win.
 create or replace function settle_game(p_code text)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -565,6 +570,7 @@ begin
   if who is null then raise exception 'not a player in this game'; end if;
   select * into g from games where id = p_old for update;
   if g.next_game is not null then return g.next_game; end if;
+  perform game_brake();   -- a rematch is a new game for the shared and per-player budgets too
   -- the seat's own budget: both seats travel down a rematch chain, so the count climbs by one per game
   if (select count(*) from games x join game_keys k on k.game_id = x.id
       where x.created_at > now() - interval '1 hour' and ((p_token is not null and k.token = p_token) or (auth.uid() is not null and k.user_id = auth.uid()))) >= 30 then

@@ -51,12 +51,21 @@
   // The private link's token, read once: whatever happens to the address while the
   // game loads (the menu, a sign-in round trip), the token is still here until a seat is settled.
   let linkToken = (location.hash.match(/[#&]k=([0-9a-f]{32,64})(?![0-9a-f])/) || [])[1] || null;
-  function tokenFromUrl() {
+  let linkGame = linkToken ? idFromUrl() : null;
+  try {   // a token stashed before a sign-in round trip (the address fragment is the sign-in's own on the way back)
+    const st = JSON.parse(sessionStorage.getItem('sm.linkToken') || 'null');
+    if (!linkToken && st && st.id === idFromUrl()) { linkToken = st.token; linkGame = st.id; }
+  } catch (e) { /* no session storage */ }
+  function tokenFromUrl(id) {
     const m = location.hash.match(/[#&]k=([0-9a-f]{32,64})(?![0-9a-f])/);
-    if (m) linkToken = m[1];
-    return linkToken;
+    if (m) { linkToken = m[1]; linkGame = idFromUrl(); }
+    return id && linkGame && id !== linkGame ? null : linkToken;   // another game's link is not a way into this one
   }
-  function dropLinkToken() { linkToken = null; if (/[#&]k=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); }
+  function dropLinkToken() {
+    linkToken = null; linkGame = null;
+    try { sessionStorage.removeItem('sm.linkToken'); } catch (e) { /* ignore */ }
+    if (/[#&]k=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+  }
   const setUrl = (id) => history.replaceState(null, '', pathFor(id));
 
   // Saved games, by id. { id, kind, level, names, seed, moves, over, updated, online?: {token, player} }
@@ -590,7 +599,7 @@
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.repeat && (e.key === 'Enter' || e.key === 'Escape')) return;
     if (ui.overlay.classList.contains('is-open')) {
-      if (e.key === 'Escape' && !cancelPicker && !cancelAsk) {
+      if (e.key === 'Escape' && !cancelPicker) {
         const out = [...ui.overlay.querySelectorAll('button')].find((b) => /^(Cancel|Close|Back|Back to the board|Not now|Look at the board|Got it)$/.test(b.textContent.trim()));
         if (out) { e.preventDefault(); out.click(); }
       }
@@ -1055,8 +1064,10 @@
       html += '</div>';
     }
     if (user) html += '<div class="sm-note" id="sm-m-mine">Looking up your games…</div>';
+    if (Net.enabled) html += '<div style="margin-top:12px;display:flex;justify-content:center">' + authRowHtml('m') + '</div>';
     if (G) html += '<div class="sm-row" style="justify-content:center;margin-top:10px"><button id="sm-m-back">Back to the board</button></div>';
     openOverlay(html);
+    if (Net.enabled) bindAuth(ui.overlay);
     if (user) {
       // games on the account that this browser has not seen (other devices, or a cleared browser)
       Net.rpc('my_games').then((mine) => {
@@ -1169,8 +1180,7 @@
     if (rec && rec.kind !== 'online') { resumeLocal(rec); return; }
     if (Net.enabled) { openOnline(id); return; }
     if (rec && rec.seed) { showCachedOnline(rec); return; }
-    setStatus(rec ? 'That game lives online and this page is offline; open it once you are connected.' : 'There is no game called ' + id + ' in this browser.', 'bad');
-    showMenu();
+    failToMenu(rec ? 'That game lives online and this page is offline; open it once you are connected.' : 'There is no game called ' + id + ' in this browser.');
   }
   // Offline (or the Supabase script did not load): the game as it was last
   // seen, read-only, from the browser's copy of the record.
@@ -1238,12 +1248,24 @@
   function renderAuth() {
     if (!Net.enabled) { authPanel.style.display = 'none'; return; }
     authPanel.style.display = '';
-    authPanel.innerHTML = user
-      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b>' + (user.handle ? ' <span class="sm-code">' + esc(user.handle) + '</span>' : '') + '<button class="small" id="sm-profile">Profile</button><button class="small" id="sm-signout">Sign out</button></div><div class="sm-note">Your games, stats and friends follow this account to any device.</div>'
-      : '<div class="sm-auth-row"><button class="small" id="sm-google">Sign in with Google</button><button class="small" id="sm-email">Email me a link</button></div><div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>';
-    const g = $('sm-google'), e = $('sm-email'), o = $('sm-signout'), pr = $('sm-profile');
-    if (pr) pr.addEventListener('click', () => { if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } });
-    if (g) g.addEventListener('click', () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search + (linkToken ? '#k=' + linkToken : '') } }));
+    authPanel.innerHTML = authRowHtml('') + (user ? '<div class="sm-note">Your games, stats and friends follow this account to any device.</div>' : '<div class="sm-note">Optional: keeps your online games together across devices, with stats and friends.</div>');
+    bindAuth(authPanel);
+  }
+  function openMyProfile() { if (user.handle) showProfile(user.handle); else { setStatus('Your profile is still loading; trying again.'); loadProfile(); } }
+  function signInGoogle() {
+    try { if (linkToken && linkGame) sessionStorage.setItem('sm.linkToken', JSON.stringify({ id: linkGame, token: linkToken })); } catch (e) { /* ignore */ }
+    sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname + location.search } });
+  }
+  // the same controls appear in the side panel and in the menu card (the card makes the panel unreachable)
+  function authRowHtml(prefix) {
+    return user
+      ? '<div class="sm-auth-row">Signed in as <b>' + esc(user.name) + '</b>' + (user.handle ? ' <span class="sm-code">' + esc(user.handle) + '</span>' : '') + '<button class="small" data-auth="profile">Profile</button>' + (prefix ? '' : '<button class="small" id="sm-signout">Sign out</button>') + '</div>'
+      : '<div class="sm-auth-row"><button class="small" data-auth="google">Sign in with Google</button><button class="small" data-auth="email">Email me a link</button></div>';
+  }
+  function bindAuth(root) {
+    const g = root.querySelector('[data-auth="google"]'), e = root.querySelector('[data-auth="email"]'), o = root.querySelector('#sm-signout'), pr = root.querySelector('[data-auth="profile"]');
+    if (pr) pr.addEventListener('click', () => { closeOverlay(); openMyProfile(); });
+    if (g) g.addEventListener('click', signInGoogle);
     if (e) e.addEventListener('click', async () => {
       const email = await askText('Email me a sign-in link', 'A one-time link to sign in here. No password.', 'you@example.com', '');
       if (!email) return;
@@ -1268,7 +1290,7 @@
         const asked = Date.now() - (store.get('sm.signout', 0) || 0) < 15000;
         if (asked) {
           for (const rec of games.list()) if (rec.kind === 'online') games.remove(rec.id);
-          if (G && G.kind === 'online') { leaveGame(); showMenu(); }
+          if (G && G.kind === 'online') { leaveGame(); setUrl(null); showMenu(); }
         } else if (G && G.kind === 'online') render();
         return;
       }
@@ -1305,7 +1327,7 @@
   // link's token, or by joining the empty second seat.
   async function seatFor(id, row) {
     const rec = games.get(id);
-    let urlToken = tokenFromUrl();
+    let urlToken = tokenFromUrl(id);
     if (urlToken) {
       // a private link must name a seat that exists; a stale or wrong one is not a way in.
       // It is only dropped from the address once the server has answered.
@@ -1332,7 +1354,7 @@
       // kept at once, before anything else can interrupt: the server has already given this token the seat
       if (!(rec && rec.online && rec.online.token === seat.token)) {
         games.put({ id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', seat.player === 1 ? (name || 'Player') : row.p2_name || null], seed: null, moves: [], over: false, online: { token: seat.token, player: seat.player }, attached: !!user });
-      }
+      } else if (user && !rec.attached) { rec.attached = true; games.put(rec); }   // the server attached it to the account just now
       return seat;
     } catch (e) {
       if (/two players/.test(e.message)) return { token: null, player: null };
@@ -1348,7 +1370,7 @@
     // offline: the copy this browser has, read-only
     if (navigator.onLine === false && rec && rec.seed) { showCachedOnline(rec); return; }
     let row;
-    try { row = await Net.rpc('get_game', { p_code: id, p_token: (rec && rec.online && rec.online.token) || tokenFromUrl() || null }); }
+    try { row = await Net.rpc('get_game', { p_code: id, p_token: (rec && rec.online && rec.online.token) || tokenFromUrl(id) || null }); }
     catch (e) {
       if (my !== navGen) return;
       if (rec && rec.seed) { showCachedOnline(rec); return; }
@@ -1386,7 +1408,14 @@
     if (row) { G.handles = row.handles || G.handles || {}; if (row.next_game && !G.nextGame) { G.nextGame = row.next_game; if (G.state.over) { stopPolling(); setStatus('A rematch is waiting: open it from the panel.', 'good'); } } }
     moves = moves || [];
     let s = G.state;
-    try { for (let i = s.moves.length; i < moves.length; i++) s = C.apply(s, C.unpack(G.id, moves[i].d), null); }
+    try {
+      for (let i = s.moves.length; i < moves.length; i++) {
+        const m = C.unpack(G.id, moves[i].d);
+        // the label the server reads (kind, tile count) must be what the move really is
+        if (m.t !== moves[i].t || (m.t === 'play' && moves[i].n !== undefined && m.tiles.length !== moves[i].n)) throw new Error('a move is not what it says it is');
+        s = C.apply(s, m, null);
+      }
+    }
     catch (e) { setStatus('The game record no longer matches this page: ' + e.message, 'bad'); return; }
     const changed = s !== G.state;
     const labels = JSON.stringify([G.names, G.handles, G.nextGame]);
@@ -1419,7 +1448,7 @@
       if (my !== navGen) return;
       if (!id) { setStatus('Could not find a free game id; try again.', 'bad'); return; }
     }
-    games.put({ id, kind: 'online', names: [old.names[1], old.names[0]], seed: null, moves: [], over: false, online: { token: old.online.token, player: 1 - old.me } });
+    games.put({ id, kind: 'online', names: [old.names[1], old.names[0]], seed: null, moves: [], over: false, online: { token: old.online.token, player: 1 - old.me }, attached: !!user });
     openOnline(id);
   }
   // A game against a friend, seated for them: they find it in their games list.
@@ -1437,10 +1466,11 @@
       } catch (e) {
         if (my !== navGen) return;
         if (/taken/.test(e.message)) continue;
-        setStatus('Could not start the game: ' + e.message, 'bad'); if (!G) showMenu(); return;
+        if (G) setStatus('Could not start the game: ' + e.message, 'bad'); else failToMenu('Could not start the game: ' + e.message);
+        return;
       }
     }
-    setStatus('Could not find a free game id; try again.', 'bad'); if (!G) showMenu();
+    if (G) setStatus('Could not find a free game id; try again.', 'bad'); else failToMenu('Could not find a free game id; try again.');
   }
   function startPolling() {
     stopPolling();
@@ -1476,10 +1506,11 @@
   // ---- profiles, stats and friends -------------------------------------------------
   const profileUrl = (handle) => location.origin + (LOCAL_HOST ? BASE + '?u=' + handle : BASE + 'u/' + handle);
   function statsOf(results) {
-    const st = { games: results.length, wins: 0, losses: 0, ties: 0, best: 0, total: 0, plays: 0, points: 0, bingos: 0, brilliancies: 0, bestWord: null, bestWordScore: 0 };
+    const st = { games: 0, wins: 0, losses: 0, ties: 0, best: 0, total: 0, plays: 0, points: 0, bingos: 0, brilliancies: 0, bestWord: null, bestWordScore: 0 };
     const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);   // whatever the server holds, only a number is ever shown
     for (const r of results) {
       if (r.end_reason === 'disputed') continue;   // the two sides disagreed on the score: played, counted for nothing
+      st.games++;
       if (r.won === true) st.wins++; else if (r.won === false) st.losses++; else st.ties++;
       st.total += num(r.my_score); st.best = Math.max(st.best, num(r.my_score));
       const x = r.stats || {};
