@@ -21,14 +21,14 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: homepage projects grid, the self-contained Hangul practice app, the Blunder Drill page, the Long Game hub and game pages, the Scrabble Mod page, favicon partial |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`), the Scrabble Mod engine and word list (`static/scrabble-mod/`) |
+| `layouts/` | Custom templates: homepage projects grid, the self-contained Hangul practice app, the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, favicon partial |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`), the Seven Tiles engine and word list (`static/seven-tiles/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
-| `plans/` | Product notes for side projects, and the Supabase schema for Scrabble Mod's online games |
-| `tools/` | `scrabble-mod-lab.mjs`: self-play across the cores to measure the Scrabble Mod bot (arena between two bot profiles, leave-value fitting, a benchmark); `scrabble-mod-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
-| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Scrabble Mod scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
+| `plans/` | Product notes for side projects, and the Supabase schema for Seven Tiles's online games |
+| `tools/` | `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
+| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Seven Tiles scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
 
@@ -71,12 +71,12 @@ stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
   filename) are 301-redirected in `netlify.toml`; add a redirect there before
   removing or renaming any public path.
 
-## Scrabble Mod
+## Seven Tiles
 
-`/scrabble-mod/` is a two-player word game with the board, tile values and
+`/seven-tiles/` is a two-player word game with the board, tile values and
 ending of the New York Times' Crossplay, none of its branding, and the
-public-domain ENABLE word list (`static/scrabble-mod/words.txt`, one word per
-line; swap the file to change lists). `static/scrabble-mod/core.js` holds the
+public-domain ENABLE word list (`static/seven-tiles/words.txt`, one word per
+line; swap the file to change lists). `static/seven-tiles/core.js` holds the
 rules with no DOM in them: the layout, the seeded bag, placement checks,
 scoring, a trie over the word list, an Appel–Jacobson move generator and a
 rack-leave heuristic that turns raw scores into equity. The hard bot and the
@@ -89,7 +89,7 @@ the list never makes an old game unreadable.
 The hard bot plays by equity (score plus leave), and once the bag is empty it
 searches the last turns exactly, since the opponent's rack is then known. It
 also exchanges when the kept rack is worth more than any play. The easy and
-medium bots are limited to `static/scrabble-mod/common.txt`, the ENABLE words
+medium bots are limited to `static/seven-tiles/common.txt`, the ENABLE words
 that appear among the 50,000 most frequent English words in
 [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
 (OpenSubtitles 2018, MIT licence), about 32,500 words; the review rates a
@@ -97,26 +97,26 @@ move against the best play made of those common words and reports a better
 rare-word play separately, so an ordinary vocabulary is not marked down. The
 leave values (singles and pair synergies in `core.js`) were fitted to a leave
 file that MAGPIE's leavegen produced for this board and tile set; the fit is
-`tools/scrabble-mod-lab.mjs fitklv` and its output is `tools/leaves-gen3.json`.
+`tools/seven-tiles-lab.mjs fitklv` and its output is `tools/leaves-gen3.json`.
 With it, our top play is MAGPIE's static top play on 85% of sampled positions
 and in its top three on 97%.
-`node tools/scrabble-mod-lab.mjs arena hard hard:score 400` pits two bot
+`node tools/seven-tiles-lab.mjs arena hard hard:score 400` pits two bot
 profiles against each other over 400 games on all but two cores and reports the
 win rate; `leaves` fits a leave table from self-play; `bench` times the
 generator. Changes to the bot should come with an arena result.
-`tools/scrabble-mod-vs-magpie.mjs` compares our top play with MAGPIE's static
+`tools/seven-tiles-vs-magpie.mjs` compares our top play with MAGPIE's static
 ranking and Monte Carlo sim on positions sampled from self-play; its header
 says what MAGPIE needs (a layout file for this board, a letter distribution
 for these tiles, a KWG built from words.txt, and `-bb 40`).
 
-The page is an installable web app: `static/scrabble-mod/manifest.webmanifest`
+The page is an installable web app: `static/seven-tiles/manifest.webmanifest`
 and `sw.js` give it a home-screen icon, a standalone window and an offline
 copy of the page, scripts and word lists (cached first, refreshed in the
 background). Signing in (Google, or a one-time email link, through Supabase
 Auth and the `supabase-js` browser build loaded from jsdelivr) is optional; it
 attaches online seats to the account so the same games open on any device,
 and the menu lists them. Link play without an account still works. An account
-also has a profile at `/scrabble-mod/u/<code>` (a six-character friend code,
+also has a profile at `/seven-tiles/u/<code>` (a six-character friend code,
 with a QR code of the link): stats over its online games (record, average and
 best game, points per play, bingos, brilliancies, best word), the record
 against each opponent, past games, and a friends list. Friends can be
@@ -126,10 +126,10 @@ end (`finish_game`); the record is deterministic, so both sides agree.
 
 A game is its seed plus its move list; `core.replay` rebuilds everything else,
 so online play only stores those two things. Every game has a three-word id
-(`otter-slate-plum`) that is also its address, `/scrabble-mod/<id>`; the
+(`otter-slate-plum`) that is also its address, `/seven-tiles/<id>`; the
 `netlify.toml` rewrite serves the page for any such path, and under `hugo
-server` the same game is `/scrabble-mod/?g=<id>`. To turn online play on, create a
-Supabase project, run `plans/scrabble-mod-supabase.sql` in its SQL editor and
+server` the same game is `/seven-tiles/?g=<id>`. To turn online play on, create a
+Supabase project, run `plans/seven-tiles-supabase.sql` in its SQL editor and
 put the project URL and publishable key into `window.SM_CONFIG` in
-`layouts/scrabble-mod/list.html`. Until then the page offers the bot and
+`layouts/seven-tiles/list.html`. Until then the page offers the bot and
 pass-and-play only.

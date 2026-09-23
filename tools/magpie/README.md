@@ -1,8 +1,8 @@
-# Running MAGPIE with Scrabble Mod's rules
+# Running MAGPIE with Seven Tiles's rules
 
 [MAGPIE](https://github.com/jvc56/MAGPIE) is the reference engine that
-`tools/scrabble-mod-vs-magpie.mjs` compares against and that produced the leave
-values in `static/scrabble-mod/core.js`. It needs to be told about our board,
+`tools/seven-tiles-vs-magpie.mjs` compares against and that produced the leave
+values in `static/seven-tiles/core.js`. It needs to be told about our board,
 tiles and word list; the two data files here do that.
 
 ```sh
@@ -12,7 +12,7 @@ make magpie BUILD=no_pgo_release
 cp .../tools/magpie/crossplay15.txt data/layouts/
 cp .../tools/magpie/english_mod.csv data/letterdistributions/
 # the lexicon: our word list, upper-cased, under a name MAGPIE accepts (CSW* prefix)
-tr a-z A-Z < .../static/scrabble-mod/words.txt | sort > data/lexica/CSWMOD.txt
+tr a-z A-Z < .../static/seven-tiles/words.txt | sort > data/lexica/CSWMOD.txt
 ./bin/magpie convert text2kwg CSWMOD english_mod        # data/lexica/CSWMOD.kwg
 ./bin/magpie createdata klv CSWMOD english_mod          # data/lexica/CSWMOD.klv2, all-zero leaves (required to exist)
 ```
@@ -37,7 +37,7 @@ leavegen 3,6,12 500000
 That schedule (minimum rack occurrences per generation, then normal games
 before rare racks are forced) took about 15 minutes a generation on five
 threads and writes `data/lexica/CSWMOD_gen_N.csv`, which
-`node tools/scrabble-mod-lab.mjs fitklv <csv> tools/leaves.json` fits to the
+`node tools/seven-tiles-lab.mjs fitklv <csv> tools/leaves.json` fits to the
 engine's singles-and-pairs model. MAGPIE's recommended schedule
 (`100,200,500,1000,1000,1000 100000000`) is days of compute.
 

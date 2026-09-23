@@ -1,8 +1,8 @@
--- Scrabble Mod online play: one table of games plus a private table of seats.
+-- Seven Tiles online play: one table of games plus a private table of seats.
 -- Run this in the SQL editor of the Supabase project (safe to rerun: it only
 -- adds what is missing and replaces the functions), then keep the project URL
 -- and the publishable (anon) key in window.SM_CONFIG in
--- layouts/scrabble-mod/list.html.
+-- layouts/seven-tiles/list.html.
 --
 -- The page reconstructs every game from its seed and move list (core.js is
 -- deterministic), so the server only stores those and enforces turn order and

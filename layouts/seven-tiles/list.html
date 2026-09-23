@@ -1,6 +1,6 @@
 {{ define "head" }}
 <style>
-/* Scrabble Mod. Everything is scoped to .sm-app so the palette and the generic
+/* Seven Tiles. Everything is scoped to .sm-app so the palette and the generic
    class names never leak into the theme. */
 .sm-app{
  --bg:#f6f4ee;--surface:#fffdf8;--plane:#ece9e0;--ring:#d8d3c6;
@@ -180,16 +180,16 @@
 .sm-hdr-slim span{color:#aaa}
 @media (max-width:860px){.sm-hdr-full{display:none}.sm-hdr-slim{display:flex}}
 </style>
-<link rel="manifest" href="/scrabble-mod/manifest.webmanifest">
+<link rel="manifest" href="/seven-tiles/manifest.webmanifest">
 <meta name="theme-color" content="#1f6f6a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Scrabble Mod">
-<link rel="apple-touch-icon" href="/scrabble-mod/icon-180.png">
+<meta name="apple-mobile-web-app-title" content="Seven Tiles">
+<link rel="apple-touch-icon" href="/seven-tiles/icon-180.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-/* Online play needs a Supabase project (see plans/scrabble-mod-supabase.sql).
+/* Online play needs a Supabase project (see plans/seven-tiles-supabase.sql).
    Leave both blank and the page offers the bot and pass-and-play only. */
 window.SM_CONFIG = { url: "https://ebbgvdomzqsmecryepon.supabase.co", key: "sb_publishable_OL6TD1hxZosugdW-IntbYQ_dKZSGH22" };
 </script>
@@ -260,6 +260,6 @@ window.SM_CONFIG = { url: "https://ebbgvdomzqsmecryepon.supabase.co", key: "sb_p
   <div class="sm-overlay" id="sm-overlay"></div>
 </div>
 
-<script src="/scrabble-mod/core.js"></script>
-<script src="/scrabble-mod/app.js"></script>
+<script src="/seven-tiles/core.js"></script>
+<script src="/seven-tiles/app.js"></script>
 {{ end }}

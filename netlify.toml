@@ -16,11 +16,11 @@ Strict-Transport-Security = "max-age=31536000"
 # microphone stays enabled for the Hangul practice recorder
 Permissions-Policy = "camera=(), microphone=(self), geolocation=(), payment=()"
 
-# Scrabble Mod games live at /scrabble-mod/<three-word-id>; the page reads the
-# id from the path. Real files under /scrabble-mod/ still win (force is off).
+# Seven Tiles games live at /seven-tiles/<three-word-id>; the page reads the
+# id from the path. Real files under /seven-tiles/ still win (force is off).
 [[redirects]]
-from = "/scrabble-mod/*"
-to = "/scrabble-mod/"
+from = "/seven-tiles/*"
+to = "/seven-tiles/"
 status = 200
 
 # The resume PDF used to carry a year in its filename.

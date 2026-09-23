@@ -1,4 +1,4 @@
-# Words added to static/scrabble-mod/words.txt on top of ENABLE, from memory of
+# Words added to static/seven-tiles/words.txt on top of ENABLE, from memory of
 # NASPA's NWL2023, while the licence for the real list is pending: the plays
 # that make the high-value tiles bearable. Remove this file and rebuild the
 # lists once NWL2023 replaces ENABLE. The two- and three-letter ones also go

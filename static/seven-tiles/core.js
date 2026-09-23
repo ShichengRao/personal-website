@@ -1,4 +1,4 @@
-/* Scrabble Mod core: the board, the bag, the rules, the scorer, the dictionary
+/* Seven Tiles core: the board, the bag, the rules, the scorer, the dictionary
    trie and the move generator, with no DOM in any of it. The page, the tests
    and the bot all run this same code; it loads in Node as well as the browser.
 
@@ -6,7 +6,7 @@
    that share those reconstruct the same board, racks and bag. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.ScrabbleMod = factory();
+  else root.SevenTiles = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
@@ -477,7 +477,7 @@
   // board, tile set and word list (three generations, 2 million self-play
   // games, regenerated after the NWL short words such as QI and ZA joined
   // the list, which took the Q from -10 to -7 kept), by least squares over
-  // singles, pairs and skew: tools/scrabble-mod-lab.mjs fitklv, output in
+  // singles, pairs and skew: tools/seven-tiles-lab.mjs fitklv, output in
   // tools/leaves-gen3.json. Against the hand-written table the first such
   // fit won a 600-game arena 55.3%; this one beats the previous fit 51.6%
   // over 1,000 games and agrees with MAGPIE's own ranking on the top play
@@ -601,7 +601,7 @@
   // opponent racks from the unseen tiles (bag plus their rack, which the bot
   // is not allowed to peek at), find their best reply on the resulting board
   // and charge the candidate the average. Off by default: in self-play
-  // (tools/scrabble-mod-lab.mjs) it scored 48-49% against plain equity at
+  // (tools/seven-tiles-lab.mjs) it scored 48-49% against plain equity at
   // 5x5 and 6x12 samples, i.e. no gain for a lot of work. Kept for
   // experiments with deeper simulation.
   function lookahead(state, cands, dict, rnd, samples, weight) {
