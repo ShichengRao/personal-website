@@ -451,7 +451,7 @@ test('easy and medium bots stay inside their vocabulary; hard uses everything', 
   assert.deepEqual(hardMove.tiles, hardBest.tiles, 'hard ignores the vocabulary limit');
 });
 
-test('the NWL additions are in both lists until the licensed list arrives', () => {
+test('the stopgap short words are all playable, and the short ones common', () => {
   const adds = readFileSync(join(root, 'tools', 'lexicon', 'word-additions.txt'), 'utf8').split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
   const d = dict();
   const c = loadDict('common');
@@ -524,13 +524,13 @@ test('the result report attributes plays, bingos and best words to the right sea
 
 test('in the last turns a play is rated by its margin over the known reply, not its score', () => {
   const d = dict();
-  const rnd = C.seededRandom(703);
-  let s = C.newGame(703);
+  const rnd = C.seededRandom(714);
+  let s = C.newGame(714);
   let n = 0;
   while (!s.over && !(s.bag.length === 0 && s.finalTurns === 2) && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d, { noEndgame: true }), d);
   assert.equal(s.finalTurns, 2);
   const e = C.endgameMove(s, d);
-  assert.equal(e.move.t, 'play', 'seed 703 has a playable endgame');
+  assert.equal(e.move.t, 'play', 'seed 714 has a playable endgame');
   const after = C.apply(s, e.move, d);
   const a = C.evaluateTurn(s, e.move, after.history[after.history.length - 1], d, null);
   assert.equal(a.endgame, true);

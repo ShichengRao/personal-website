@@ -40,7 +40,8 @@ import { gzipSync, gunzipSync, constants } from 'node:zlib';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
 const C = require(join(root, 'static', 'seven-tiles', 'core.js'));
-const OUT = join(root, 'static', 'seven-tiles');
+// LEXICON_DIR builds and reads the packed lists somewhere else (a private trial build), leaving the served ones alone
+const OUT = process.env.LEXICON_DIR || join(root, 'static', 'seven-tiles');
 const HERE = join(root, 'tools', 'lexicon');
 const FREQ_URL = 'https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/en/en_50k.txt';
 
