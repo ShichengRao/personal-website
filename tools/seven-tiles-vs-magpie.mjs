@@ -7,7 +7,7 @@
    MAGPIE (https://github.com/jvc56/MAGPIE) must be built in <magpie dir> with
    our game's data in place: data/layouts/crossplay15.txt, the letter
    distribution data/letterdistributions/english_mod.csv, and the lexicon
-   CSWMOD (data/lexica/CSWMOD.kwg + CSWMOD.klv2, made from words.txt with
+   CSWMOD (data/lexica/CSWMOD.kwg + CSWMOD.klv2, made from `node tools/lexicon.mjs dump words` with
    `magpie convert text2kwg CSWMOD english_mod` and `createdata klv CSWMOD
    english_mod`). -leaves CSW24 borrows MAGPIE's standard-English leave values,
    which are the closest thing available to real leaves for this tile set.
@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
 const C = require(join(root, 'static', 'seven-tiles', 'core.js'));
+const { loadDict } = await import('./lexicon.mjs');
 const N = C.N;
 const [magpieDir, nPos = '40', iters = '1000'] = process.argv.slice(2);
 // MAGPIE_LEAVES names the leave file MAGPIE ranks with (CSW24 by default, or
@@ -35,7 +36,7 @@ if (!magpieDir || !existsSync(join(magpieDir, 'bin', 'magpie'))) {
   console.error('usage: node tools/seven-tiles-vs-magpie.mjs <magpie dir> [positions] [iterations]');
   process.exit(1);
 }
-const dict = C.buildDict(readFileSync(join(root, 'static', 'seven-tiles', 'words.txt'), 'utf8'));
+const dict = loadDict('words');
 if (OUR_LEAVES) {
   const l = JSON.parse(readFileSync(OUR_LEAVES, 'utf8'));
   Object.assign(C.LEAVE, l.table); Object.assign(C.LEAVE_TUNE, l.tune);
