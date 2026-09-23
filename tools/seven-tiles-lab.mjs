@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-/* Scrabble Mod lab: self-play across all cores, for measuring the bot.
+/* Seven Tiles lab: self-play across all cores, for measuring the bot.
 
-   node tools/scrabble-mod-lab.mjs arena <A> <B> [games]   A vs B, alternating first move
-   node tools/scrabble-mod-lab.mjs leaves [games] [out.json] fit leave values from self-play
-   node tools/scrabble-mod-lab.mjs bench [games]             moves per second
-   node tools/scrabble-mod-lab.mjs fitklv <leaves.csv> [out]  fit singles + pairs to a MAGPIE leave csv
+   node tools/seven-tiles-lab.mjs arena <A> <B> [games]   A vs B, alternating first move
+   node tools/seven-tiles-lab.mjs leaves [games] [out.json] fit leave values from self-play
+   node tools/seven-tiles-lab.mjs bench [games]             moves per second
+   node tools/seven-tiles-lab.mjs fitklv <leaves.csv> [out]  fit singles + pairs to a MAGPIE leave csv
 
    A profile is a level (easy, medium, hard) with options after colons:
      hard:noendgame          skip the exact endgame search
@@ -24,7 +24,7 @@ import { cpus } from 'node:os';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
-const C = require(join(root, 'static', 'scrabble-mod', 'core.js'));
+const C = require(join(root, 'static', 'seven-tiles', 'core.js'));
 const BASE = { table: Object.assign({}, C.LEAVE), pairs: Object.assign({}, C.LEAVE2), tune: Object.assign({}, C.LEAVE_TUNE) };
 const ZERO = { table: Object.fromEntries(Object.keys(C.LEAVE).map((k) => [k, 0])), pairs: {}, tune: { dup: 0, blankDup: 0, skew: 0 } };
 
@@ -50,7 +50,7 @@ function useLeaves(l) {
 
 // ---- worker side -----------------------------------------------------------
 if (!isMainThread) {
-  const dict = C.buildDict(readFileSync(join(root, 'static', 'scrabble-mod', 'words.txt'), 'utf8'));
+  const dict = C.buildDict(readFileSync(join(root, 'static', 'seven-tiles', 'words.txt'), 'utf8'));
   const { job, seed, games, offset, a, b } = workerData;
   const rnd = C.seededRandom(seed);
   const bots = [a, b].map((spec) => spec && parseProfile(spec));

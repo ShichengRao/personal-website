@@ -1,4 +1,4 @@
-/* Scrabble Mod page script: the board and rack UI, the bot's turns, pass-and-
+/* Seven Tiles page script: the board and rack UI, the bot's turns, pass-and-
    play on one device, online games against a Supabase project when the page
    has been given one, and a move-by-move review. All rules live in core.js.
 
@@ -7,7 +7,7 @@
    the server and are cached here. */
 (function () {
   'use strict';
-  const C = window.ScrabbleMod;
+  const C = window.SevenTiles;
   const CFG = window.SM_CONFIG || {};
   const N = C.N;
   const $ = (id) => document.getElementById(id);
@@ -39,13 +39,13 @@
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const newId = () => pick(WORDS) + '-' + pick(WORDS) + '-' + pick(WORDS);
   const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  const BASE = location.pathname.replace(/(\/scrabble-mod\/).*$/, '$1');
+  const BASE = location.pathname.replace(/(\/seven-tiles\/).*$/, '$1');
   const pathFor = (id) => (id ? (LOCAL_HOST ? BASE + '?g=' + id : BASE + id) : BASE);
   const linkFor = (id, token) => location.origin + pathFor(id) + (token ? '#k=' + token : '');
   function idFromUrl() {
     const q = new URLSearchParams(location.search).get('g');
     if (q) return q.toLowerCase();
-    const m = location.pathname.match(/\/scrabble-mod\/([a-z0-9-]+)\/?$/i);
+    const m = location.pathname.match(/\/seven-tiles\/([a-z0-9-]+)\/?$/i);
     return m ? m[1].toLowerCase() : null;
   }
   // The private link's token, read once: whatever happens to the address while the
@@ -1048,7 +1048,7 @@
     const noDict = dictFailed ? ' disabled' : '';
     const note = menuNote ? '<p class="sm-card-note">' + esc(menuNote) + '</p>' : '';
     menuNote = null;
-    let html = '<h2>Scrabble Mod</h2><p>Two racks, one bag, a 15×15 board.</p>' + note + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
+    let html = '<h2>Seven Tiles</h2><p>Two racks, one bag, a 15×15 board.</p>' + note + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
       '<button data-bot="easy"' + noDict + '><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
       '<button data-bot="medium"' + noDict + '><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
       '<button data-bot="hard"' + noDict + '><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
@@ -1645,6 +1645,11 @@
   setZoom(zoom);
 
   // ---- boot ----------------------------------------------------------------------
+  // an offline copy registered under the game's earlier address keeps serving that old page on this
+  // device until it is dropped: any worker whose scope is not this page's goes (its caches go when ours activates)
+  if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+    navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => { if (new URL(r.scope).pathname !== BASE) r.unregister(); })).catch(() => {});
+  }
   if ('serviceWorker' in navigator && !LOCAL_HOST) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => { /* no offline copy, nothing lost */ });
   ui.newBtn.addEventListener('click', showMenu);
   ui.help.addEventListener('click', showHelp);
@@ -1653,7 +1658,7 @@
   dictReady.then(() => { if (G) render(); });
 
   const wanted = idFromUrl();
-  const wantedProfile = new URLSearchParams(location.search).get('u') || (location.pathname.match(/\/scrabble-mod\/u\/([A-Za-z0-9]+)\/?$/) || [])[1];
+  const wantedProfile = new URLSearchParams(location.search).get('u') || (location.pathname.match(/\/seven-tiles\/u\/([A-Za-z0-9]+)\/?$/) || [])[1];
   if (wantedProfile) { history.replaceState(null, '', BASE); showProfile(wantedProfile.toUpperCase()); }
   else if (wanted) openGame(wanted);
   else {

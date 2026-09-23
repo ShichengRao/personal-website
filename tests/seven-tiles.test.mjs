@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const dir = join(root, 'static', 'scrabble-mod');
+const dir = join(root, 'static', 'seven-tiles');
 const require = createRequire(import.meta.url);
 const C = require(join(dir, 'core.js'));
 const N = C.N;
@@ -282,13 +282,13 @@ test('the word list is installed and the trie agrees with it', () => {
   assert.equal(d.has('ABANDONE'), false, 'a prefix is not a word');
 });
 
-test('the Scrabble Mod page has its layout and scripts', () => {
-  assert.ok(existsSync(join(root, 'content', 'scrabble-mod', '_index.md')));
-  assert.ok(existsSync(join(root, 'layouts', 'scrabble-mod', 'list.html')));
+test('the Seven Tiles page has its layout and scripts', () => {
+  assert.ok(existsSync(join(root, 'content', 'seven-tiles', '_index.md')));
+  assert.ok(existsSync(join(root, 'layouts', 'seven-tiles', 'list.html')));
   assert.ok(existsSync(join(dir, 'app.js')));
-  const layout = readFileSync(join(root, 'layouts', 'scrabble-mod', 'list.html'), 'utf8');
-  assert.match(layout, /scrabble-mod\/core\.js/);
-  assert.match(layout, /scrabble-mod\/app\.js/);
+  const layout = readFileSync(join(root, 'layouts', 'seven-tiles', 'list.html'), 'utf8');
+  assert.match(layout, /seven-tiles\/core\.js/);
+  assert.match(layout, /seven-tiles\/app\.js/);
 });
 
 test('a stored game replays without the word list, so a list change cannot strand it', () => {

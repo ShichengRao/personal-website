@@ -16,8 +16,8 @@ projects:
   - name: "The Long Game"
     url: "/long-game/"
     blurb: "A bullet hell, a racing game and a platformer rebuilt so that patience and position win. The fast way still exists in each."
-  - name: "Scrabble Mod"
-    url: "/scrabble-mod/"
+  - name: "Seven Tiles"
+    url: "/seven-tiles/"
     blurb: "A two-player word game with a bot, pass-and-play, online games and a move-by-move review."
 ---
 

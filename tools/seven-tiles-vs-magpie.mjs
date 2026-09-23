@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-/* Compare the Scrabble Mod engine's top play against MAGPIE on positions
+/* Compare the Seven Tiles engine's top play against MAGPIE on positions
    sampled from self-play.
 
-   node tools/scrabble-mod-vs-magpie.mjs <magpie dir> [positions=40] [iterations=1000]
+   node tools/seven-tiles-vs-magpie.mjs <magpie dir> [positions=40] [iterations=1000]
 
    MAGPIE (https://github.com/jvc56/MAGPIE) must be built in <magpie dir> with
    our game's data in place: data/layouts/crossplay15.txt, the letter
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
-const C = require(join(root, 'static', 'scrabble-mod', 'core.js'));
+const C = require(join(root, 'static', 'seven-tiles', 'core.js'));
 const N = C.N;
 const [magpieDir, nPos = '40', iters = '1000'] = process.argv.slice(2);
 // MAGPIE_LEAVES names the leave file MAGPIE ranks with (CSW24 by default, or
@@ -32,10 +32,10 @@ const [magpieDir, nPos = '40', iters = '1000'] = process.argv.slice(2);
 const MAGPIE_LEAVES = process.env.MAGPIE_LEAVES || 'CSW24';
 const OUR_LEAVES = process.env.OUR_LEAVES || null;
 if (!magpieDir || !existsSync(join(magpieDir, 'bin', 'magpie'))) {
-  console.error('usage: node tools/scrabble-mod-vs-magpie.mjs <magpie dir> [positions] [iterations]');
+  console.error('usage: node tools/seven-tiles-vs-magpie.mjs <magpie dir> [positions] [iterations]');
   process.exit(1);
 }
-const dict = C.buildDict(readFileSync(join(root, 'static', 'scrabble-mod', 'words.txt'), 'utf8'));
+const dict = C.buildDict(readFileSync(join(root, 'static', 'seven-tiles', 'words.txt'), 'utf8'));
 if (OUR_LEAVES) {
   const l = JSON.parse(readFileSync(OUR_LEAVES, 'utf8'));
   Object.assign(C.LEAVE, l.table); Object.assign(C.LEAVE_TUNE, l.tune);

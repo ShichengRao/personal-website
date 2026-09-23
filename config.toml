@@ -58,6 +58,6 @@ url = "/long-game/"
 weight = 9
 
 [[menu.main]]
-name = "Scrabble Mod"
-url = "/scrabble-mod/"
+name = "Seven Tiles"
+url = "/seven-tiles/"
 weight = 10
