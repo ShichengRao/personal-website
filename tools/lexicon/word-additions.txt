@@ -1,0 +1,43 @@
+# Short words from NASPA's NWL2023 that ENABLE lacks: the plays that make the
+# high-value tiles bearable. `node tools/lexicon.mjs build enable` adds them to
+# ENABLE while the game runs on it. Whatever the list, the ones of three letters
+# or fewer (that are in it) also count as common, since anyone who has played a
+# word game knows QI and ZA.
+da
+ew
+fe
+gi
+ki
+oi
+ok
+po
+qi
+te
+za
+gis
+kis
+pos
+tes
+qis
+zas
+zen
+zuz
+cuz
+sez
+rez
+tiz
+qadi
+qadis
+niqab
+niqabs
+sheqels
+qabala
+qabalas
+qapik
+qapiks
+mbaqanga
+burqa
+burqas
+qigong
+qigongs
+tzatziki

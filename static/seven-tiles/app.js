@@ -94,13 +94,20 @@
   // easy and medium bots are limited to and which the review rates against.
   let dict = null, common = null;
   let dictFailed = false;
-  const dictReady = fetch(BASE + 'words.txt')
-    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-    .then((t) => { dict = C.buildDict(t); })
+  let lexicon = null;   // which list is loaded, and the credit it needs (shown in How to play)
+  // the lists ship packed (see core.js): gunzipped here, unscrambled and read by the engine
+  const gunzip = (bytes) => {
+    if (typeof DecompressionStream === 'undefined') throw new Error('this browser is too old to open it');
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  };
+  const loadList = (file) => fetch(BASE + file)
+    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+    .then((b) => C.unpackLexicon(b, gunzip));
+  const dictReady = loadList('words.bin')
+    .then((l) => { lexicon = l.meta; dict = C.buildDict(l.words); })
     .catch((e) => { dictFailed = true; setStatus('The word list failed to load (' + e.message + '). Reload to try again.', 'bad'); if (ui.overlay.classList.contains('is-open') && $('sm-m-hotseat')) showMenu(); });
-  const commonReady = fetch(BASE + 'common.txt')
-    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-    .then((t) => { common = C.buildDict(t); })
+  const commonReady = loadList('common.bin')
+    .then((l) => { common = C.buildDict(l.words); })
     .catch(() => { /* the full list stands in */ });
 
   // ---- session -----------------------------------------------------------
@@ -854,7 +861,7 @@
   function analysis(k) {
     if (R.cands.has(k)) return R.cands.get(k);
     const a = evaluateTurn(R.states[k - 1], G.state.moves[k - 1], G.state.history[k - 1]);
-    if (!common) a.provisional = true;   // rated against the full list; redone once common.txt arrives
+    if (!common) a.provisional = true;   // rated against the full list; redone once the common list arrives
     R.cands.set(k, a);
     return a;
   }
@@ -1099,6 +1106,13 @@
     openOverlay('<h2>' + esc(nameOf(G.state.turn)) + '’s turn</h2><p>Pass the device over. The rack stays hidden until you tap.</p><button class="primary" id="sm-reveal">Show my rack</button>');
     $('sm-reveal').addEventListener('click', () => { G.hidden = false; closeOverlay(); render(); });
   }
+  // the loaded list's name, linked where its licence asks for a link, and its credit line
+  function lexiconCredit() {
+    if (!lexicon) return 'plays are checked against the word list once it has loaded.';
+    const name = lexicon.link ? '<a href="' + esc(lexicon.link) + '" target="_blank" rel="noopener">' + esc(lexicon.name) + '</a>' : esc(lexicon.name);
+    if (lexicon.attribution) return 'plays are checked against the ' + name + '. ' + esc(lexicon.attribution);
+    return 'plays are checked against ' + (lexicon.note ? esc(lexicon.note).replace(esc(lexicon.name), name) : name + '.');
+  }
   function showHelp() {
     openOverlay('<h2>How to play</h2>' +
       '<p class="left">Each player holds 7 tiles from a bag of 100, including three blanks. Make words across or down that connect to what is on the board; the first word covers the center. Every word formed must be in the word list.</p>' +
@@ -1108,7 +1122,7 @@
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
       '<div><b>Review:</b> click any move in the list to step through the game (against a person, once the game is over). <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
-      '<div><b>Word lists:</b> plays are checked against ENABLE, the public-domain list. The easy and medium bots, and the ratings, use only its common words.</div>' +
+      '<div><b>Word list:</b> ' + lexiconCredit() + ' The easy and medium bots, and the ratings, use only its common words.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
     $('sm-help-ok').addEventListener('click', closeOverlay);

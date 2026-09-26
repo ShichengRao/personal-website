@@ -22,12 +22,12 @@ install is needed to build or serve the site.
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
 | `layouts/` | Custom templates: homepage projects grid, the self-contained Hangul practice app, the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, favicon partial |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`), the Seven Tiles engine and word list (`static/seven-tiles/`) |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Seven Tiles's online games |
-| `tools/` | `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
+| `tools/` | `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
 | `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Seven Tiles scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
@@ -74,9 +74,8 @@ stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
 ## Seven Tiles
 
 `/seven-tiles/` is a two-player word game with the board, tile values and
-ending of the New York Times' Crossplay, none of its branding, and the
-public-domain ENABLE word list (`static/seven-tiles/words.txt`, one word per
-line; swap the file to change lists). `static/seven-tiles/core.js` holds the
+ending of the New York Times' Crossplay and none of its branding.
+`static/seven-tiles/core.js` holds the
 rules with no DOM in them: the layout, the seeded bag, placement checks,
 scoring, a trie over the word list, an Appel–Jacobson move generator and a
 rack-leave heuristic that turns raw scores into equity. The hard bot and the
@@ -86,13 +85,32 @@ pass-and-play, online games, and a move-by-move review with the top plays for
 every position. Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
 
+The game plays the NASPA Word List 2023 (NWL2023, 196,601 words), used under
+NASPA's free community licence: the game stays free and ad-free, How to play
+carries NASPA's credit line with the list's name linked to NASPA's page for the
+game, and the list is never published in readable form. The game never serves
+a readable word list. It loads two packed files,
+`words.bin` (every playable word) and `common.bin` (the common words below),
+which `core.js` reads: front-coded, gzipped and scrambled, with a line naming
+the list and the credit it needs, which How to play shows. NASPA's licence for
+the NASPA Word List asks for a good-faith effort to keep the list from being
+handed out apart from the game; this is that effort. Build them with
+`node tools/lexicon.mjs build enable` (ENABLE, public domain, from
+`tools/lexicon/enable.txt`, plus the stopgap words in
+`tools/lexicon/word-additions.txt`) or `node tools/lexicon.mjs build nwl23
+<file>` (NWL2023, from the file NASPA delivers, which is never committed:
+keep it in the gitignored `tools/lexicon/private/`). `node tools/lexicon.mjs
+dump words` prints the plain list for local use, such as building a MAGPIE
+lexicon; never commit its output.
+
 The hard bot plays by equity (score plus leave), and once the bag is empty it
 searches the last turns exactly, since the opponent's rack is then known. It
 also exchanges when the kept rack is worth more than any play. The easy and
-medium bots are limited to `static/seven-tiles/common.txt`, the ENABLE words
-that appear among the 50,000 most frequent English words in
+medium bots are limited to the common list: the words that appear among the
+50,000 most frequent English words in
 [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
-(OpenSubtitles 2018, MIT licence), about 32,500 words; the review rates a
+(OpenSubtitles 2018, MIT licence), plus the stopgap words of three letters or
+fewer, about 33,300 words with NWL2023; the review rates a
 move against the best play made of those common words and reports a better
 rare-word play separately, so an ordinary vocabulary is not marked down. The
 leave values (singles and pair synergies in `core.js`) were fitted to a leave
@@ -107,7 +125,7 @@ generator. Changes to the bot should come with an arena result.
 `tools/seven-tiles-vs-magpie.mjs` compares our top play with MAGPIE's static
 ranking and Monte Carlo sim on positions sampled from self-play; its header
 says what MAGPIE needs (a layout file for this board, a letter distribution
-for these tiles, a KWG built from words.txt, and `-bb 40`).
+for these tiles, a KWG built from the dumped word list, and `-bb 40`).
 
 The page is an installable web app: `static/seven-tiles/manifest.webmanifest`
 and `sw.js` give it a home-screen icon, a standalone window and an offline

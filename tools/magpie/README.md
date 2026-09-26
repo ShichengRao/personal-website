@@ -12,7 +12,7 @@ make magpie BUILD=no_pgo_release
 cp .../tools/magpie/crossplay15.txt data/layouts/
 cp .../tools/magpie/english_mod.csv data/letterdistributions/
 # the lexicon: our word list, upper-cased, under a name MAGPIE accepts (CSW* prefix)
-tr a-z A-Z < .../static/seven-tiles/words.txt | sort > data/lexica/CSWMOD.txt
+node .../tools/lexicon.mjs dump words | tr a-z A-Z | sort > data/lexica/CSWMOD.txt   # local only: never commit it
 ./bin/magpie convert text2kwg CSWMOD english_mod        # data/lexica/CSWMOD.kwg
 ./bin/magpie createdata klv CSWMOD english_mod          # data/lexica/CSWMOD.klv2, all-zero leaves (required to exist)
 ```

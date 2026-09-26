@@ -28,3 +28,6 @@ coverage/
 .claude/
 credentials/
 tokens/
+
+# Licensed word lists (NASPA NWL): never committed in readable form; the game ships only the packed copy
+tools/lexicon/private/

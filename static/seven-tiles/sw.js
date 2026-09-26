@@ -4,10 +4,10 @@
    version shows up on the next open. Online play and sign-in requests go to
    Supabase and are never cached; the Supabase browser library is, so a
    cached online game can still be shown offline. */
-const CACHE = 'seven-tiles-v1';
+const CACHE = 'seven-tiles-v2';
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-const SHELL = ['/seven-tiles/', '/seven-tiles/core.js', '/seven-tiles/app.js', '/seven-tiles/words.txt',
-  '/seven-tiles/common.txt', '/seven-tiles/manifest.webmanifest', '/seven-tiles/icon-192.png', '/seven-tiles/icon-512.png',
+const SHELL = ['/seven-tiles/', '/seven-tiles/core.js', '/seven-tiles/app.js', '/seven-tiles/words.bin',
+  '/seven-tiles/common.bin', '/seven-tiles/manifest.webmanifest', '/seven-tiles/icon-192.png', '/seven-tiles/icon-512.png',
   '/seven-tiles/icon-180.png', '/seven-tiles/icon-maskable-512.png'];
 const EXTRAS = [SUPABASE_JS];   // nice to have offline; a failure here must not block installing
 // The theme's stylesheet has a fingerprinted name, so it is cached on first use (see fetch) rather than here.
@@ -26,7 +26,7 @@ self.addEventListener('fetch', (e) => {
   const ours = url.origin === location.origin && (url.pathname.startsWith('/seven-tiles/') || url.pathname.startsWith('/ananke/css/'));
   if (e.request.method !== 'GET' || (!ours && e.request.url !== SUPABASE_JS)) return;
   // every game or profile address (/seven-tiles/otter-slate-plum, /seven-tiles/u/CODE, ?g=...) is the one
-  // page; a real file under the folder (words.txt, index.xml, the scripts) is itself
+  // page; a real file under the folder (words.bin, index.xml, the scripts) is itself
   const pageLike = e.request.mode === 'navigate' && url.pathname.startsWith('/seven-tiles/') && !/\.[a-z0-9]+$/i.test(url.pathname);
   const key = !ours ? e.request.url : pageLike ? '/seven-tiles/' : url.pathname;
   const req = ours ? e.request : new Request(e.request.url, { mode: 'cors' });   // a CORS response can be checked and refreshed; an opaque one cannot

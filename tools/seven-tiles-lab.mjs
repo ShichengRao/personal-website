@@ -12,7 +12,7 @@
      hard:leaves=file.json   use a fitted leave table (from the leaves command)
      hard:sim=5x5x1          sampled lookahead: 5 candidates, 5 opponent racks, weight 1
      hard:scale=2            multiply the leave table in use by 2 (after leaves=)
-     medium:vocab=file.txt   limit easy/medium to the words in a file (hard ignores it)
+     medium:vocab=common     limit easy/medium to the game's common words, or vocab=file.txt to a file (hard ignores it)
    The tables are swapped into core.js's LEAVE before each move, so two
    profiles with different tables can play each other. */
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -25,6 +25,7 @@ import { cpus } from 'node:os';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
 const C = require(join(root, 'static', 'seven-tiles', 'core.js'));
+const { loadDict } = await import('./lexicon.mjs');
 const BASE = { table: Object.assign({}, C.LEAVE), pairs: Object.assign({}, C.LEAVE2), tune: Object.assign({}, C.LEAVE_TUNE) };
 const ZERO = { table: Object.fromEntries(Object.keys(C.LEAVE).map((k) => [k, 0])), pairs: {}, tune: { dup: 0, blankDup: 0, skew: 0 } };
 
@@ -50,12 +51,12 @@ function useLeaves(l) {
 
 // ---- worker side -----------------------------------------------------------
 if (!isMainThread) {
-  const dict = C.buildDict(readFileSync(join(root, 'static', 'seven-tiles', 'words.txt'), 'utf8'));
+  const dict = loadDict('words');
   const { job, seed, games, offset, a, b } = workerData;
   const rnd = C.seededRandom(seed);
   const bots = [a, b].map((spec) => spec && parseProfile(spec));
   const vocabs = {};
-  for (const bot of bots) if (bot && bot.vocab && !vocabs[bot.vocab]) vocabs[bot.vocab] = C.buildDict(readFileSync(bot.vocab, 'utf8'));
+  for (const bot of bots) if (bot && bot.vocab && !vocabs[bot.vocab]) vocabs[bot.vocab] = bot.vocab === 'common' ? loadDict('common') : C.buildDict(readFileSync(bot.vocab, 'utf8'));
   const out = [];
   const samples = [];
   let moves = 0;

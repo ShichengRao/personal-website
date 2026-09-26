@@ -298,12 +298,68 @@
     return JSON.parse(new TextDecoder().decode(bytes));
   }
 
+  // ---- packed word lists ------------------------------------------------------
+  // A word list ships as a packed file, never as readable text (the licence
+  // for a list may ask that it not be handed out apart from the game). The
+  // file is "STL1" followed by gzipped text scrambled with a fixed key. The
+  // text is one line of JSON describing the list (its name and the credit it
+  // needs), then the words sorted and front-coded: "3ing" is the first three
+  // letters of the word before, then "ing". This keeps honest people from
+  // reading the list off the site; it does not stop someone determined.
+  // Gzip is the caller's (zlib in Node, DecompressionStream in the browser).
+  const LEXICON_MAGIC = 'STL1';
+  function scrambleLexicon(bytes) {
+    const k = packKey('seven-tiles lexicon'), out = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ k[i % k.length] ^ ((i * 131) >>> 3 & 255);
+    return out;
+  }
+  function encodeLexicon(meta, words) {
+    const list = [...new Set(words.map((w) => String(w).trim().toLowerCase()).filter((w) => /^[a-z]{2,15}$/.test(w)))].sort();
+    let prev = '', out = JSON.stringify(meta || {}) + '\n';
+    for (const w of list) {
+      let p = 0;
+      while (p < 9 && p < prev.length && p < w.length && prev[p] === w[p]) p++;
+      out += p + w.slice(p) + '\n';
+      prev = w;
+    }
+    return out;
+  }
+  function decodeLexicon(text) {
+    const lines = text.split('\n');
+    const meta = JSON.parse(lines[0] || '{}'), words = [];
+    let prev = '';
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      const p = line.charCodeAt(0) - 48;
+      if (!(p >= 0 && p <= 9) || p > prev.length) throw new Error('the word list is damaged');
+      prev = prev.slice(0, p) + line.slice(1);
+      words.push(prev);
+    }
+    return { meta, words };
+  }
+  // gzip(bytes) and gunzip(bytes) may return the bytes or a promise of them.
+  function packLexicon(meta, words, gzip) {
+    const z = new Uint8Array(gzip(new TextEncoder().encode(encodeLexicon(meta, words))));
+    const out = new Uint8Array(4 + z.length);
+    out.set(new TextEncoder().encode(LEXICON_MAGIC), 0);
+    out.set(scrambleLexicon(z), 4);
+    return out;
+  }
+  function unpackLexicon(bytes, gunzip) {
+    bytes = new Uint8Array(bytes);
+    if (new TextDecoder().decode(bytes.subarray(0, 4)) !== LEXICON_MAGIC) throw new Error('not a packed word list');
+    const done = (raw) => decodeLexicon(new TextDecoder().decode(new Uint8Array(raw)));
+    const r = gunzip(scrambleLexicon(bytes.subarray(4)));
+    return r && typeof r.then === 'function' ? r.then(done) : done(r);
+  }
+
   // ---- dictionary ---------------------------------------------------------
   // A trie in flat typed arrays: node 0 is the root, children are a linked list.
 
-  function buildDict(text) {
+  function buildDict(text) {   // text: one word a line, or an array of words
     const words = [];
-    for (const line of text.split('\n')) {
+    for (const line of Array.isArray(text) ? text : text.split('\n')) {
       const w = line.trim().toUpperCase();
       if (w.length >= 2 && w.length <= N && /^[A-Z]+$/.test(w)) words.push(w);
     }
@@ -776,5 +832,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, transpose, pack, unpack };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, transpose, pack, unpack, encodeLexicon, decodeLexicon, packLexicon, unpackLexicon };
 });

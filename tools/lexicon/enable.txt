@@ -19015,8 +19015,6 @@ burp
 burped
 burping
 burps
-burqa
-burqas
 burr
 burred
 burrer
@@ -34791,7 +34789,6 @@ cutworm
 cutworms
 cuvette
 cuvettes
-cuz
 cwm
 cwms
 cyan
@@ -35176,7 +35173,6 @@ czarists
 czaritza
 czaritzas
 czars
-da
 dab
 dabbed
 dabber
@@ -50360,7 +50356,6 @@ evulsion
 evulsions
 evzone
 evzones
-ew
 ewe
 ewer
 ewers
@@ -52889,7 +52884,6 @@ fazenda
 fazendas
 fazes
 fazing
-fe
 feal
 fealties
 fealty
@@ -60456,7 +60450,6 @@ ghoulishnesses
 ghouls
 ghyll
 ghylls
-gi
 giant
 giantess
 giantesses
@@ -60775,7 +60768,6 @@ girthing
 girths
 girting
 girts
-gis
 gisarme
 gisarmes
 gismo
@@ -78746,7 +78738,6 @@ khirkahs
 khis
 khoum
 khoums
-ki
 kiang
 kiangs
 kiaugh
@@ -79140,7 +79131,6 @@ kirsches
 kirtle
 kirtled
 kirtles
-kis
 kishka
 kishkas
 kishke
@@ -84615,7 +84605,6 @@ luxuriously
 luxuriousness
 luxuriousnesses
 luxury
-luz
 lwei
 lweis
 lyard
@@ -87093,7 +87082,6 @@ mazurkas
 mazy
 mazzard
 mazzards
-mbaqanga
 mbira
 mbiras
 me
@@ -95835,8 +95823,6 @@ nippled
 nipples
 nippy
 nips
-niqab
-niqabs
 nirvana
 nirvanas
 nirvanic
@@ -99267,7 +99253,6 @@ ohmmeters
 ohms
 oho
 ohs
-oi
 oidia
 oidium
 oil
@@ -99320,7 +99305,6 @@ ointment
 ointments
 oiticica
 oiticicas
-ok
 oka
 okapi
 okapis
@@ -111274,7 +111258,6 @@ pneumonitises
 pneumothoraces
 pneumothorax
 pneumothoraxes
-po
 poaceous
 poach
 poached
@@ -112442,7 +112425,6 @@ portresses
 ports
 portulaca
 portulacas
-pos
 posada
 posadas
 pose
@@ -118073,27 +118055,17 @@ pyxidium
 pyxie
 pyxies
 pyxis
-qabala
-qabalas
-qadi
-qadis
 qaid
 qaids
 qanat
 qanats
-qapik
-qapiks
 qat
 qats
-qi
-qigong
-qigongs
 qindar
 qindarka
 qindars
 qintar
 qintars
-qis
 qiviut
 qiviuts
 qoph
@@ -126651,7 +126623,6 @@ rex
 rexes
 reynard
 reynards
-rez
 rezone
 rezoned
 rezones
@@ -130417,7 +130388,6 @@ says
 sayst
 sayyid
 sayyids
-saz
 scab
 scabbard
 scabbarded
@@ -133658,7 +133628,6 @@ sexualizes
 sexualizing
 sexually
 sexy
-sez
 sferics
 sforzandi
 sforzando
@@ -134260,7 +134229,6 @@ shepherding
 shepherds
 sheqalim
 sheqel
-sheqels
 sherbert
 sherberts
 sherbet
@@ -147909,8 +147877,6 @@ takins
 tala
 talapoin
 talapoins
-talaq
-talaqs
 talar
 talaria
 talars
@@ -148694,7 +148660,6 @@ tazzas
 tazze
 tchotchke
 tchotchkes
-te
 tea
 teaberries
 teaberry
@@ -149818,7 +149783,6 @@ tertians
 tertiaries
 tertiary
 tervalent
-tes
 tesla
 teslas
 tessellate
@@ -151821,7 +151785,6 @@ titularly
 titulars
 titulary
 tivy
-tiz
 tizzies
 tizzy
 tmeses
@@ -156121,7 +156084,6 @@ tzarists
 tzaritza
 tzaritzas
 tzars
-tzatziki
 tzetze
 tzetzes
 tzigane
@@ -168053,7 +168015,6 @@ yurt
 yurta
 yurts
 ywis
-za
 zabaglione
 zabagliones
 zabaione
@@ -168136,7 +168097,6 @@ zariba
 zaribas
 zarzuela
 zarzuelas
-zas
 zastruga
 zastrugi
 zax
@@ -168202,7 +168162,6 @@ zemindary
 zemstva
 zemstvo
 zemstvos
-zen
 zenaida
 zenaidas
 zenana
@@ -168535,7 +168494,6 @@ zucchetto
 zucchettos
 zucchini
 zucchinis
-zuz
 zwieback
 zwiebacks
 zwitterion

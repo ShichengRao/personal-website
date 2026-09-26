@@ -9,10 +9,10 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dir = join(root, 'static', 'seven-tiles');
 const require = createRequire(import.meta.url);
 const C = require(join(dir, 'core.js'));
+const { loadWords, loadDict } = await import(join(root, 'tools', 'lexicon.mjs'));
 const N = C.N;
 
-let fullDict = null;
-const dict = () => (fullDict ||= C.buildDict(readFileSync(join(dir, 'words.txt'), 'utf8')));
+const dict = () => loadDict('words');
 const small = C.buildDict(['quilt', 'et', 'tailors', 'jump', 'aa', 'ab', 'ba', 'qi', 'ox', 'oxo', 'xu', 'to', 'flow', 'wolf', 'fowl', 'lo', 'of', 'ow', 'wo'].join('\n'));
 
 const play = (word, r, c, down, blanks = []) => ({
@@ -273,7 +273,7 @@ test('the generator uses blanks and every move it proposes is legal on the real 
 });
 
 test('the word list is installed and the trie agrees with it', () => {
-  assert.ok(existsSync(join(dir, 'words.txt')));
+  assert.ok(existsSync(join(dir, 'words.bin')));
   const d = dict();
   assert.ok(d.size > 150000);
   for (const w of ['QUILT', 'TAILORS', 'JUMP', 'AA', 'XU']) assert.equal(d.has(w), true, w);
@@ -398,12 +398,11 @@ test('the lookahead charges each candidate its sampled best reply', () => {
 });
 
 test('the common-word list is a subset of the word list and draws the line sensibly', () => {
-  const text = readFileSync(join(dir, 'common.txt'), 'utf8');
-  const words = text.split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
-  const all = new Set(readFileSync(join(dir, 'words.txt'), 'utf8').split('\n'));
+  const words = loadWords('common').words;
+  const all = new Set(loadWords('words').words);
   assert.ok(words.length > 20000 && words.length < 60000, 'a few tens of thousands of words');
   for (const w of words) assert.ok(all.has(w), w + ' is not in the word list');
-  const c = C.buildDict(text);
+  const c = loadDict('common');
   for (const w of ['LOVE', 'QUILT', 'VARNISH', 'JUMP', 'ZEBRA']) assert.equal(c.has(w), true, w);
   for (const w of ['FOVEAL', 'LOVAT', 'HUED', 'CLEW', 'OXO', 'ZAX']) assert.equal(c.has(w), false, w);
 });
@@ -452,10 +451,10 @@ test('easy and medium bots stay inside their vocabulary; hard uses everything', 
   assert.deepEqual(hardMove.tiles, hardBest.tiles, 'hard ignores the vocabulary limit');
 });
 
-test('the NWL additions are in both lists until the licensed list arrives', () => {
-  const adds = readFileSync(join(root, 'tools', 'word-additions.txt'), 'utf8').split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
+test('the stopgap short words are all playable, and the short ones common', () => {
+  const adds = readFileSync(join(root, 'tools', 'lexicon', 'word-additions.txt'), 'utf8').split('\n').map((w) => w.trim()).filter((w) => w && !w.startsWith('#'));
   const d = dict();
-  const c = C.buildDict(readFileSync(join(dir, 'common.txt'), 'utf8'));
+  const c = loadDict('common');
   for (const w of adds) assert.equal(d.has(w.toUpperCase()), true, w);
   for (const w of ['QI', 'ZA', 'KI', 'OI', 'QIS', 'ZEN']) assert.equal(c.has(w), true, w + ' should count as common');
   assert.equal(c.has('MBAQANGA'), false);
@@ -525,13 +524,13 @@ test('the result report attributes plays, bingos and best words to the right sea
 
 test('in the last turns a play is rated by its margin over the known reply, not its score', () => {
   const d = dict();
-  const rnd = C.seededRandom(703);
-  let s = C.newGame(703);
+  const rnd = C.seededRandom(714);
+  let s = C.newGame(714);
   let n = 0;
   while (!s.over && !(s.bag.length === 0 && s.finalTurns === 2) && n++ < 300) s = C.apply(s, C.botMove(s, 'hard', rnd, d, { noEndgame: true }), d);
   assert.equal(s.finalTurns, 2);
   const e = C.endgameMove(s, d);
-  assert.equal(e.move.t, 'play', 'seed 703 has a playable endgame');
+  assert.equal(e.move.t, 'play', 'seed 714 has a playable endgame');
   const after = C.apply(s, e.move, d);
   const a = C.evaluateTurn(s, e.move, after.history[after.history.length - 1], d, null);
   assert.equal(a.endgame, true);
@@ -608,4 +607,22 @@ test('three blanks are not worth three times one, and a rare-only position still
   const a = C.evaluateTurn(e, { t: 'pass' }, after.history[after.history.length - 1], d, tiny);
   assert.ok(a.ref, 'a yardstick exists');
   assert.ok(a.rating < 100, 'a pass does not rate best when a play was available');
+});
+
+test('the word lists ship packed: they round-trip, and are not readable as text', () => {
+  const zlib = require('node:zlib');
+  const packed = C.packLexicon({ name: 'test' }, ['quilt', 'quilts', 'qi', 'za', 'aa', 'Quilt'], zlib.gzipSync);
+  const back = C.unpackLexicon(packed, zlib.gunzipSync);
+  assert.deepEqual(back, { meta: { name: 'test' }, words: ['aa', 'qi', 'quilt', 'quilts', 'za'] });
+  assert.throws(() => C.unpackLexicon(new Uint8Array([1, 2, 3, 4, 5]), zlib.gunzipSync), /not a packed word list/);
+  for (const f of ['words.bin', 'common.bin']) {
+    const bytes = readFileSync(join(dir, f));
+    for (const w of ['quilt', 'zebra', 'aardvark', 'QUILT']) assert.equal(bytes.includes(Buffer.from(w)), false, w + ' is readable in ' + f);
+  }
+  assert.equal(existsSync(join(dir, 'words.txt')), false, 'no plain word list is served');
+  assert.equal(existsSync(join(dir, 'common.txt')), false, 'no plain common list is served');
+  // both files name the same list, and one that says how it is credited
+  const w = loadWords('words').meta, c = loadWords('common').meta;
+  assert.equal(w.name, c.name);
+  assert.ok(w.attribution || w.note, 'the list carries its credit');
 });
