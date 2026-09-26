@@ -85,7 +85,11 @@ pass-and-play, online games, and a move-by-move review with the top plays for
 every position. Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
 
-The game never serves a readable word list. It loads two packed files,
+The game plays the NASPA Word List 2023 (NWL2023, 196,601 words), used under
+NASPA's free community licence: the game stays free and ad-free, How to play
+carries NASPA's credit line with the list's name linked to NASPA's page for the
+game, and the list is never published in readable form. The game never serves
+a readable word list. It loads two packed files,
 `words.bin` (every playable word) and `common.bin` (the common words below),
 which `core.js` reads: front-coded, gzipped and scrambled, with a line naming
 the list and the credit it needs, which How to play shows. NASPA's licence for
@@ -106,7 +110,7 @@ medium bots are limited to the common list: the words that appear among the
 50,000 most frequent English words in
 [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
 (OpenSubtitles 2018, MIT licence), plus the stopgap words of three letters or
-fewer, about 32,500 words with ENABLE; the review rates a
+fewer, about 33,300 words with NWL2023; the review rates a
 move against the best play made of those common words and reports a better
 rare-word play separately, so an ordinary vocabulary is not marked down. The
 leave values (singles and pair synergies in `core.js`) were fitted to a leave

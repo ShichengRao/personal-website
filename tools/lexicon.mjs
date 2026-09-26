@@ -54,7 +54,7 @@ const PRESETS = {
   nwl23: {
     name: 'NASPA Word List 2023',
     short: 'NWL23',
-    link: 'https://www.scrabbleplayers.org',
+    link: 'https://www.scrabbleplayers.org/landing/seven-tiles/',   // NASPA's page for the game (section 4h lets NASPA name the URL)
     // the wording NASPA's licence (section 4g) asks for, verbatim
     attribution: 'NASPA Word List 2023 Edition © NASPA 2023. The copy included in this app is licensed for personal use. You may not use it for any commercial purposes.'
   }
