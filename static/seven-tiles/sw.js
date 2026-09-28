@@ -4,11 +4,11 @@
    version shows up on the next open. Online play and sign-in requests go to
    Supabase and are never cached; the Supabase browser library is, so a
    cached online game can still be shown offline. */
-const CACHE = 'seven-tiles-v2';
+const CACHE = 'seven-tiles-v3';
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
 const SHELL = ['/seven-tiles/', '/seven-tiles/core.js', '/seven-tiles/app.js', '/seven-tiles/words.bin',
   '/seven-tiles/common.bin', '/seven-tiles/manifest.webmanifest', '/seven-tiles/icon-192.png', '/seven-tiles/icon-512.png',
-  '/seven-tiles/icon-180.png', '/seven-tiles/icon-maskable-512.png'];
+  '/seven-tiles/icon-180.png', '/seven-tiles/icon-maskable-512.png', '/seven-tiles/icon.svg'];
 const EXTRAS = [SUPABASE_JS];   // nice to have offline; a failure here must not block installing
 // The theme's stylesheet has a fingerprinted name, so it is cached on first use (see fetch) rather than here.
 

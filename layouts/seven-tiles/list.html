@@ -1,3 +1,11 @@
+{{ define "favicon" }}
+{{/* The game's own icons replace the site-wide ones on this page, so a phone
+     that adds it to the home screen gets the game's icon, not the site's. */}}
+<link rel="icon" href="/seven-tiles/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/seven-tiles/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="/seven-tiles/icon-180.png" sizes="180x180">
+{{ end }}
+
 {{ define "head" }}
 <style>
 /* Seven Tiles. Everything is scoped to .sm-app so the palette and the generic
@@ -186,7 +194,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Seven Tiles">
-<link rel="apple-touch-icon" href="/seven-tiles/icon-180.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 /* Online play needs a Supabase project (see plans/seven-tiles-supabase.sql).
