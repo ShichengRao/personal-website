@@ -1071,10 +1071,10 @@
       html += '</div>';
     }
     if (user) html += '<div class="sm-note" id="sm-m-mine">Looking up your games…</div>';
-    if (Net.enabled) html += '<div style="margin-top:12px;display:flex;justify-content:center">' + authRowHtml() + '</div>';
+    if (Net.enabled) html += '<div style="margin-top:12px;display:flex;justify-content:center">' + authRowHtml() + '</div>' + pushRowHtml();
     if (G) html += '<div class="sm-row" style="justify-content:center;margin-top:10px"><button id="sm-m-back">Back to the board</button></div>';
     openOverlay(html);
-    if (Net.enabled) bindAuth(ui.overlay);
+    if (Net.enabled) { bindAuth(ui.overlay); bindPush(ui.overlay); }
     if (user) {
       // games on the account that this browser has not seen (other devices, or a cleared browser)
       Net.rpc('my_games').then((mine) => {
@@ -1305,6 +1305,7 @@
         const asked = Date.now() - (store.get('sm.signout', 0) || 0) < 15000;
         if (asked) {
           for (const rec of games.list()) if (rec.kind === 'online') games.remove(rec.id);
+          pushOff().catch(() => {});
           if (G && G.kind === 'online') { leaveGame(); setUrl(null); showMenu(); return; }
         }
         if (menuOpen) showMenu();
@@ -1314,7 +1315,7 @@
       }
       if (menuOpen && (user && user.id) !== before) showMenu();
       else if (shownProfile && ui.overlay.classList.contains('is-open') && (user && user.id) !== before) showProfile(shownProfile);
-      if (user && user.id !== before) attachSeats();
+      if (user && user.id !== before) { attachSeats(); pushRegister().catch(() => {}); }
       if (G && G.kind === 'online') syncOnline();
     });
   } else renderAuth();
@@ -1413,7 +1414,7 @@
     leaveGame();
     G = { id, kind: 'online', level: null, names: [row.p1_name || 'Player 1', row.p2_name || null], handles: row.handles || {}, nextGame: row.next_game || null, state, me: seat.player, online: { token: seat.token }, hidden: false, session: ++sessions };
     seenMoves = state.history.length;
-    if (seat.player !== null) persist();
+    if (seat.player !== null) { persist(); pushRegister([{ code: id, token: seat.token }]).catch(() => {}); }
     setUrl(id);
     render();
     setStatus(seat.player === null ? 'Watching: this game already has two players.' : '');
@@ -1513,7 +1514,7 @@
                   : '<div class="sm-note">' + (G.state.moves.length ? 'Waiting for a second player to take their turn.' : 'Play your first word, then') + ' Send them this link:</div><input type="text" readonly value="' + esc(invite) + '" id="sm-link"><div class="sm-row"><button id="sm-copy" data-link="' + esc(invite) + '">Copy invite link</button></div>') +
       (mine ? '<div class="sm-note" style="margin-top:10px">Your private link opens <i>your</i> seat on another device. Keep it to yourself.</div><div class="sm-row"><button id="sm-copy-mine" data-link="' + esc(mine) + '">Copy private link</button></div>' : '') +
       (G.nextGame && G.state.over ? '<div class="sm-row"><button class="primary" id="sm-rematch">Open the rematch</button></div>' : '') +
-      '<div class="sm-row"><button id="sm-refresh">Refresh</button></div>';
+      '<div class="sm-row"><button id="sm-refresh">Refresh</button></div>' + pushRowHtml();
     const rm = $('sm-rematch');
     if (rm) rm.addEventListener('click', startRematch);
     ui.online.querySelectorAll('button[data-link]').forEach((b) => b.addEventListener('click', async () => {
@@ -1521,6 +1522,66 @@
       catch (e) { window.prompt('Copy this link:', b.dataset.link); }
     }));
     $('sm-refresh').addEventListener('click', syncOnline);
+    bindPush(ui.online);
+  }
+
+  // ---- turn notifications -----------------------------------------------------------
+  // Web push: the device subscribes with the site's public key and tells the
+  // server which seats it holds (and its account, when signed in); the server
+  // notifies it when the other player moves. iPhones allow this only for a
+  // game added to the Home Screen, so there the switch explains that step.
+  const onIPhone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  const pushPossible = () => Net.enabled && !!CFG.push && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const b64u = (s) => { const b = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
+  const seatsHeld = () => games.list().filter((r) => r.kind === 'online' && r.online && r.online.token).slice(0, 60).map((r) => ({ code: r.id, token: r.online.token }));
+  async function pushReg() { return (await navigator.serviceWorker.getRegistration(BASE)) || navigator.serviceWorker.register(BASE + 'sw.js'); }
+  async function pushSub() { if (!pushPossible()) return null; const reg = await navigator.serviceWorker.getRegistration(BASE); return reg ? reg.pushManager.getSubscription() : null; }
+  // tell the server about seats this device holds (all of them, or the ones given)
+  async function pushRegister(seats) {
+    if (!store.get('sm.push', 0)) return;
+    const sub = await pushSub();
+    if (sub) await Net.rpc('push_subscribe', { p_sub: sub.toJSON(), p_seats: seats || seatsHeld() });
+  }
+  async function pushOn() {
+    const perm = await Notification.requestPermission();   // asked from the button's click, as iPhones require
+    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked for this site in this browser’s settings.' : 'Notifications were not allowed.');
+    const reg = await pushReg();
+    await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(CFG.push) }));
+    store.set('sm.push', 1);
+    await Net.rpc('push_subscribe', { p_sub: sub.toJSON(), p_seats: seatsHeld() });
+  }
+  async function pushOff() {
+    store.del('sm.push');
+    const sub = await pushSub().catch(() => null);
+    if (!sub) return;
+    try { await Net.rpc('push_unsubscribe', { p_endpoint: sub.endpoint }); } catch (e) { /* the server forgets it when the push service does */ }
+    await sub.unsubscribe().catch(() => {});
+  }
+  function pushRowHtml() {
+    if (!Net.enabled || !CFG.push) return '';
+    let inner;
+    if (onIPhone && !standalone()) inner = 'Turn notifications: on iPhone, add this game to your Home Screen first (Share, then Add to Home Screen), then turn them on from the app.';
+    else if (!pushPossible()) inner = 'Turn notifications: this browser cannot show them.';
+    else if (Notification.permission === 'denied') inner = 'Turn notifications are blocked for this site in this browser’s settings.';
+    else if (store.get('sm.push', 0)) inner = 'Turn notifications are on for this device. <button class="small" data-push="off">Turn off</button>';
+    else inner = '<button class="small" data-push="on">Notify me when it’s my turn</button>';
+    return '<div class="sm-note sm-push" style="margin-top:10px">' + inner + '</div>';
+  }
+  function bindPush(root) {
+    root.querySelectorAll('button[data-push]').forEach((b) => b.addEventListener('click', async () => {
+      const row = b.closest('.sm-push');
+      b.disabled = true;
+      let err = null;
+      try { if (b.dataset.push === 'on') await pushOn(); else await pushOff(); } catch (e) { err = e; }
+      if (!row.isConnected) return;
+      const holder = document.createElement('div');
+      holder.innerHTML = pushRowHtml();
+      const fresh = holder.firstElementChild;
+      if (err && fresh) fresh.insertAdjacentHTML('beforeend', '<div style="color:var(--bad)">' + esc(err.message || String(err)) + '</div>');
+      if (fresh) { row.replaceWith(fresh); bindPush(fresh); } else row.remove();
+    }));
   }
 
   // ---- profiles, stats and friends -------------------------------------------------

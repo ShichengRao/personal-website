@@ -4,7 +4,7 @@
    version shows up on the next open. Online play and sign-in requests go to
    Supabase and are never cached; the Supabase browser library is, so a
    cached online game can still be shown offline. */
-const CACHE = 'seven-tiles-v3';
+const CACHE = 'seven-tiles-v4';
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
 const SHELL = ['/seven-tiles/', '/seven-tiles/core.js', '/seven-tiles/app.js', '/seven-tiles/words.bin',
   '/seven-tiles/common.bin', '/seven-tiles/manifest.webmanifest', '/seven-tiles/icon-192.png', '/seven-tiles/icon-512.png',
@@ -36,5 +36,31 @@ self.addEventListener('fetch', (e) => {
     if (cached) { fresh.catch(() => {}); return cached; }
     const r = await fresh;
     return r || new Response('Offline', { status: 503, statusText: 'Offline' });
+  }));
+});
+
+// Turn notifications: the push function sends {title, body, url, tag}. Every
+// push shows a notification (iPhones withdraw permission from sites that stay
+// silent), and a tap opens the game, reusing a window that has it open.
+self.addEventListener('push', (e) => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch (err) { m = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'Seven Tiles', {
+    body: m.body || 'Your move.',
+    tag: m.tag || 'seven-tiles',
+    renotify: true,
+    icon: '/seven-tiles/icon-192.png',
+    badge: '/seven-tiles/icon-192.png',
+    data: { url: m.url || '/seven-tiles/' }
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = new URL((e.notification.data && e.notification.data.url) || '/seven-tiles/', location.origin);
+  if (target.origin !== location.origin) return;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) if (new URL(c.url).pathname === target.pathname && 'focus' in c) return c.focus();
+    for (const c of list) if (new URL(c.url).pathname.startsWith('/seven-tiles/') && 'navigate' in c) return c.navigate(target.href).then((w) => w && w.focus());
+    return self.clients.openWindow(target.href);
   }));
 });

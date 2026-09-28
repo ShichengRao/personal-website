@@ -2,6 +2,9 @@
   "name": "personal-website",
   "private": true,
   "scripts": {
-    "test": "node --test tests/smoke.test.mjs tests/long-game.test.mjs tests/replay.test.mjs tests/seven-tiles.test.mjs"
+    "test": "node --test tests/smoke.test.mjs tests/long-game.test.mjs tests/replay.test.mjs tests/seven-tiles.test.mjs tests/seven-tiles-push.test.mjs"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
   }
 }
