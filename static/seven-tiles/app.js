@@ -91,7 +91,7 @@
 
   // ---- dictionary --------------------------------------------------------
   // dict: every legal word. common: the words most people know, which the
-  // easy and medium bots are limited to and which the review rates against.
+  // low bot levels keep mostly to and which the review rates against.
   let dict = null, common = null;
   let dictFailed = false;
   let lexicon = null;   // which list is loaded, and the credit it needs (shown in How to play)
@@ -1090,7 +1090,7 @@
   }
 
   function gameLabel(rec) {
-    const kind = rec.kind === 'bot' ? 'vs Bot (' + rec.level + ')' : rec.kind === 'hotseat' ? 'Pass and play' : 'Online' + (rec.names && rec.names[1] ? ': ' + rec.names[0] + ' vs ' + rec.names[1] : rec.names && rec.names[0] ? ' with ' + rec.names[0] : '');
+    const kind = rec.kind === 'bot' ? 'vs ' + botName(rec.level) : rec.kind === 'hotseat' ? 'Pass and play' : 'Online' + (rec.names && rec.names[1] ? ': ' + rec.names[0] + ' vs ' + rec.names[1] : rec.names && rec.names[0] ? ' with ' + rec.names[0] : '');
     const n = rec.moves ? rec.moves.length : 0;
     let when;
     if (rec.over) when = 'finished';
@@ -1137,6 +1137,13 @@
       }).catch(() => {});
     }
   }
+  // The bot's difficulty, 0 to 100, remembered between games. Games started
+  // before the dial keep their named level (easy, medium or hard).
+  let botLevel = (() => { const v = Number(store.get('sm.botLevel', 35)); return v >= 0 && v <= 100 ? Math.round(v / 5) * 5 : 35; })();
+  const botName = (level) => (typeof level === 'number' ? 'Bot (level ' + level + ')' : 'Bot (' + level + ')');
+  function levelWords(d) {
+    return d >= 100 ? 'full strength' : d >= 80 ? 'expert' : d >= 60 ? 'strong' : d >= 40 ? 'club player' : d >= 20 ? 'casual' : 'new to the game';
+  }
   let menuNote = null;
   // a navigation that failed: the message goes on the status line and into the menu card that follows
   function failToMenu(msg) { setStatus(msg, 'bad'); menuNote = msg; showMenu(); }
@@ -1147,9 +1154,10 @@
     const note = menuNote ? '<p class="sm-card-note">' + esc(menuNote) + '</p>' : '';
     menuNote = null;
     let html = '<h2>Seven Tiles</h2><p>Two racks, one bag, a 15×15 board.</p>' + note + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
-      '<button data-bot="easy"' + noDict + '><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
-      '<button data-bot="medium"' + noDict + '><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
-      '<button data-bot="hard"' + noDict + '><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
+      '<div class="sm-botpick"><div class="sm-botrow"><b>Play the bot</b><span id="sm-m-lvl">' + esc(levelWords(botLevel)) + '</span></div>' +
+      '<input type="range" id="sm-m-level" min="0" max="100" step="5" value="' + botLevel + '" aria-label="Bot difficulty, 0 to 100"' + noDict + '>' +
+      '<div class="sm-botscale"><small>0: new to the game</small><small>100: full strength</small></div>' +
+      '<button class="primary" id="sm-m-bot"' + noDict + '>Play at level <span id="sm-m-lvlnum">' + botLevel + '</span></button></div>' +
       '<button id="sm-m-hotseat"' + noDict + '><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
@@ -1185,7 +1193,9 @@
     }
     if (!user) refreshLinkGames(list);
     countWaiting();
-    ui.overlay.querySelectorAll('button[data-bot]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); startLocal('bot', b.dataset.bot); }));
+    const slider = $('sm-m-level');
+    slider.addEventListener('input', () => { botLevel = +slider.value; store.set('sm.botLevel', botLevel); $('sm-m-lvl').textContent = levelWords(botLevel); $('sm-m-lvlnum').textContent = botLevel; });
+    $('sm-m-bot').addEventListener('click', () => { closeOverlay(); startLocal('bot', botLevel); });
     ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
     $('sm-m-hotseat').addEventListener('click', () => { closeOverlay(); startLocal('hotseat'); });
     $('sm-m-online').addEventListener('click', () => { closeOverlay(); createOnline(); });
@@ -1212,7 +1222,7 @@
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
       '<div><b>Review:</b> click any move in the list to step through the game (against a person, once the game is over). <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
-      '<div><b>Word list:</b> ' + lexiconCredit() + ' The easy and medium bots, and the ratings, use only its common words.</div>' +
+      '<div><b>Word list:</b> ' + lexiconCredit() + ' The ratings use only its common words, and the bot keeps mostly to them at low levels, less so as the level rises.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
     $('sm-help-ok').addEventListener('click', closeOverlay);
@@ -1254,7 +1264,7 @@
     leaveGame();
     let id = newId();
     while (games.get(id)) id = newId();
-    G = { id, kind, level: level || null, names: kind === 'bot' ? ['You', 'Bot (' + level + ')'] : ['Player 1', 'Player 2'], state: C.newGame(randomSeed()), me: 0, hidden: false, session: ++sessions };
+    G = { id, kind, level: level === undefined ? null : level, names: kind === 'bot' ? ['You', botName(level)] : ['Player 1', 'Player 2'], state: C.newGame(randomSeed()), me: 0, hidden: false, session: ++sessions };
     seenMoves = 0;
     persist();
     setUrl(id);
