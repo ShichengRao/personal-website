@@ -226,14 +226,35 @@
     const p = viewer();
     return p === null ? [] : G.state.racks[p];
   }
+  // In review, the rack slots the reviewed move used: the tiles it played (a
+  // blank counts as the blank) or swapped, or those of the suggested play
+  // shown in its place, matched to the rack in order.
+  function reviewUsedSlots() {
+    const used = new Set();
+    if (!R || R.k === 0 || !canAnalyze(R.k)) return used;
+    const rack = rackShown();
+    let want = [];
+    if (R.ghost) want = R.ghost.tiles.map((t) => (t.b ? '?' : t.l));
+    else {
+      const m = G.state.moves[R.k - 1];
+      if (m.t === 'play') want = m.tiles.map((t) => (t.b ? '?' : t.l));
+      else if (m.t === 'swap') want = m.tiles.slice();
+    }
+    for (const l of want) {
+      const i = rack.findIndex((x, j) => x === l && !used.has(j));
+      if (i >= 0) used.add(i);
+    }
+    return used;
+  }
   let rackDirty = false, boardDirty = false;   // a render was skipped mid-drag; redo it at release
   function renderRack() {
     if (drag && drag.active) { rackDirty = true; return; }
     const rack = rackShown();
     const used = new Set(pending.map((t) => t.ri));
+    const reviewed = reviewUsedSlots();
     let html = '';
     for (let i = 0; i < C.RACK; i++) {
-      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : ''].join(' ').trim();
+      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : '', reviewed.has(i) ? (R.ghost ? 'used alt' : 'used') : ''].join(' ').trim();
       const t = rack[i];
       // while hidden between pass-and-play turns, show anonymous backs: the letters must not reach the page at all
       const inner = G.hidden ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
