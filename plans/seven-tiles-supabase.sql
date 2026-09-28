@@ -655,6 +655,132 @@ grant execute on function finish_game(text, text, jsonb) to anon, authenticated;
 grant execute on function rematch(text, text, text, text) to anon, authenticated;
 grant execute on function challenge(text, text, text, text, text) to authenticated;
 
+-- ---- turn notifications ------------------------------------------------------
+-- A phone that turns notifications on registers its web-push subscription:
+-- tied to the account when signed in (every game on the account notifies it),
+-- and to each seat it holds by link. When a move lands, a trigger hands the
+-- move and the other player's subscriptions to the site's push function
+-- (a Netlify function, which signs and sends the notification); the function
+-- reports dead subscriptions back through push_prune. push_config holds the
+-- function's address and a shared secret, set once by hand:
+--   insert into push_config values ('url', 'https://shichengrao.com/.netlify/functions/push'), ('secret', '<PUSH_SECRET>')
+--   on conflict (key) do update set value = excluded.value;
+-- Until both rows exist the trigger does nothing, and a failure to reach the
+-- function never blocks a move.
+create extension if not exists pg_net with schema extensions;
+
+create table if not exists push_subs (
+  endpoint   text primary key,
+  keys       jsonb not null,                -- {p256dh, auth}, from the browser
+  user_id    uuid references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subs_user on push_subs (user_id);
+create table if not exists push_seats (
+  endpoint text not null references push_subs(endpoint) on delete cascade,
+  game_id  text not null references games(id) on delete cascade,
+  player   smallint not null check (player in (0, 1)),
+  primary key (endpoint, game_id, player)
+);
+create index if not exists push_seats_game on push_seats (game_id, player);
+create table if not exists push_config (key text primary key, value text not null);
+alter table push_subs enable row level security;
+alter table push_seats enable row level security;
+alter table push_config enable row level security;
+revoke all on push_subs from anon, authenticated;
+revoke all on push_seats from anon, authenticated;
+revoke all on push_config from anon, authenticated;
+
+-- Registers (or refreshes) this device's subscription, for the caller's
+-- account if signed in and for each {code, token} seat given that the token
+-- really holds. Idempotent.
+create or replace function push_subscribe(p_sub jsonb, p_seats jsonb)
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  ep text := p_sub->>'endpoint';
+  k jsonb := p_sub->'keys';
+  s jsonb;
+  who smallint;
+  n integer := 0;
+begin
+  if ep is null or ep !~ '^https://[^\s]+$' or length(ep) > 1000 then raise exception 'bad subscription'; end if;
+  if k is null or jsonb_typeof(k) <> 'object' or length(coalesce(k->>'p256dh', '')) not between 20 and 200
+     or length(coalesce(k->>'auth', '')) not between 8 and 100 then raise exception 'bad subscription'; end if;
+  if auth.uid() is not null and (select count(*) from push_subs where user_id = auth.uid() and endpoint <> ep) >= 10 then
+    raise exception 'too many devices have notifications on for this account';
+  end if;
+  insert into push_subs (endpoint, keys, user_id)
+  values (ep, jsonb_build_object('p256dh', k->>'p256dh', 'auth', k->>'auth'), auth.uid())
+  on conflict (endpoint) do update set keys = excluded.keys, user_id = coalesce(auth.uid(), push_subs.user_id);
+  if p_seats is not null and jsonb_typeof(p_seats) = 'array' then
+    for s in select * from jsonb_array_elements(p_seats) limit 60 loop
+      who := seat_of(s->>'code', s->>'token');
+      if who is not null then
+        insert into push_seats values (ep, s->>'code', who) on conflict do nothing;
+        n := n + 1;
+      end if;
+    end loop;
+  end if;
+  return n;
+end $$;
+
+-- Turns notifications off for this device.
+create or replace function push_unsubscribe(p_endpoint text)
+returns void language sql security definer set search_path = public as $$
+  delete from push_subs where endpoint = p_endpoint;
+$$;
+
+-- The push function reports subscriptions the push service says are gone.
+create or replace function push_prune(p_secret text, p_endpoints jsonb)
+returns integer language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  if p_secret is null or p_secret <> (select value from push_config where key = 'secret') then raise exception 'not allowed'; end if;
+  delete from push_subs where endpoint in (select jsonb_array_elements_text(p_endpoints));
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+-- After a move is saved: the player who did not make it hears about it.
+create or replace function notify_turn()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  n integer := jsonb_array_length(new.moves);
+  seat smallint;
+  subs jsonb;
+  url text := (select value from push_config where key = 'url');
+  secret text := (select value from push_config where key = 'secret');
+begin
+  if url is null or secret is null or n <= jsonb_array_length(old.moves) then return new; end if;
+  seat := n % 2;   -- move n-1 was made by seat (n-1) % 2
+  select jsonb_agg(jsonb_build_object('endpoint', s.endpoint, 'keys', s.keys)) into subs
+  from push_subs s
+  where s.endpoint in (select endpoint from push_seats where game_id = new.id and player = seat)
+     or s.user_id = (select user_id from game_keys where game_id = new.id and player = seat);
+  if subs is null then return new; end if;
+  perform net.http_post(
+    url := url,
+    body := jsonb_build_object('game', new.id, 'seed', new.seed, 'moves', new.moves,
+                               'names', jsonb_build_array(new.p1_name, new.p2_name), 'seat', seat,
+                               'over', coalesce(game_over(new.moves), false), 'subs', subs),
+    headers := jsonb_build_object('content-type', 'application/json', 'x-push-secret', secret),
+    timeout_milliseconds := 5000);
+  return new;
+exception when others then
+  return new;   -- a notification is never worth a lost move
+end $$;
+drop trigger if exists games_notify_turn on games;
+create trigger games_notify_turn after update of moves on games
+  for each row execute function notify_turn();
+
+revoke all on function push_subscribe(jsonb, jsonb) from public;
+revoke all on function push_unsubscribe(text) from public;
+revoke all on function push_prune(text, jsonb) from public;
+revoke all on function notify_turn() from public;
+grant execute on function push_subscribe(jsonb, jsonb) to anon, authenticated;
+grant execute on function push_unsubscribe(text) to anon, authenticated;
+grant execute on function push_prune(text, jsonb) to anon, authenticated;
+
 -- Optional housekeeping: drop abandoned games (three months untouched, never
 -- finished). Finished games stay: their results feed profiles and records.
 -- delete from games g where g.updated_at < now() - interval '90 days'

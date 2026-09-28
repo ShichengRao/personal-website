@@ -2,6 +2,12 @@
 publish = "public"
 command = "hugo"
 
+[functions]
+directory = "netlify/functions"
+node_bundler = "esbuild"
+# web-push is CommonJS with runtime requires: shipped as a module rather than bundled into ESM
+external_node_modules = ["web-push"]
+
 [build.environment]
 HUGO_VERSION = "0.150.0"
 HUGO_ENABLEGITINFO = "true"
