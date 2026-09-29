@@ -408,7 +408,14 @@
     if (i >= rack.length || pending.some((t) => t.ri === i)) return;
     if (swapMode) { if (marks.has(i)) marks.delete(i); else marks.add(i); render(); return; }
     if (!canDraft()) return;
+    // A tap puts the tile down at the board cursor and moves the cursor on, so
+    // tapping tiles one after another lays a word. On an empty board the
+    // cursor starts at the centre. With no cursor, the tile is picked up and
+    // the next square tapped takes it.
+    if (!cursor && !pending.length && G.state.board.every((x) => !x)) cursor = { r: (N - 1) / 2, c: (N - 1) / 2, down: false };
+    if (cursor && !occupied(cursor.r, cursor.c)) { place(cursor.r, cursor.c, i, rack[i] === '?'); return; }
     sel = sel === i ? -1 : i;
+    if (sel >= 0) setStatus('Tap a square to put it there. Or tap a square first, then tiles, to lay a word.');
     render();
   });
 
