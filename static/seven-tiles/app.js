@@ -1077,6 +1077,45 @@
     else when = plural(n, 'move') + ' in';
     return { kind, when };
   }
+  // A games-list row. A game waiting on this player carries a "Your turn" badge.
+  function gameRowHtml(id, l) {
+    const now = l.when === 'your turn';
+    return '<button data-open="' + esc(id) + '"' + (now ? ' class="now"' : '') + '><b>' + esc(l.kind) + '</b>' + (now ? '<span class="sm-turn">Your turn</span>' : '') +
+      '<small>' + esc(l.when) + ' · ' + esc(id) + '</small></button>';
+  }
+  const serverWhen = (m) => (m.finished || m.resigned) ? 'finished' : m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player';
+  // Correct a row already on screen once the server has said whose turn it is.
+  function markTurn(id, when) {
+    const b = [...ui.overlay.querySelectorAll('button[data-open]')].find((x) => x.dataset.open === id);
+    if (!b) return;
+    const kind = b.querySelector('b').textContent;
+    const holder = document.createElement('div');
+    holder.innerHTML = gameRowHtml(id, { kind, when });
+    const fresh = holder.firstElementChild;
+    fresh.addEventListener('click', () => { closeOverlay(); openGame(id); });
+    b.replaceWith(fresh);
+    countWaiting();
+  }
+  function countWaiting() {
+    const head = $('sm-m-yours');
+    if (!head) return;
+    const n = ui.overlay.querySelectorAll('.sm-games button.now').length;
+    head.innerHTML = 'Your games' + (n ? ' <span class="sm-turn">' + n + ' waiting on you</span>' : '');
+  }
+  // Online games held only by a link (or when not signed in): ask the server
+  // how far each has got, a handful at a time, and correct their rows.
+  function refreshLinkGames(list) {
+    if (!Net.enabled || !list) return;
+    const open = list.filter((r) => r.kind === 'online' && !r.over && r.online && r.online.token && r.online.player !== null).slice(0, 8);
+    for (const rec of open) {
+      Net.rpc('get_game', { p_code: rec.id, p_token: rec.online.token }).then((row) => {
+        if (!row || !row.moves || !row.seed || !ui.overlay.classList.contains('is-open')) return;
+        let s;
+        try { s = C.replay(C.unpack(rec.id, row.seed), row.moves.map((m) => C.unpack(rec.id, m.d))); } catch (e) { return; }   // no word list needed
+        markTurn(rec.id, s.over ? 'finished' : s.turn === rec.online.player ? 'your turn' : row.full ? 'their turn' : 'waiting for a player');
+      }).catch(() => {});
+    }
+  }
   let menuNote = null;
   // a navigation that failed: the message goes on the status line and into the menu card that follows
   function failToMenu(msg) { setStatus(msg, 'bad'); menuNote = msg; showMenu(); }
@@ -1094,11 +1133,8 @@
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
     if (list.length) {
-      html += '<div class="sm-k" style="text-align:left;margin-top:14px">Your games</div><div class="sm-games">';
-      for (const rec of list) {
-        const l = gameLabel(rec);
-        html += '<button data-open="' + esc(rec.id) + '"><b' + (l.when === 'your turn' ? ' class="now"' : '') + '>' + esc(l.kind) + '</b> <small>' + esc(l.when) + ' · ' + esc(rec.id) + '</small></button>';
-      }
+      html += '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-m-yours">Your games</div><div class="sm-games">';
+      for (const rec of list) html += gameRowHtml(rec.id, gameLabel(rec));
       html += '</div>';
     }
     if (user) html += '<div class="sm-note" id="sm-m-mine">Looking up your games…</div>';
@@ -1111,21 +1147,23 @@
       Net.rpc('my_games').then((mine) => {
         const note = $('sm-m-mine');
         if (!note) return;
+        // the account's view of each game is fresher than this browser's copy: correct the rows above
+        for (const m of mine || []) if (games.get(m.id)) markTurn(m.id, serverWhen(m));
+        refreshLinkGames(list.filter((r) => !(mine || []).some((m) => m.id === r.id)));   // seats held here by link only
         const extra = (mine || []).filter((m) => !games.get(m.id));
         if (!extra.length) { note.remove(); return; }
         let h = '<div class="sm-k" style="text-align:left;margin-top:10px">Your games on other devices</div><div class="sm-games">';
-        for (const m of extra) {
-          const who = m.p2_name ? m.p1_name + ' vs ' + m.p2_name : 'with ' + m.p1_name;
-          const when = (m.finished || m.resigned) ? 'finished' : (m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player');
-          h += '<button data-open="' + esc(m.id) + '"><b' + (when === 'your turn' ? ' class="now"' : '') + '>Online: ' + esc(who) + '</b> <small>' + esc(when) + ' · ' + esc(m.id) + '</small></button>';
-        }
+        for (const m of extra) h += gameRowHtml(m.id, { kind: 'Online: ' + (m.p2_name ? m.p1_name + ' vs ' + m.p2_name : 'with ' + m.p1_name), when: serverWhen(m) });
         const holder = document.createElement('div');
         holder.innerHTML = h + '</div>';
         const added = [...holder.querySelectorAll('button[data-open]')];
         note.replaceWith(...holder.childNodes);
         added.forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
+        countWaiting();
       }).catch(() => { const note = $('sm-m-mine'); if (note) note.textContent = 'Could not look up your games.'; });
     }
+    if (!user) refreshLinkGames(list);
+    countWaiting();
     ui.overlay.querySelectorAll('button[data-bot]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); startLocal('bot', b.dataset.bot); }));
     ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
     $('sm-m-hotseat').addEventListener('click', () => { closeOverlay(); startLocal('hotseat'); });
@@ -1645,6 +1683,13 @@
     try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { if (my !== profileGen) return; openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
     if (my !== profileGen) return;
     if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
+    // on one's own profile, games in progress say whose turn it is, and the ones waiting on you come first
+    let turns = null;
+    if (pr.mine && pr.live && pr.live.length) {
+      try { turns = new Map((await Net.rpc('my_games') || []).map((m) => [m.id, serverWhen(m)])); } catch (e) { /* the plain list stands */ }
+      if (my !== profileGen) return;
+      if (turns) pr.live.sort((a, b) => (turns.get(b.id) === 'your turn') - (turns.get(a.id) === 'your turn'));
+    }
     const st = statsOf(pr.results);
     const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : 0).toString();
     const records = {};
@@ -1676,7 +1721,11 @@
     if (pr.live) {
       html += '<div class="sm-k" style="text-align:left;margin-top:12px">Games in progress</div><div class="sm-summary sm-list">';
       if (!pr.live.length) html += '<div class="sm-note">None right now.</div>';
-      for (const g of pr.live) html += '<div data-g="' + esc(g.id) + '"><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span><small>' + plural(num(g.moves), 'move') + (pr.mine ? '' : ' · watch') + '</small></div>';
+      for (const g of pr.live) {
+        const when = turns ? turns.get(g.id) : null;
+        html += '<div data-g="' + esc(g.id) + '"' + (when === 'your turn' ? ' class="now"' : '') + '><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span>' +
+          (when === 'your turn' ? '<span class="sm-turn">Your turn</span>' : '<small>' + (when === 'their turn' ? 'their turn · ' : '') + plural(num(g.moves), 'move') + (pr.mine ? '' : ' · watch') + '</small>') + '</div>';
+      }
       html += '</div>';
     }
     if (pr.mine) {

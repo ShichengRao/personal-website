@@ -153,7 +153,11 @@
 .sm-app .sm-games{display:grid;gap:6px;margin:8px 0 4px;max-height:220px;overflow:auto;text-align:left}
 .sm-app .sm-games button{padding:7px 10px;text-align:left;font-size:13px}
 .sm-app .sm-games button small{display:block;color:var(--muted);font-size:12px}
-.sm-app .sm-games button b.now{color:var(--good)}
+.sm-app .sm-turn{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--accent);color:var(--accent-ink);
+ font-size:11px;font-weight:700;letter-spacing:.02em;white-space:nowrap;vertical-align:1px}
+.sm-app .sm-games button.now{border-color:var(--accent)}
+.sm-app .sm-list>div.now{background:var(--bg)}
+.sm-app .sm-list>div .sm-turn{margin-left:auto}
 .sm-app .sm-auth-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--soft)}
 .sm-app .sm-auth-row b{color:var(--text)}
 .sm-app .sm-player .sm-name.link{text-decoration:underline dotted;cursor:pointer}
