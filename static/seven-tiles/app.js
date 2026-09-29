@@ -128,6 +128,9 @@
 
   const alive = (s) => !!G && G.session === s;
   const myTurn = () => !!G && !R && !G.state.over && !busy && (G.kind === 'hotseat' ? !G.hidden : G.state.turn === G.me);
+  // Laying tiles out is allowed on the opponent's turn too: the board shows the
+  // score and whether it is legal, and only playing it waits for the turn.
+  const canDraft = () => !!G && !R && !G.state.over && !G.hidden && viewer() !== null && !(busy && G.state.turn === viewer());
   const viewer = () => (G.kind === 'hotseat' ? G.state.turn : G.me);   // null for a spectator
   const nameOf = (p) => G.names[p] || (p === 0 ? 'Player 1' : 'Player 2');
   const isYou = (p) => G.kind !== 'hotseat' && p === G.me;
@@ -140,6 +143,23 @@
   }
   function draftChanged() { stickyError = null; }
   function resetTurnUi() { if (drag && drag.src && drag.src.kind === 'pending') endDrag(drag); pending = []; sel = -1; cursor = null; swapMode = false; marks = new Set(); stickyError = null; }
+  // After a move lands. A draft laid out while waiting for the opponent carries
+  // over where its squares are still free, since their move leaves this rack as
+  // it was; after any other move the turn starts afresh.
+  function turnUiAfterMove() {
+    const last = G.state.history[G.state.history.length - 1];
+    const carry = G.kind !== 'hotseat' && G.me !== null && !G.state.over && last && last.p !== G.me && pending.length > 0;
+    if (!carry) { resetTurnUi(); return; }
+    if (drag && drag.src && drag.src.kind === 'pending') endDrag(drag);
+    const rack = G.state.racks[G.me], taken = new Set();
+    pending = pending.filter((t) => {
+      const ok = !G.state.board[t.r * N + t.c] && t.ri < rack.length && rack[t.ri] === (t.b ? '?' : t.l) && !taken.has(t.ri);
+      if (ok) taken.add(t.ri);
+      return ok;
+    });
+    if (cursor && G.state.board[cursor.r * N + cursor.c]) cursor = null;
+    sel = -1; swapMode = false; marks = new Set(); stickyError = null;
+  }
   function leaveGame() {
     clearTimeout(botTimer); botTimer = null;
     stopPolling();
@@ -189,7 +209,7 @@
         if (drag && drag.active && drag.hiddenNode && d.contains(drag.hiddenNode)) { boardDirty = true; continue; }   // the node under the finger stays until release
         d.innerHTML = html; cellHtml[i] = html;
       }
-      const isCur = !!cursor && cursor.r * N + cursor.c === i && myTurn();
+      const isCur = !!cursor && cursor.r * N + cursor.c === i && canDraft();
       d.classList.toggle('cursor', isCur);
       d.classList.toggle('down', isCur && cursor.down);
     }
@@ -267,20 +287,21 @@
     renderRack();
     renderMoves();
 
-    const mine = myTurn();
+    const mine = myTurn(), drafting = canDraft();
+    const waiting = drafting && !mine;   // laying out a move while the other side is to play
     const opt = C.options(s);
     let preview = null;
-    if (mine && !swapMode && pending.length) preview = previewDraft(s);
+    if (drafting && !swapMode && pending.length) preview = previewDraft(s);
     ui.board.classList.toggle('valid', !!(preview && preview.ok));
     if (stickyError) { /* an action failed: keep saying so until the draft changes */ }
-    else if (preview) { setStatus(preview.text, preview.kind); statusIsPreview = true; }
+    else if (preview) { setStatus(waiting ? preview.text.replace(/\.$/, '') + '. Not your turn yet.' : preview.text, preview.kind); statusIsPreview = true; }
     else if (statusIsPreview) setStatus('');
-    ui.play.textContent = swapMode ? 'Swap ' + marks.size + ' & pass' : preview && preview.ok ? 'Play for ' + preview.score : 'Play';
+    ui.play.textContent = swapMode ? 'Swap ' + marks.size + ' & pass' : waiting ? 'Their turn' : preview && preview.ok ? 'Play for ' + preview.score : 'Play';
     ui.play.disabled = !mine || (swapMode ? marks.size === 0 : opt.mustPass);
     ui.swap.disabled = !mine || !opt.swap;
     ui.swap.textContent = swapMode ? 'Cancel swap' : 'Swap';
     ui.pass.disabled = !mine || swapMode;
-    ui.recall.disabled = !mine || !pending.length;
+    ui.recall.disabled = !drafting || !pending.length;
     ui.shuffle.disabled = !!R || viewer() === null || G.hidden;
     ui.resign.disabled = !!R || s.over || (G.kind === 'hotseat' ? false : G.me === null || (G.kind === 'online' && !G.names[1]));
     if (mine && opt.mustPass && !stickyError) setStatus('You have no tiles left. Pass to let ' + nameOf(1 - s.turn) + ' take the last turn.');
@@ -311,7 +332,7 @@
     if (b) {
       const s = G.session, before = pending.length;
       l = await pickLetter();
-      if (!alive(s) || pending.length !== before || !l || !myTurn() || occupied(r, c)) { if (alive(s)) render(); return; }
+      if (!alive(s) || pending.length !== before || !l || !canDraft() || occupied(r, c)) { if (alive(s)) render(); return; }
     }
     pending.push({ r, c, l, b, ri });
     sel = -1;
@@ -367,7 +388,7 @@
   ui.board.addEventListener('click', (e) => {
     if (suppressClick) return;
     const cell = e.target.closest('.sm-cell');
-    if (!cell || !myTurn() || swapMode) return;
+    if (!cell || !canDraft() || swapMode) return;
     const i = +cell.dataset.i, r = Math.floor(i / N), c = i % N;
     const pi = pending.findIndex((t) => t.r === r && t.c === c);
     if (pi >= 0) { takeBack(pi); return; }
@@ -386,7 +407,7 @@
     const rack = G.state.racks[viewer()];
     if (i >= rack.length || pending.some((t) => t.ri === i)) return;
     if (swapMode) { if (marks.has(i)) marks.delete(i); else marks.add(i); render(); return; }
-    if (!myTurn()) return;
+    if (!canDraft()) return;
     sel = sel === i ? -1 : i;
     render();
   });
@@ -475,7 +496,7 @@
     else if (tile.classList.contains('pending')) {
       const cell = tile.closest('.sm-cell');
       const pi = pending.findIndex((t) => t.r * N + t.c === +cell.dataset.i);
-      if (pi < 0 || !myTurn()) return;
+      if (pi < 0 || !canDraft()) return;
       src = { kind: 'pending', pi, node: tile };
     }
     if (!src) return;
@@ -529,7 +550,7 @@
     }
     if (drag.over && (!target || drag.over.el !== target.el)) drag.over.el.classList.remove('drop');
     if (target && (!drag.over || drag.over.el !== target.el)) {
-      const ok = myTurn() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i);
+      const ok = canDraft() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i);
       if (ok) target.el.classList.add('drop');
     }
     drag.over = target;
@@ -549,7 +570,7 @@
       endDrag(d); render(); return;
     }
     endDrag(d);
-    if (!target || !myTurn()) { render(); return; }
+    if (!target || !canDraft()) { render(); return; }
     const r = Math.floor(target.i / N), c = target.i % N;
     if (G.state.board[target.i] || pending.some((t) => t.r === r && t.c === c)) { render(); return; }
     if (d.src.kind === 'rack') { if (d.src.i < rack.length) place(r, c, d.src.i, rack[d.src.i] === '?'); else render(); return; }
@@ -619,7 +640,7 @@
       else if (e.key === 'Escape') exitReview();
       return;
     }
-    if (!myTurn()) return;
+    if (!canDraft()) return;
     if (e.key === 'Escape') { if (swapMode) { swapMode = false; marks = new Set(); setStatus(''); render(); } else recall(); return; }
     if (swapMode) return;
     if (e.key === 'Enter') { if (e.target && /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return; e.preventDefault(); play(); return; }
@@ -682,7 +703,10 @@
   });
   ui.play.addEventListener('click', play);
   function play() {
-    if (!myTurn()) return;
+    if (!myTurn()) {
+      if (canDraft() && pending.length) { setStatus('Not your turn yet. The tiles stay where they are, ready to play when it is.'); statusIsPreview = true; }
+      return;
+    }
     if (swapMode) {
       const rack = G.state.racks[viewer()];
       commit({ t: 'swap', tiles: [...marks].map((i) => rack[i]) });
@@ -735,7 +759,7 @@
   function applyLocal(move) {
     G.state = C.apply(G.state, move, dict);
     extendReview();
-    resetTurnUi();
+    turnUiAfterMove();
     setStatus('');
     if (G.kind === 'hotseat' && !G.state.over) G.hidden = true;
     persist();
@@ -1440,7 +1464,7 @@
     catch (e) { setStatus('The game record no longer matches this page: ' + e.message, 'bad'); return; }
     const changed = s !== G.state;
     const labels = JSON.stringify([G.names, G.handles, G.nextGame]);
-    if (changed) { G.state = s; extendReview(); resetTurnUi(); setStatus(''); }
+    if (changed) { G.state = s; extendReview(); turnUiAfterMove(); setStatus(''); }
     if (changed || labels !== (G.labels || '')) { G.labels = labels; persist(); render(); }
     if (changed) afterMove();
   }
