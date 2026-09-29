@@ -147,6 +147,11 @@
     opacity: 0.45;
   }
 
+  #hangul-app .option.right:disabled,
+  #hangul-app .option.wrong:disabled {
+    opacity: 1;
+  }
+
   .prompt-card {
     display: grid;
     place-items: center;
@@ -459,7 +464,6 @@
   const MAX_BOX = 4;
 
   const items = DATA.items;
-  const byKo = new Map(items.map((item) => [item.ko, item]));
   const setMates = new Map();
   for (const set of DATA.sets) {
     for (const ko of set) {
@@ -502,9 +506,35 @@
     reset: document.getElementById("reset-button")
   };
 
+  // Jamo codes for each syllable: initial, vowel + 100, final + 200. ㅔ/ㅐ, ㅖ/ㅒ and
+  // ㅚ/ㅙ/ㅞ are merged in present-day Seoul speech, so they share a code.
+  const VOWEL_MERGE = { 5: 1, 7: 3, 11: 10, 15: 10 };
+  function jamo(text) {
+    const codes = [];
+    for (const char of text) {
+      const index = char.charCodeAt(0) - 0xac00;
+      if (index < 0 || index > 11171) continue;
+      const vowel = Math.floor(index / 28) % 21;
+      codes.push(Math.floor(index / 588), 100 + (VOWEL_MERGE[vowel] ?? vowel), 200 + (index % 28));
+    }
+    return codes;
+  }
+
   // Two items that sound the same (낮 and 낫, say) can't both be options.
   function soundKey(item) {
-    return (item.pron || item.ko).replace(/[^가-힣]/g, "");
+    return jamo(item.pron || item.ko).join(",");
+  }
+
+  function editDistance(a, b) {
+    let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const current = [i];
+      for (let j = 1; j <= b.length; j++) {
+        current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      previous = current;
+    }
+    return previous[b.length];
   }
 
   function deckItems() {
@@ -532,26 +562,27 @@
     return copy;
   }
 
-  // Distractors, closest first: its minimal-pair set, then its group (책 / 책이 / 책상),
-  // then items of a similar length from the deck.
+  // Distractors must not be guessable from length alone: same syllable count first,
+  // then the closest spellings letter by letter, with its minimal-pair set ahead of all.
   function buildOptions(target) {
+    const targetJamo = jamo(target.ko);
+    const mates = setMates.get(target.ko) || new Set();
+    const pool = items.filter((item) => item !== target && (item.deck === "phrases") === (target.deck === "phrases"));
+    const ranked = pool.map((item) => {
+      const itemJamo = jamo(item.ko);
+      const syllableGap = Math.abs(itemJamo.length - targetJamo.length) / 3;
+      const score = (mates.has(item.ko) ? -100 : 0) + syllableGap * 100 + editDistance(targetJamo, itemJamo) + Math.random() * 2;
+      return { item, score };
+    }).sort((a, b) => a.score - b.score);
     const taken = new Set([soundKey(target)]);
     const chosen = [];
-    const take = (candidates) => {
-      for (const item of shuffle(candidates)) {
-        if (chosen.length === 3) return;
-        const key = soundKey(item);
-        if (taken.has(key)) continue;
-        taken.add(key);
-        chosen.push(item);
-      }
-    };
-    take([...(setMates.get(target.ko) || [])].map((ko) => byKo.get(ko)));
-    take(items.filter((item) => item.group === target.group && item.deck === target.deck));
-    const length = target.ko.length;
-    const pool = target.deck === "phrases" ? items.filter((item) => item.deck === "phrases") : deckItems();
-    take(pool.filter((item) => Math.abs(item.ko.length - length) <= 1));
-    take(items);
+    for (const { item } of ranked) {
+      if (chosen.length === 3) break;
+      const key = soundKey(item);
+      if (taken.has(key)) continue;
+      taken.add(key);
+      chosen.push(item);
+    }
     return shuffle([target, ...chosen]);
   }
 
