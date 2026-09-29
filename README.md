@@ -103,6 +103,15 @@ keep it in the gitignored `tools/lexicon/private/`). `node tools/lexicon.mjs
 dump words` prints the plain list for local use, such as building a MAGPIE
 lexicon; never commit its output.
 
+The menu offers one bot on a 0-100 dial (`botMoveAt` in `core.js`). At level
+d it misses its best play by about `lossAt(d)` points of value a turn, half to
+one and a half times that at random; rare words cost it extra at low levels
+and the kept tiles count for more at high ones; from 90 it may solve the
+endgame exactly, and 100 is the hard bot. Fitted in bot-against-bot games, it
+loses to hard by about 3.8 points a game per step down the dial, level 35
+plays the old medium bot evenly and the old easy sits near 16. Games started
+before the dial keep their named level.
+
 The hard bot plays by equity (score plus leave), and once the bag is empty it
 searches the last turns exactly, since the opponent's rack is then known. It
 also exchanges when the kept rack is worth more than any play. The easy and

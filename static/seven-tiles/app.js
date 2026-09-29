@@ -91,7 +91,7 @@
 
   // ---- dictionary --------------------------------------------------------
   // dict: every legal word. common: the words most people know, which the
-  // easy and medium bots are limited to and which the review rates against.
+  // low bot levels keep mostly to and which the review rates against.
   let dict = null, common = null;
   let dictFailed = false;
   let lexicon = null;   // which list is loaded, and the credit it needs (shown in How to play)
@@ -128,6 +128,9 @@
 
   const alive = (s) => !!G && G.session === s;
   const myTurn = () => !!G && !R && !G.state.over && !busy && (G.kind === 'hotseat' ? !G.hidden : G.state.turn === G.me);
+  // Laying tiles out is allowed on the opponent's turn too: the board shows the
+  // score and whether it is legal, and only playing it waits for the turn.
+  const canDraft = () => !!G && !R && !G.state.over && !G.hidden && viewer() !== null && !(busy && G.state.turn === viewer());
   const viewer = () => (G.kind === 'hotseat' ? G.state.turn : G.me);   // null for a spectator
   const nameOf = (p) => G.names[p] || (p === 0 ? 'Player 1' : 'Player 2');
   const isYou = (p) => G.kind !== 'hotseat' && p === G.me;
@@ -140,6 +143,23 @@
   }
   function draftChanged() { stickyError = null; }
   function resetTurnUi() { if (drag && drag.src && drag.src.kind === 'pending') endDrag(drag); pending = []; sel = -1; cursor = null; swapMode = false; marks = new Set(); stickyError = null; }
+  // After a move lands. A draft laid out while waiting for the opponent carries
+  // over where its squares are still free, since their move leaves this rack as
+  // it was; after any other move the turn starts afresh.
+  function turnUiAfterMove() {
+    const last = G.state.history[G.state.history.length - 1];
+    const carry = G.kind !== 'hotseat' && G.me !== null && !G.state.over && last && last.p !== G.me && pending.length > 0;
+    if (!carry) { resetTurnUi(); return; }
+    if (drag && drag.src && drag.src.kind === 'pending') endDrag(drag);
+    const rack = G.state.racks[G.me], taken = new Set();
+    pending = pending.filter((t) => {
+      const ok = !G.state.board[t.r * N + t.c] && t.ri < rack.length && rack[t.ri] === (t.b ? '?' : t.l) && !taken.has(t.ri);
+      if (ok) taken.add(t.ri);
+      return ok;
+    });
+    if (cursor && G.state.board[cursor.r * N + cursor.c]) cursor = null;
+    sel = -1; swapMode = false; marks = new Set(); stickyError = null;
+  }
   function leaveGame() {
     clearTimeout(botTimer); botTimer = null;
     stopPolling();
@@ -189,7 +209,7 @@
         if (drag && drag.active && drag.hiddenNode && d.contains(drag.hiddenNode)) { boardDirty = true; continue; }   // the node under the finger stays until release
         d.innerHTML = html; cellHtml[i] = html;
       }
-      const isCur = !!cursor && cursor.r * N + cursor.c === i && myTurn();
+      const isCur = !!cursor && cursor.r * N + cursor.c === i && canDraft();
       d.classList.toggle('cursor', isCur);
       d.classList.toggle('down', isCur && cursor.down);
     }
@@ -206,14 +226,35 @@
     const p = viewer();
     return p === null ? [] : G.state.racks[p];
   }
+  // In review, the rack slots the reviewed move used: the tiles it played (a
+  // blank counts as the blank) or swapped, or those of the suggested play
+  // shown in its place, matched to the rack in order.
+  function reviewUsedSlots() {
+    const used = new Set();
+    if (!R || R.k === 0 || !canAnalyze(R.k)) return used;
+    const rack = rackShown();
+    let want = [];
+    if (R.ghost) want = R.ghost.tiles.map((t) => (t.b ? '?' : t.l));
+    else {
+      const m = G.state.moves[R.k - 1];
+      if (m.t === 'play') want = m.tiles.map((t) => (t.b ? '?' : t.l));
+      else if (m.t === 'swap') want = m.tiles.slice();
+    }
+    for (const l of want) {
+      const i = rack.findIndex((x, j) => x === l && !used.has(j));
+      if (i >= 0) used.add(i);
+    }
+    return used;
+  }
   let rackDirty = false, boardDirty = false;   // a render was skipped mid-drag; redo it at release
   function renderRack() {
     if (drag && drag.active) { rackDirty = true; return; }
     const rack = rackShown();
     const used = new Set(pending.map((t) => t.ri));
+    const reviewed = reviewUsedSlots();
     let html = '';
     for (let i = 0; i < C.RACK; i++) {
-      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : ''].join(' ').trim();
+      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : '', reviewed.has(i) ? (R.ghost ? 'used alt' : 'used') : ''].join(' ').trim();
       const t = rack[i];
       // while hidden between pass-and-play turns, show anonymous backs: the letters must not reach the page at all
       const inner = G.hidden ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
@@ -267,20 +308,21 @@
     renderRack();
     renderMoves();
 
-    const mine = myTurn();
+    const mine = myTurn(), drafting = canDraft();
+    const waiting = drafting && !mine;   // laying out a move while the other side is to play
     const opt = C.options(s);
     let preview = null;
-    if (mine && !swapMode && pending.length) preview = previewDraft(s);
+    if (drafting && !swapMode && pending.length) preview = previewDraft(s);
     ui.board.classList.toggle('valid', !!(preview && preview.ok));
     if (stickyError) { /* an action failed: keep saying so until the draft changes */ }
-    else if (preview) { setStatus(preview.text, preview.kind); statusIsPreview = true; }
+    else if (preview) { setStatus(waiting ? preview.text.replace(/\.$/, '') + '. Not your turn yet.' : preview.text, preview.kind); statusIsPreview = true; }
     else if (statusIsPreview) setStatus('');
-    ui.play.textContent = swapMode ? 'Swap ' + marks.size + ' & pass' : preview && preview.ok ? 'Play for ' + preview.score : 'Play';
+    ui.play.textContent = swapMode ? 'Swap ' + marks.size + ' & pass' : waiting ? 'Their turn' : preview && preview.ok ? 'Play for ' + preview.score : 'Play';
     ui.play.disabled = !mine || (swapMode ? marks.size === 0 : opt.mustPass);
     ui.swap.disabled = !mine || !opt.swap;
     ui.swap.textContent = swapMode ? 'Cancel swap' : 'Swap';
     ui.pass.disabled = !mine || swapMode;
-    ui.recall.disabled = !mine || !pending.length;
+    ui.recall.disabled = !drafting || !pending.length;
     ui.shuffle.disabled = !!R || viewer() === null || G.hidden;
     ui.resign.disabled = !!R || s.over || (G.kind === 'hotseat' ? false : G.me === null || (G.kind === 'online' && !G.names[1]));
     if (mine && opt.mustPass && !stickyError) setStatus('You have no tiles left. Pass to let ' + nameOf(1 - s.turn) + ' take the last turn.');
@@ -311,7 +353,7 @@
     if (b) {
       const s = G.session, before = pending.length;
       l = await pickLetter();
-      if (!alive(s) || pending.length !== before || !l || !myTurn() || occupied(r, c)) { if (alive(s)) render(); return; }
+      if (!alive(s) || pending.length !== before || !l || !canDraft() || occupied(r, c)) { if (alive(s)) render(); return; }
     }
     pending.push({ r, c, l, b, ri });
     sel = -1;
@@ -367,7 +409,7 @@
   ui.board.addEventListener('click', (e) => {
     if (suppressClick) return;
     const cell = e.target.closest('.sm-cell');
-    if (!cell || !myTurn() || swapMode) return;
+    if (!cell || !canDraft() || swapMode) return;
     const i = +cell.dataset.i, r = Math.floor(i / N), c = i % N;
     const pi = pending.findIndex((t) => t.r === r && t.c === c);
     if (pi >= 0) { takeBack(pi); return; }
@@ -386,8 +428,15 @@
     const rack = G.state.racks[viewer()];
     if (i >= rack.length || pending.some((t) => t.ri === i)) return;
     if (swapMode) { if (marks.has(i)) marks.delete(i); else marks.add(i); render(); return; }
-    if (!myTurn()) return;
+    if (!canDraft()) return;
+    // A tap puts the tile down at the board cursor and moves the cursor on, so
+    // tapping tiles one after another lays a word. On an empty board the
+    // cursor starts at the centre. With no cursor, the tile is picked up and
+    // the next square tapped takes it.
+    if (!cursor && !pending.length && G.state.board.every((x) => !x)) cursor = { r: (N - 1) / 2, c: (N - 1) / 2, down: false };
+    if (cursor && !occupied(cursor.r, cursor.c)) { place(cursor.r, cursor.c, i, rack[i] === '?'); return; }
     sel = sel === i ? -1 : i;
+    if (sel >= 0) setStatus('Tap a square to put it there. Or tap a square first, then tiles, to lay a word.');
     render();
   });
 
@@ -475,7 +524,7 @@
     else if (tile.classList.contains('pending')) {
       const cell = tile.closest('.sm-cell');
       const pi = pending.findIndex((t) => t.r * N + t.c === +cell.dataset.i);
-      if (pi < 0 || !myTurn()) return;
+      if (pi < 0 || !canDraft()) return;
       src = { kind: 'pending', pi, node: tile };
     }
     if (!src) return;
@@ -529,7 +578,7 @@
     }
     if (drag.over && (!target || drag.over.el !== target.el)) drag.over.el.classList.remove('drop');
     if (target && (!drag.over || drag.over.el !== target.el)) {
-      const ok = myTurn() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i);
+      const ok = canDraft() && !G.state.board[target.i] && !pending.some((t) => t.r * N + t.c === target.i);
       if (ok) target.el.classList.add('drop');
     }
     drag.over = target;
@@ -549,7 +598,7 @@
       endDrag(d); render(); return;
     }
     endDrag(d);
-    if (!target || !myTurn()) { render(); return; }
+    if (!target || !canDraft()) { render(); return; }
     const r = Math.floor(target.i / N), c = target.i % N;
     if (G.state.board[target.i] || pending.some((t) => t.r === r && t.c === c)) { render(); return; }
     if (d.src.kind === 'rack') { if (d.src.i < rack.length) place(r, c, d.src.i, rack[d.src.i] === '?'); else render(); return; }
@@ -619,7 +668,7 @@
       else if (e.key === 'Escape') exitReview();
       return;
     }
-    if (!myTurn()) return;
+    if (!canDraft()) return;
     if (e.key === 'Escape') { if (swapMode) { swapMode = false; marks = new Set(); setStatus(''); render(); } else recall(); return; }
     if (swapMode) return;
     if (e.key === 'Enter') { if (e.target && /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return; e.preventDefault(); play(); return; }
@@ -682,7 +731,10 @@
   });
   ui.play.addEventListener('click', play);
   function play() {
-    if (!myTurn()) return;
+    if (!myTurn()) {
+      if (canDraft() && pending.length) { setStatus('Not your turn yet. The tiles stay where they are, ready to play when it is.'); statusIsPreview = true; }
+      return;
+    }
     if (swapMode) {
       const rack = G.state.racks[viewer()];
       commit({ t: 'swap', tiles: [...marks].map((i) => rack[i]) });
@@ -735,7 +787,7 @@
   function applyLocal(move) {
     G.state = C.apply(G.state, move, dict);
     extendReview();
-    resetTurnUi();
+    turnUiAfterMove();
     setStatus('');
     if (G.kind === 'hotseat' && !G.state.over) G.hidden = true;
     persist();
@@ -1038,13 +1090,59 @@
   }
 
   function gameLabel(rec) {
-    const kind = rec.kind === 'bot' ? 'vs Bot (' + rec.level + ')' : rec.kind === 'hotseat' ? 'Pass and play' : 'Online' + (rec.names && rec.names[1] ? ': ' + rec.names[0] + ' vs ' + rec.names[1] : rec.names && rec.names[0] ? ' with ' + rec.names[0] : '');
+    const kind = rec.kind === 'bot' ? 'vs ' + botName(rec.level) : rec.kind === 'hotseat' ? 'Pass and play' : 'Online' + (rec.names && rec.names[1] ? ': ' + rec.names[0] + ' vs ' + rec.names[1] : rec.names && rec.names[0] ? ' with ' + rec.names[0] : '');
     const n = rec.moves ? rec.moves.length : 0;
     let when;
     if (rec.over) when = 'finished';
     else if (rec.kind === 'online' && rec.online && rec.online.player !== null) when = (n % 2 === rec.online.player) ? 'your turn' : 'their turn';
     else when = plural(n, 'move') + ' in';
     return { kind, when };
+  }
+  // A games-list row. A game waiting on this player carries a "Your turn" badge.
+  function gameRowHtml(id, l) {
+    const now = l.when === 'your turn';
+    return '<button data-open="' + esc(id) + '"' + (now ? ' class="now"' : '') + '><b>' + esc(l.kind) + '</b>' + (now ? '<span class="sm-turn">Your turn</span>' : '') +
+      '<small>' + esc(l.when) + ' · ' + esc(id) + '</small></button>';
+  }
+  const serverWhen = (m) => (m.finished || m.resigned) ? 'finished' : m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player';
+  // Correct a row already on screen once the server has said whose turn it is.
+  function markTurn(id, when) {
+    const b = [...ui.overlay.querySelectorAll('button[data-open]')].find((x) => x.dataset.open === id);
+    if (!b) return;
+    const kind = b.querySelector('b').textContent;
+    const holder = document.createElement('div');
+    holder.innerHTML = gameRowHtml(id, { kind, when });
+    const fresh = holder.firstElementChild;
+    fresh.addEventListener('click', () => { closeOverlay(); openGame(id); });
+    b.replaceWith(fresh);
+    countWaiting();
+  }
+  function countWaiting() {
+    const head = $('sm-m-yours');
+    if (!head) return;
+    const n = ui.overlay.querySelectorAll('.sm-games button.now').length;
+    head.innerHTML = 'Your games' + (n ? ' <span class="sm-turn">' + n + ' waiting on you</span>' : '');
+  }
+  // Online games held only by a link (or when not signed in): ask the server
+  // how far each has got, a handful at a time, and correct their rows.
+  function refreshLinkGames(list) {
+    if (!Net.enabled || !list) return;
+    const open = list.filter((r) => r.kind === 'online' && !r.over && r.online && r.online.token && r.online.player !== null).slice(0, 8);
+    for (const rec of open) {
+      Net.rpc('get_game', { p_code: rec.id, p_token: rec.online.token }).then((row) => {
+        if (!row || !row.moves || !row.seed || !ui.overlay.classList.contains('is-open')) return;
+        let s;
+        try { s = C.replay(C.unpack(rec.id, row.seed), row.moves.map((m) => C.unpack(rec.id, m.d))); } catch (e) { return; }   // no word list needed
+        markTurn(rec.id, s.over ? 'finished' : s.turn === rec.online.player ? 'your turn' : row.full ? 'their turn' : 'waiting for a player');
+      }).catch(() => {});
+    }
+  }
+  // The bot's difficulty, 0 to 100, remembered between games. Games started
+  // before the dial keep their named level (easy, medium or hard).
+  let botLevel = (() => { const v = Number(store.get('sm.botLevel', 35)); return v >= 0 && v <= 100 ? Math.round(v / 5) * 5 : 35; })();
+  const botName = (level) => (typeof level === 'number' ? 'Bot (level ' + level + ')' : 'Bot (' + level + ')');
+  function levelWords(d) {
+    return d >= 100 ? 'full strength' : d >= 80 ? 'expert' : d >= 60 ? 'strong' : d >= 40 ? 'club player' : d >= 20 ? 'casual' : 'new to the game';
   }
   let menuNote = null;
   // a navigation that failed: the message goes on the status line and into the menu card that follows
@@ -1056,18 +1154,16 @@
     const note = menuNote ? '<p class="sm-card-note">' + esc(menuNote) + '</p>' : '';
     menuNote = null;
     let html = '<h2>Seven Tiles</h2><p>Two racks, one bag, a 15×15 board.</p>' + note + (dictFailed ? '<p style="color:var(--bad)">The word list did not load, so no new game can start. Reload to try again.</p>' : '') + '<div class="sm-choices">' +
-      '<button data-bot="easy"' + noDict + '><b>Play the bot: easy</b><small>common words only, and a middling play</small></button>' +
-      '<button data-bot="medium"' + noDict + '><b>Play the bot: medium</b><small>common words only, and a good play</small></button>' +
-      '<button data-bot="hard"' + noDict + '><b>Play the bot: hard</b><small>every word in the list, the strongest play it can find</small></button>' +
+      '<div class="sm-botpick"><div class="sm-botrow"><b>Play the bot</b><span id="sm-m-lvl">' + esc(levelWords(botLevel)) + '</span></div>' +
+      '<input type="range" id="sm-m-level" min="0" max="100" step="5" value="' + botLevel + '" aria-label="Bot difficulty, 0 to 100"' + noDict + '>' +
+      '<div class="sm-botscale"><small>0: new to the game</small><small>100: full strength</small></div>' +
+      '<button class="primary" id="sm-m-bot"' + noDict + '>Play at level <span id="sm-m-lvlnum">' + botLevel + '</span></button></div>' +
       '<button id="sm-m-hotseat"' + noDict + '><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
     if (list.length) {
-      html += '<div class="sm-k" style="text-align:left;margin-top:14px">Your games</div><div class="sm-games">';
-      for (const rec of list) {
-        const l = gameLabel(rec);
-        html += '<button data-open="' + esc(rec.id) + '"><b' + (l.when === 'your turn' ? ' class="now"' : '') + '>' + esc(l.kind) + '</b> <small>' + esc(l.when) + ' · ' + esc(rec.id) + '</small></button>';
-      }
+      html += '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-m-yours">Your games</div><div class="sm-games">';
+      for (const rec of list) html += gameRowHtml(rec.id, gameLabel(rec));
       html += '</div>';
     }
     if (user) html += '<div class="sm-note" id="sm-m-mine">Looking up your games…</div>';
@@ -1080,22 +1176,26 @@
       Net.rpc('my_games').then((mine) => {
         const note = $('sm-m-mine');
         if (!note) return;
+        // the account's view of each game is fresher than this browser's copy: correct the rows above
+        for (const m of mine || []) if (games.get(m.id)) markTurn(m.id, serverWhen(m));
+        refreshLinkGames(list.filter((r) => !(mine || []).some((m) => m.id === r.id)));   // seats held here by link only
         const extra = (mine || []).filter((m) => !games.get(m.id));
         if (!extra.length) { note.remove(); return; }
         let h = '<div class="sm-k" style="text-align:left;margin-top:10px">Your games on other devices</div><div class="sm-games">';
-        for (const m of extra) {
-          const who = m.p2_name ? m.p1_name + ' vs ' + m.p2_name : 'with ' + m.p1_name;
-          const when = (m.finished || m.resigned) ? 'finished' : (m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player');
-          h += '<button data-open="' + esc(m.id) + '"><b' + (when === 'your turn' ? ' class="now"' : '') + '>Online: ' + esc(who) + '</b> <small>' + esc(when) + ' · ' + esc(m.id) + '</small></button>';
-        }
+        for (const m of extra) h += gameRowHtml(m.id, { kind: 'Online: ' + (m.p2_name ? m.p1_name + ' vs ' + m.p2_name : 'with ' + m.p1_name), when: serverWhen(m) });
         const holder = document.createElement('div');
         holder.innerHTML = h + '</div>';
         const added = [...holder.querySelectorAll('button[data-open]')];
         note.replaceWith(...holder.childNodes);
         added.forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
+        countWaiting();
       }).catch(() => { const note = $('sm-m-mine'); if (note) note.textContent = 'Could not look up your games.'; });
     }
-    ui.overlay.querySelectorAll('button[data-bot]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); startLocal('bot', b.dataset.bot); }));
+    if (!user) refreshLinkGames(list);
+    countWaiting();
+    const slider = $('sm-m-level');
+    slider.addEventListener('input', () => { botLevel = +slider.value; store.set('sm.botLevel', botLevel); $('sm-m-lvl').textContent = levelWords(botLevel); $('sm-m-lvlnum').textContent = botLevel; });
+    $('sm-m-bot').addEventListener('click', () => { closeOverlay(); startLocal('bot', botLevel); });
     ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
     $('sm-m-hotseat').addEventListener('click', () => { closeOverlay(); startLocal('hotseat'); });
     $('sm-m-online').addEventListener('click', () => { closeOverlay(); createOnline(); });
@@ -1122,7 +1222,7 @@
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
       '<div><b>Review:</b> click any move in the list to step through the game (against a person, once the game is over). <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
-      '<div><b>Word list:</b> ' + lexiconCredit() + ' The easy and medium bots, and the ratings, use only its common words.</div>' +
+      '<div><b>Word list:</b> ' + lexiconCredit() + ' The ratings use only its common words, and the bot keeps mostly to them at low levels, less so as the level rises.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
     $('sm-help-ok').addEventListener('click', closeOverlay);
@@ -1164,7 +1264,7 @@
     leaveGame();
     let id = newId();
     while (games.get(id)) id = newId();
-    G = { id, kind, level: level || null, names: kind === 'bot' ? ['You', 'Bot (' + level + ')'] : ['Player 1', 'Player 2'], state: C.newGame(randomSeed()), me: 0, hidden: false, session: ++sessions };
+    G = { id, kind, level: level === undefined ? null : level, names: kind === 'bot' ? ['You', botName(level)] : ['Player 1', 'Player 2'], state: C.newGame(randomSeed()), me: 0, hidden: false, session: ++sessions };
     seenMoves = 0;
     persist();
     setUrl(id);
@@ -1440,7 +1540,7 @@
     catch (e) { setStatus('The game record no longer matches this page: ' + e.message, 'bad'); return; }
     const changed = s !== G.state;
     const labels = JSON.stringify([G.names, G.handles, G.nextGame]);
-    if (changed) { G.state = s; extendReview(); resetTurnUi(); setStatus(''); }
+    if (changed) { G.state = s; extendReview(); turnUiAfterMove(); setStatus(''); }
     if (changed || labels !== (G.labels || '')) { G.labels = labels; persist(); render(); }
     if (changed) afterMove();
   }
@@ -1614,6 +1714,13 @@
     try { pr = await Net.rpc('profile', { p_handle: handle }); } catch (e) { if (my !== profileGen) return; openOverlay('<h2>Profile</h2><p>' + esc(e.message) + '</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
     if (my !== profileGen) return;
     if (!pr) { openOverlay('<h2>No such player</h2><p>Nobody has the code ' + esc(handle) + '.</p><button id="sm-pr-close">Close</button>'); $('sm-pr-close').addEventListener('click', back); return; }
+    // on one's own profile, games in progress say whose turn it is, and the ones waiting on you come first
+    let turns = null;
+    if (pr.mine && pr.live && pr.live.length) {
+      try { turns = new Map((await Net.rpc('my_games') || []).map((m) => [m.id, serverWhen(m)])); } catch (e) { /* the plain list stands */ }
+      if (my !== profileGen) return;
+      if (turns) pr.live.sort((a, b) => (turns.get(b.id) === 'your turn') - (turns.get(a.id) === 'your turn'));
+    }
     const st = statsOf(pr.results);
     const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : 0).toString();
     const records = {};
@@ -1645,7 +1752,11 @@
     if (pr.live) {
       html += '<div class="sm-k" style="text-align:left;margin-top:12px">Games in progress</div><div class="sm-summary sm-list">';
       if (!pr.live.length) html += '<div class="sm-note">None right now.</div>';
-      for (const g of pr.live) html += '<div data-g="' + esc(g.id) + '"><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span><small>' + plural(num(g.moves), 'move') + (pr.mine ? '' : ' · watch') + '</small></div>';
+      for (const g of pr.live) {
+        const when = turns ? turns.get(g.id) : null;
+        html += '<div data-g="' + esc(g.id) + '"' + (when === 'your turn' ? ' class="now"' : '') + '><span>' + esc(g.p1_name) + ' vs ' + esc(g.p2_name) + '</span>' +
+          (when === 'your turn' ? '<span class="sm-turn">Your turn</span>' : '<small>' + (when === 'their turn' ? 'their turn · ' : '') + plural(num(g.moves), 'move') + (pr.mine ? '' : ' · watch') + '</small>') + '</div>';
+      }
       html += '</div>';
     }
     if (pr.mine) {
