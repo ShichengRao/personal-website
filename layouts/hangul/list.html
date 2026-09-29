@@ -20,21 +20,8 @@
     --gold: #b98216;
   }
 
-  #hangul-app button,
-  #hangul-app input {
+  #hangul-app button {
     font: inherit;
-  }
-
-  #hangul-app .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   .hangul-wrap {
@@ -96,6 +83,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
     gap: 1rem;
+    align-items: start;
   }
 
   .hangul-panel {
@@ -109,17 +97,23 @@
     padding: clamp(1rem, 3vw, 2rem);
   }
 
-  .mode-row {
+  .control-row {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.75rem;
   }
 
-  .mode-row button,
-  .tool-row button,
-  .answer-row button,
-  .history-actions button {
+  .control-row .label {
+    align-self: center;
+    min-width: 3.5rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  #hangul-app .btn {
     min-height: 42px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -130,17 +124,35 @@
     font-weight: 800;
   }
 
-  .mode-row button.active,
-  .answer-row button.primary {
+  #hangul-app .btn.active,
+  #hangul-app .btn.primary {
     border-color: var(--green);
     background: var(--green);
     color: #ffffff;
+  }
+
+  #hangul-app .btn.danger {
+    border-color: var(--rose);
+    color: var(--rose);
+  }
+
+  #hangul-app .btn.recording {
+    border-color: var(--rose);
+    background: var(--rose);
+    color: #ffffff;
+  }
+
+  #hangul-app .btn:disabled {
+    cursor: default;
+    opacity: 0.45;
   }
 
   .prompt-card {
     display: grid;
     place-items: center;
     min-height: 220px;
+    margin-top: 0.5rem;
+    padding: 1rem;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: linear-gradient(135deg, #ffffff, #f8fbf2);
@@ -149,12 +161,16 @@
 
   .prompt-korean {
     display: block;
-    font-size: clamp(3.5rem, 13vw, 7rem);
-    line-height: 1.05;
+    font-size: clamp(3rem, 11vw, 6rem);
+    line-height: 1.1;
     word-break: keep-all;
   }
 
-  .prompt-kind {
+  .prompt-korean.long {
+    font-size: clamp(2rem, 7vw, 3.5rem);
+  }
+
+  .prompt-hint {
     display: block;
     margin-top: 0.75rem;
     color: var(--muted);
@@ -163,53 +179,113 @@
     text-transform: uppercase;
   }
 
-  .answer-row {
+  #hangul-app .play-big {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    border-color: var(--green);
+    background: var(--green-soft);
+    color: var(--green);
+    font-size: 2.2rem;
+    line-height: 1;
+  }
+
+  .options {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
     margin-top: 1rem;
   }
 
-  .answer-row input {
-    min-width: 0;
-    min-height: 48px;
-    border: 2px solid var(--line);
-    border-radius: 8px;
-    padding: 0 0.9rem;
-    font-size: 1.05rem;
+  #hangul-app .option {
+    min-height: 64px;
+    font-size: 1.6rem;
+    font-weight: 600;
+    word-break: keep-all;
   }
 
-  .answer-row input:focus {
+  #hangul-app .option.right {
     border-color: var(--green);
-    outline: none;
+    background: var(--green-soft);
   }
 
-  .feedback {
-    min-height: 3.25rem;
-    margin-top: 0.9rem;
-    color: var(--muted);
+  #hangul-app .option.wrong {
+    border-color: var(--rose);
+    background: var(--rose-soft);
+  }
+
+  .reveal {
+    margin-top: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfaf7;
     line-height: 1.5;
   }
 
-  .feedback.correct {
+  .reveal[hidden] {
+    display: none;
+  }
+
+  .reveal-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.9rem;
+    align-items: baseline;
+  }
+
+  .reveal-head strong {
+    font-size: 1.5rem;
+  }
+
+  .reveal-head .said {
+    color: var(--green);
+    font-weight: 700;
+  }
+
+  .reveal .meaning {
+    margin-top: 0.25rem;
+  }
+
+  .reveal .rule {
+    margin-top: 0.5rem;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .rom {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .verdict {
+    margin-bottom: 0.4rem;
+    font-weight: 800;
+  }
+
+  .verdict.correct {
     color: var(--green);
   }
 
-  .feedback.incorrect {
+  .verdict.incorrect {
     color: var(--rose);
   }
 
-  .tool-row {
+  .action-row {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 1rem;
   }
 
-  .tool-row button.recording {
-    border-color: var(--rose);
-    background: var(--rose);
-    color: #ffffff;
+  .action-row .spacer {
+    flex: 1;
+  }
+
+  .keys {
+    margin-top: 0.75rem;
+    color: var(--muted);
+    font-size: 0.8rem;
   }
 
   .recording-player {
@@ -232,43 +308,74 @@
     letter-spacing: 0;
   }
 
-  .phrase-list,
+  .deck-list {
+    max-height: 520px;
+    margin-top: 0.85rem;
+    overflow-y: auto;
+  }
+
+  .deck-group + .deck-group {
+    margin-top: 0.9rem;
+  }
+
+  .deck-group h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+  }
+
+  .deck-group p {
+    margin: 0 0 0.4rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .deck-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.3rem 0;
+    border-top: 1px solid #eee9df;
+  }
+
+  #hangul-app .deck-row .btn {
+    min-height: 32px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.8rem;
+  }
+
+  .deck-row span {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
   .history-list {
     display: grid;
-    gap: 0.55rem;
+    gap: 0.4rem;
     margin-top: 0.85rem;
   }
 
-  .phrase-item,
   .history-item {
     border: 1px solid var(--line);
     border-radius: 8px;
-    padding: 0.75rem;
+    padding: 0.55rem 0.75rem;
     background: #fbfaf7;
+    font-size: 0.92rem;
   }
 
-  .phrase-item strong,
-  .history-item strong {
-    display: block;
-    margin-bottom: 0.3rem;
+  .history-item.miss {
+    border-color: #e8c3ca;
   }
 
-  .phrase-item span,
   .history-item span {
     color: var(--muted);
-    font-size: 0.9rem;
-    line-height: 1.45;
   }
 
   .history-actions {
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
-  }
-
-  .history-actions button.danger {
-    border-color: var(--rose);
-    color: var(--rose);
   }
 
   @media (max-width: 860px) {
@@ -278,13 +385,9 @@
     }
   }
 
-  @media (max-width: 620px) {
-    .answer-row {
+  @media (max-width: 520px) {
+    .options {
       grid-template-columns: 1fr;
-    }
-
-    .answer-row button {
-      width: 100%;
     }
   }
 </style>
@@ -296,7 +399,7 @@
     <header class="hangul-top">
       <div>
         <h1>Hangul Practice</h1>
-        <p class="hangul-sub">Practice romanization for random Korean syllables and everyday phrases, then listen and record your own pronunciation.</p>
+        <p class="hangul-sub">Link Hangul straight to sound. Hear a word and pick how it's written, or read a word aloud and check yourself against a native-sounding recording.</p>
       </div>
       <div class="hangul-stats" aria-label="Practice statistics">
         <div class="hangul-stat"><strong id="stat-accuracy">0%</strong><span>Accuracy</span></div>
@@ -307,43 +410,38 @@
 
     <section class="hangul-grid">
       <div class="hangul-panel hangul-practice">
-        <div class="mode-row" role="group" aria-label="Practice mode">
-          <button type="button" id="mode-character" class="active">Characters</button>
-          <button type="button" id="mode-phrase">Common phrases</button>
+        <div class="control-row" role="group" aria-label="Deck">
+          <span class="label">Deck</span>
+          <button type="button" class="btn" data-deck="words">Words</button>
+          <button type="button" class="btn" data-deck="phrases">Phrases</button>
+          <button type="button" class="btn" data-deck="batchim">Batchim</button>
+          <button type="button" class="btn" data-deck="sounds">Sound pairs</button>
+          <button type="button" class="btn" data-deck="all">All</button>
+        </div>
+        <div class="control-row" role="group" aria-label="Practice mode">
+          <span class="label">Mode</span>
+          <button type="button" class="btn" data-mode="listen">Listen &amp; pick</button>
+          <button type="button" class="btn" data-mode="read">Read aloud</button>
         </div>
 
-        <div class="prompt-card" aria-live="polite">
-          <div>
-            <span id="prompt-korean" class="prompt-korean">가</span>
-            <span id="prompt-kind" class="prompt-kind">Random syllable</span>
-          </div>
-        </div>
+        <div class="prompt-card" id="prompt-card" aria-live="polite"></div>
+        <div class="options" id="options"></div>
+        <div class="reveal" id="reveal" hidden></div>
 
-        <form id="answer-form" class="answer-row">
-          <label class="sr-only" for="answer-input">Romanization answer</label>
-          <input id="answer-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type romanization" />
-          <button type="submit" id="check-button" class="primary">Check</button>
-          <button type="button" id="next-button">Next</button>
-        </form>
-
-        <div id="feedback" class="feedback">Use Revised Romanization. Spacing and punctuation are optional.</div>
-
-        <div class="tool-row" role="group" aria-label="Audio tools">
-          <button type="button" id="speak-button">Pronounce</button>
-          <button type="button" id="record-button">Record</button>
-        </div>
+        <div class="action-row" id="actions"></div>
         <audio id="recording-player" class="recording-player" controls></audio>
+        <div class="keys" id="keys"></div>
       </div>
 
       <aside class="hangul-panel side-panel">
-        <h2>Phrase Set</h2>
-        <div id="phrase-list" class="phrase-list"></div>
+        <h2 id="deck-title">Deck</h2>
+        <div id="deck-list" class="deck-list"></div>
 
         <h2 style="margin-top:1.25rem">Recent Results</h2>
         <div id="history-list" class="history-list"></div>
         <div class="history-actions">
-          <button type="button" id="export-button">Export</button>
-          <button type="button" id="reset-button" class="danger">Reset</button>
+          <button type="button" class="btn" id="export-button">Export</button>
+          <button type="button" class="btn danger" id="reset-button">Reset</button>
         </div>
       </aside>
     </section>
@@ -352,52 +450,50 @@
 
 <script>
 (() => {
-  const STORAGE_KEY = "hangul_practice_results_v1";
-  const romanInitial = ["g","kk","n","d","tt","r","m","b","pp","s","ss","","j","jj","ch","k","t","p","h"];
-  const romanVowel = ["a","ae","ya","yae","eo","e","yeo","ye","o","wa","wae","oe","yo","u","wo","we","wi","yu","eu","ui","i"];
-  const romanFinal = ["","k","k","ks","n","nj","nh","t","l","lk","lm","lb","ls","lt","lp","lh","m","p","ps","t","t","ng","t","t","k","t","p","t"];
-  const initialCount = 19;
-  const vowelCount = 21;
-  const finalCount = 28;
+  const DATA = {{ site.Data.hangul | jsonify | safeJS }};
+  const AUDIO_BASE = {{ "hangul/audio/" | relURL }};
+  const RESULTS_KEY = "hangul_practice_results_v2";
+  const BOXES_KEY = "hangul_practice_boxes_v1";
+  const PREFS_KEY = "hangul_practice_prefs_v1";
+  const DECK_NAMES = { words: "Words", phrases: "Phrases", batchim: "Batchim", sounds: "Sound pairs", all: "All items" };
+  const MAX_BOX = 4;
 
-  const phrases = [
-    { ko: "안녕하세요", rom: "annyeonghaseyo", note: "Hello" },
-    { ko: "감사합니다", rom: "gamsahamnida", note: "Thank you" },
-    { ko: "죄송합니다", rom: "joesonghamnida", note: "I am sorry" },
-    { ko: "괜찮아요", rom: "gwaenchanayo", note: "It is okay" },
-    { ko: "이름이 뭐예요", rom: "ireumi mwoyeyo", note: "What is your name?" },
-    { ko: "저는 학생이에요", rom: "jeoneun haksaengieyo", note: "I am a student" },
-    { ko: "화장실이 어디예요", rom: "hwajangsiri eodiyeyo", note: "Where is the restroom?" },
-    { ko: "얼마예요", rom: "eolmayeyo", note: "How much is it?" },
-    { ko: "다시 말해 주세요", rom: "dasi malhae juseyo", note: "Please say it again" },
-    { ko: "천천히 말해 주세요", rom: "cheoncheonhi malhae juseyo", note: "Please speak slowly" },
-    { ko: "잘 지냈어요", rom: "jal jinaesseoyo", note: "Have you been well?" },
-    { ko: "만나서 반가워요", rom: "mannaseo bangawoyo", note: "Nice to meet you" }
-  ];
+  const items = DATA.items;
+  const byKo = new Map(items.map((item) => [item.ko, item]));
+  const setMates = new Map();
+  for (const set of DATA.sets) {
+    for (const ko of set) {
+      const mates = setMates.get(ko) || new Set();
+      set.forEach((other) => { if (other !== ko) mates.add(other); });
+      setMates.set(ko, mates);
+    }
+  }
 
+  const prefs = loadJson(PREFS_KEY, {});
   const state = {
-    mode: "character",
-    prompt: null,
+    deck: DECK_NAMES[prefs.deck] ? prefs.deck : "words",
+    mode: prefs.mode === "read" ? "read" : "listen",
+    item: null,
+    options: [],
     answered: false,
-    results: loadResults(),
+    revealed: false,
+    recent: [],
+    results: loadJson(RESULTS_KEY, []),
+    boxes: loadJson(BOXES_KEY, {}),
+    audio: new Audio(),
     mediaRecorder: null,
     chunks: []
   };
 
   const els = {
-    modeCharacter: document.getElementById("mode-character"),
-    modePhrase: document.getElementById("mode-phrase"),
-    promptKorean: document.getElementById("prompt-korean"),
-    promptKind: document.getElementById("prompt-kind"),
-    form: document.getElementById("answer-form"),
-    input: document.getElementById("answer-input"),
-    check: document.getElementById("check-button"),
-    next: document.getElementById("next-button"),
-    feedback: document.getElementById("feedback"),
-    speak: document.getElementById("speak-button"),
-    record: document.getElementById("record-button"),
+    card: document.getElementById("prompt-card"),
+    options: document.getElementById("options"),
+    reveal: document.getElementById("reveal"),
+    actions: document.getElementById("actions"),
+    keys: document.getElementById("keys"),
     player: document.getElementById("recording-player"),
-    phraseList: document.getElementById("phrase-list"),
+    deckTitle: document.getElementById("deck-title"),
+    deckList: document.getElementById("deck-list"),
     historyList: document.getElementById("history-list"),
     accuracy: document.getElementById("stat-accuracy"),
     total: document.getElementById("stat-total"),
@@ -406,114 +502,195 @@
     reset: document.getElementById("reset-button")
   };
 
-  function normalize(value) {
-    return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
+  // Two items that sound the same (낮 and 낫, say) can't both be options.
+  function soundKey(item) {
+    return (item.pron || item.ko).replace(/[^가-힣]/g, "");
   }
 
-  function romanizeSyllable(syllable) {
-    const code = syllable.charCodeAt(0) - 0xac00;
-    if (code < 0 || code > 11171) return "";
-    const initial = Math.floor(code / (vowelCount * finalCount));
-    const vowel = Math.floor((code % (vowelCount * finalCount)) / finalCount);
-    const final = code % finalCount;
-    return `${romanInitial[initial]}${romanVowel[vowel]}${romanFinal[final]}`;
+  function deckItems() {
+    return state.deck === "all" ? items : items.filter((item) => item.deck === state.deck);
   }
 
-  function randomSyllable() {
-    const initial = Math.floor(Math.random() * initialCount);
-    const vowel = Math.floor(Math.random() * vowelCount);
-    const final = Math.random() < 0.7 ? 0 : Math.floor(Math.random() * finalCount);
-    const syllable = String.fromCharCode(0xac00 + ((initial * vowelCount + vowel) * finalCount) + final);
-    return { ko: syllable, rom: romanizeSyllable(syllable), note: "Random syllable" };
+  // Leitner-style weighting: items missed recently come up far more often.
+  function pickItem() {
+    const pool = deckItems().filter((item) => !state.recent.includes(item.id));
+    const weights = pool.map((item) => 2 ** (MAX_BOX - (state.boxes[item.id] || 0)));
+    let roll = Math.random() * weights.reduce((sum, weight) => sum + weight, 0);
+    for (let i = 0; i < pool.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) return pool[i];
+    }
+    return pool[pool.length - 1];
   }
 
-  function choosePrompt() {
-    state.prompt = state.mode === "phrase"
-      ? phrases[Math.floor(Math.random() * phrases.length)]
-      : randomSyllable();
+  function shuffle(list) {
+    const copy = [...list];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
 
-    els.promptKorean.textContent = state.prompt.ko;
-    els.promptKind.textContent = state.mode === "phrase" ? state.prompt.note : "Random syllable";
-    els.input.value = "";
-    els.input.focus();
+  // Distractors, closest first: its minimal-pair set, then its group (책 / 책이 / 책상),
+  // then items of a similar length from the deck.
+  function buildOptions(target) {
+    const taken = new Set([soundKey(target)]);
+    const chosen = [];
+    const take = (candidates) => {
+      for (const item of shuffle(candidates)) {
+        if (chosen.length === 3) return;
+        const key = soundKey(item);
+        if (taken.has(key)) continue;
+        taken.add(key);
+        chosen.push(item);
+      }
+    };
+    take([...(setMates.get(target.ko) || [])].map((ko) => byKo.get(ko)));
+    take(items.filter((item) => item.group === target.group && item.deck === target.deck));
+    const length = target.ko.length;
+    const pool = target.deck === "phrases" ? items.filter((item) => item.deck === "phrases") : deckItems();
+    take(pool.filter((item) => Math.abs(item.ko.length - length) <= 1));
+    take(items);
+    return shuffle([target, ...chosen]);
+  }
+
+  function play(item) {
+    state.audio.pause();
+    state.audio.src = `${AUDIO_BASE}${item.id}.mp3`;
+    state.audio.play().catch(() => {});
+  }
+
+  function nextPrompt() {
+    state.item = pickItem();
+    state.recent = [state.item.id, ...state.recent].slice(0, Math.min(6, deckItems().length - 1));
     state.answered = false;
-    els.check.textContent = "Check";
-    els.feedback.className = "feedback";
-    els.feedback.textContent = "Use Revised Romanization. Spacing and punctuation are optional.";
+    state.revealed = false;
+    state.options = state.mode === "listen" ? buildOptions(state.item) : [];
     els.player.classList.remove("ready");
     els.player.removeAttribute("src");
+    render();
+    if (state.mode === "listen") play(state.item);
   }
 
-  function checkAnswer(event) {
-    event.preventDefault();
-    if (state.answered) {
-      choosePrompt();
-      return;
-    }
+  function choose(index) {
+    if (state.mode !== "listen" || state.answered) return;
+    const picked = state.options[index];
+    if (!picked) return;
+    state.answered = true;
+    record(picked === state.item, picked);
+    render(picked);
+  }
 
-    const answer = els.input.value.trim();
-    if (!answer) return;
+  function reveal() {
+    if (state.mode !== "read" || state.revealed) return;
+    state.revealed = true;
+    play(state.item);
+    render();
+  }
 
-    const correct = normalize(answer) === normalize(state.prompt.rom);
-    const result = {
+  function grade(correct) {
+    if (state.mode !== "read" || !state.revealed || state.answered) return;
+    state.answered = true;
+    record(correct);
+    nextPrompt();
+  }
+
+  function record(correct, picked) {
+    const box = state.boxes[state.item.id] || 0;
+    state.boxes[state.item.id] = correct ? Math.min(MAX_BOX, box + 1) : 0;
+    state.results.push({
+      id: state.item.id,
+      ko: state.item.ko,
       mode: state.mode,
-      korean: state.prompt.ko,
-      expected: state.prompt.rom,
-      answer,
+      picked: picked && picked !== state.item ? picked.ko : undefined,
       correct,
       at: new Date().toISOString()
-    };
-    state.results.push(result);
-    saveResults();
+    });
+    saveJson(BOXES_KEY, state.boxes);
+    saveJson(RESULTS_KEY, state.results.slice(-500));
     renderStats();
     renderHistory();
-
-    els.feedback.className = `feedback ${correct ? "correct" : "incorrect"}`;
-    els.feedback.innerHTML = correct
-      ? `Correct. <strong>${escapeHtml(state.prompt.rom)}</strong>`
-      : `Expected <strong>${escapeHtml(state.prompt.rom)}</strong>`;
-    state.answered = true;
-    els.check.textContent = "Next";
   }
 
-  function handleAnswerKeydown(event) {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    if (state.answered) {
-      choosePrompt();
-      return;
-    }
-    checkAnswer(event);
+  function detailsHtml(item) {
+    const said = item.pron ? `<span class="said">sounds like [${escapeHtml(item.pron)}]</span>` : "";
+    const note = DATA.notes[item.group];
+    return `
+      <div class="reveal-head"><strong>${escapeHtml(item.ko)}</strong>${said}<span class="rom">${escapeHtml(item.rom)}</span></div>
+      <div class="meaning">${escapeHtml(item.en)}</div>
+      ${note ? `<div class="rule"><strong>${escapeHtml(item.group)}:</strong> ${escapeHtml(note)}</div>` : ""}`;
   }
 
-  function speakPrompt() {
-    if (!("speechSynthesis" in window)) {
-      els.feedback.className = "feedback incorrect";
-      els.feedback.textContent = "Speech synthesis is not available in this browser.";
-      return;
-    }
+  function render(picked) {
+    const item = state.item;
+    const isLong = item.ko.length > 5;
 
-    const utterance = new SpeechSynthesisUtterance(state.prompt.ko);
-    utterance.lang = "ko-KR";
-    utterance.rate = 0.82;
-    const voice = speechSynthesis.getVoices().find((item) => item.lang && item.lang.toLowerCase().startsWith("ko"));
-    if (voice) utterance.voice = voice;
-    speechSynthesis.cancel();
-    speechSynthesis.speak(utterance);
+    if (state.mode === "listen") {
+      els.card.innerHTML = `<div>
+        <button type="button" class="btn play-big" id="play-big" aria-label="Play the word">&#9654;</button>
+        <span class="prompt-hint">Which one did you hear?</span>
+      </div>`;
+      els.options.innerHTML = state.options.map((option, index) => {
+        let cls = "";
+        if (state.answered && option === item) cls = "right";
+        else if (state.answered && option === picked) cls = "wrong";
+        return `<button type="button" class="btn option ${cls}" data-index="${index}" ${state.answered ? "disabled" : ""}>${escapeHtml(option.ko)}</button>`;
+      }).join("");
+      els.options.hidden = false;
+      if (state.answered) {
+        const correct = picked === item;
+        const wrongNote = correct ? "" : ` You picked ${escapeHtml(picked.ko)}${picked.pron ? ` [${escapeHtml(picked.pron)}]` : ""} (${escapeHtml(picked.en)}).`;
+        els.reveal.innerHTML = `<div class="verdict ${correct ? "correct" : "incorrect"}">${correct ? "Correct." : "Not quite."}${wrongNote}</div>${detailsHtml(item)}`;
+        els.reveal.hidden = false;
+      } else {
+        els.reveal.hidden = true;
+      }
+      els.actions.innerHTML = `
+        <button type="button" class="btn" data-action="play">Play again</button>
+        ${state.answered && picked !== item ? `<button type="button" class="btn" data-action="play-picked">Play your pick</button>` : ""}
+        <span class="spacer"></span>
+        <button type="button" class="btn primary" data-action="next">${state.answered ? "Next" : "Skip"}</button>`;
+      els.keys.textContent = "Keys: 1-4 pick · Space play again · Enter next";
+      els.actions.dataset.picked = picked ? picked.id : "";
+    } else {
+      els.card.innerHTML = `<div>
+        <span class="prompt-korean ${isLong ? "long" : ""}">${escapeHtml(item.ko)}</span>
+        <span class="prompt-hint">${state.revealed ? "Did you say it like that?" : "Say it out loud, then check"}</span>
+      </div>`;
+      els.options.innerHTML = "";
+      els.options.hidden = true;
+      els.reveal.innerHTML = state.revealed ? detailsHtml(item) : "";
+      els.reveal.hidden = !state.revealed;
+      els.actions.innerHTML = state.revealed
+        ? `<button type="button" class="btn" data-action="play">Play again</button>
+           <button type="button" class="btn" data-action="record">${isRecording() ? "Stop" : "Record myself"}</button>
+           <span class="spacer"></span>
+           <button type="button" class="btn danger" data-action="missed">Missed it</button>
+           <button type="button" class="btn primary" data-action="got">Got it</button>`
+        : `<button type="button" class="btn" data-action="record">${isRecording() ? "Stop" : "Record myself"}</button>
+           <span class="spacer"></span>
+           <button type="button" class="btn primary" data-action="reveal">Check</button>`;
+      if (isRecording()) els.actions.querySelector('[data-action="record"]').classList.add("recording");
+      els.keys.textContent = state.revealed
+        ? "Keys: Space play again · 1 missed it · 2 got it"
+        : "Keys: Enter check · R record";
+    }
+  }
+
+  function isRecording() {
+    return state.mediaRecorder && state.mediaRecorder.state === "recording";
   }
 
   async function toggleRecording() {
-    if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
+    if (isRecording()) {
       state.mediaRecorder.stop();
       return;
     }
-
     if (!navigator.mediaDevices || !window.MediaRecorder) {
-      els.feedback.className = "feedback incorrect";
-      els.feedback.textContent = "Recording is not available in this browser.";
+      alert("Recording is not available in this browser.");
       return;
     }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       state.chunks = [];
@@ -523,31 +700,43 @@
       });
       state.mediaRecorder.addEventListener("stop", () => {
         stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(state.chunks, { type: "audio/webm" });
-        els.player.src = URL.createObjectURL(blob);
+        els.player.src = URL.createObjectURL(new Blob(state.chunks, { type: state.mediaRecorder.mimeType }));
         els.player.classList.add("ready");
-        els.record.classList.remove("recording");
-        els.record.textContent = "Record";
+        render();
       });
       state.mediaRecorder.start();
-      els.record.classList.add("recording");
-      els.record.textContent = "Stop";
+      render();
     } catch (error) {
-      els.feedback.className = "feedback incorrect";
-      els.feedback.textContent = "Microphone permission was not granted.";
+      alert("Microphone permission was not granted.");
     }
   }
 
-  function renderPhrases() {
-    els.phraseList.innerHTML = phrases.slice(0, 6).map((phrase) => {
-      return `<div class="phrase-item"><strong>${escapeHtml(phrase.ko)}</strong><span>${escapeHtml(phrase.rom)} - ${escapeHtml(phrase.note)}</span></div>`;
+  function renderDeck() {
+    els.deckTitle.textContent = DECK_NAMES[state.deck];
+    const groups = new Map();
+    for (const item of deckItems()) {
+      const key = `${item.deck}|${item.group}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    els.deckList.innerHTML = [...groups.entries()].map(([key, list]) => {
+      const group = key.split("|")[1];
+      const note = DATA.notes[group];
+      return `<div class="deck-group">
+        <h3>${escapeHtml(group)}</h3>
+        ${note ? `<p>${escapeHtml(note)}</p>` : ""}
+        ${list.map((item) => `<div class="deck-row">
+          <button type="button" class="btn" data-play="${item.id}" aria-label="Play ${escapeHtml(item.ko)}">&#9654;</button>
+          <div><strong>${escapeHtml(item.ko)}</strong>${item.pron ? ` <span>[${escapeHtml(item.pron)}]</span>` : ""} <span>· ${escapeHtml(item.en)}</span></div>
+        </div>`).join("")}
+      </div>`;
     }).join("");
   }
 
   function renderStats() {
     const total = state.results.length;
-    const correct = state.results.filter((item) => item.correct).length;
-    const streak = [...state.results].reverse().findIndex((item) => !item.correct);
+    const correct = state.results.filter((result) => result.correct).length;
+    const streak = [...state.results].reverse().findIndex((result) => !result.correct);
     els.total.textContent = String(total);
     els.accuracy.textContent = total ? `${Math.round((correct / total) * 100)}%` : "0%";
     els.streak.textContent = String(streak === -1 ? total : streak);
@@ -556,27 +745,39 @@
   function renderHistory() {
     const recent = state.results.slice(-6).reverse();
     els.historyList.innerHTML = recent.length
-      ? recent.map((item) => `<div class="history-item"><strong>${item.correct ? "Correct" : "Review"}: ${escapeHtml(item.korean)}</strong><span>${escapeHtml(item.answer)} -> ${escapeHtml(item.expected)}</span></div>`).join("")
+      ? recent.map((result) => {
+          const detail = result.picked ? `picked ${escapeHtml(result.picked)}` : (result.mode === "read" ? "read aloud" : "heard");
+          return `<div class="history-item ${result.correct ? "" : "miss"}"><strong>${result.correct ? "✓" : "✗"} ${escapeHtml(result.ko)}</strong> <span>${detail}</span></div>`;
+        }).join("")
       : `<div class="history-item"><span>No attempts yet.</span></div>`;
   }
 
-  function loadResults() {
+  function renderControls() {
+    document.querySelectorAll("[data-deck]").forEach((button) => button.classList.toggle("active", button.dataset.deck === state.deck));
+    document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === state.mode));
+  }
+
+  function setPrefs(changes) {
+    Object.assign(state, changes);
+    state.recent = [];
+    saveJson(PREFS_KEY, { deck: state.deck, mode: state.mode });
+    renderControls();
+    renderDeck();
+    nextPrompt();
+  }
+
+  function loadJson(key, fallback) {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      return JSON.parse(localStorage.getItem(key)) || fallback;
     } catch {
-      return [];
+      return fallback;
     }
   }
 
-  function saveResults() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.results.slice(-500)));
-  }
-
-  function setMode(mode) {
-    state.mode = mode;
-    els.modeCharacter.classList.toggle("active", mode === "character");
-    els.modePhrase.classList.toggle("active", mode === "phrase");
-    choosePrompt();
+  function saveJson(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
   }
 
   function exportResults() {
@@ -590,8 +791,11 @@
   }
 
   function resetResults() {
+    if (!confirm("Clear your results and progress?")) return;
     state.results = [];
-    saveResults();
+    state.boxes = {};
+    saveJson(RESULTS_KEY, state.results);
+    saveJson(BOXES_KEY, state.boxes);
     renderStats();
     renderHistory();
   }
@@ -604,20 +808,61 @@
       .replace(/"/g, "&quot;");
   }
 
-  els.modeCharacter.addEventListener("click", () => setMode("character"));
-  els.modePhrase.addEventListener("click", () => setMode("phrase"));
-  els.form.addEventListener("submit", checkAnswer);
-  els.input.addEventListener("keydown", handleAnswerKeydown);
-  els.next.addEventListener("click", choosePrompt);
-  els.speak.addEventListener("click", speakPrompt);
-  els.record.addEventListener("click", toggleRecording);
+  document.querySelectorAll("[data-deck]").forEach((button) => button.addEventListener("click", () => setPrefs({ deck: button.dataset.deck })));
+  document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => setPrefs({ mode: button.dataset.mode })));
+
+  els.card.addEventListener("click", (event) => {
+    if (event.target.closest("#play-big")) play(state.item);
+  });
+  els.options.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-index]");
+    if (button) choose(Number(button.dataset.index));
+  });
+  els.actions.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+    const action = button.dataset.action;
+    if (action === "play") play(state.item);
+    else if (action === "play-picked") play(items.find((item) => item.id === els.actions.dataset.picked));
+    else if (action === "next") nextPrompt();
+    else if (action === "reveal") reveal();
+    else if (action === "record") toggleRecording();
+    else if (action === "got") grade(true);
+    else if (action === "missed") grade(false);
+  });
+  els.deckList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-play]");
+    if (button) play(items.find((item) => item.id === button.dataset.play));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest("input, textarea, audio")) return;
+    const key = event.key;
+    if (key === " ") {
+      event.preventDefault();
+      if (state.mode === "read" && !state.revealed) reveal();
+      else play(state.item);
+    } else if (state.mode === "listen" && /^[1-4]$/.test(key)) {
+      choose(Number(key) - 1);
+    } else if (state.mode === "listen" && key === "Enter") {
+      event.preventDefault();
+      nextPrompt();
+    } else if (state.mode === "read" && key === "Enter" && !state.revealed) {
+      event.preventDefault();
+      reveal();
+    } else if (state.mode === "read" && state.revealed && (key === "1" || key === "2")) {
+      grade(key === "2");
+    } else if (state.mode === "read" && (key === "r" || key === "R")) {
+      toggleRecording();
+    }
+  });
   els.export.addEventListener("click", exportResults);
   els.reset.addEventListener("click", resetResults);
 
-  renderPhrases();
+  renderControls();
+  renderDeck();
   renderStats();
   renderHistory();
-  choosePrompt();
+  nextPrompt();
 })();
 </script>
 {{ end }}
