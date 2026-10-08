@@ -4,7 +4,7 @@
 
    The game never ships a readable word list. It loads
      static/seven-tiles/words.bin   every playable word
-     static/seven-tiles/common.bin  the common words: the easy and medium bots
+     static/seven-tiles/common.bin  the common words: low bot levels
                                     play only these, and ratings use them
    both packed by core.js (packLexicon): front-coded, gzipped, scrambled.
 

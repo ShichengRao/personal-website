@@ -626,3 +626,31 @@ test('the word lists ship packed: they round-trip, and are not readable as text'
   assert.equal(w.name, c.name);
   assert.ok(w.attribution || w.note, 'the list carries its credit');
 });
+
+test('the difficulty dial: legal at every level, full strength at 100, weaker by level', () => {
+  const d = dict(), common = loadDict('common');
+  // every level plays only legal moves over a few whole games
+  for (const level of [0, 25, 50, 75, 100]) {
+    const rnd = C.seededRandom(level + 1);
+    let s = C.newGame(4100 + level), n = 0;
+    while (!s.over && n++ < 300) {
+      const m = C.botMove(s, level, rnd, d, { vocab: common });
+      assert.equal(C.check(s, m, d).ok, true, 'level ' + level + ' made an illegal move');
+      s = C.apply(s, m, d);
+    }
+    assert.equal(s.over, true);
+  }
+  // at 100 it is the hard bot: the same choice in the middle game and in the endgame
+  const rnd = C.seededRandom(3);
+  let s = C.newGame(77), n = 0;
+  while (!s.over && n++ < 300) {
+    const a = C.botMove(s, 100, C.seededRandom(n), d, { vocab: common }), b = C.botMove(s, 'hard', C.seededRandom(n), d, { vocab: common });
+    assert.deepEqual(a, b, 'level 100 differs from hard at move ' + n);
+    s = C.apply(s, b, d);
+  }
+  // the named levels still work, and the miss shrinks steadily to nothing
+  for (const named of ['easy', 'medium']) { const g = C.newGame(5), m = C.botMove(g, named, rnd, d, { vocab: common }); assert.equal(C.check(g, m, d).ok, true, named + ' still plays'); }
+  for (let x = 0; x < 100; x += 10) assert.ok(C.lossAt(x) > C.lossAt(x + 10), 'the miss shrinks from ' + x + ' to ' + (x + 10));
+  assert.equal(C.lossAt(100), 0);
+  assert.deepEqual(C.LEVELS, { easy: 15, medium: 35, hard: 100 });
+});

@@ -804,7 +804,57 @@
   // 190 points a game. Any level exchanges instead when the kept rack is
   // worth more than the best play.
   const EASY_POOL = [10, 30];   // easy picks among these ranks by score (0-based, end exclusive)
+  // ---- a bot on a 0-100 dial -------------------------------------------------
+  // At difficulty d the bot misses its best play by about lossAt(d) points of
+  // value a turn (between half and one and a half times that, at random), so it
+  // plays at its level with some turns better or worse. Rare words (outside
+  // opts.vocab, the common list) carry a penalty that shrinks to nothing at 100,
+  // and the value of the kept tiles counts for more as d rises, so low levels
+  // chase points in everyday words. From 90 up it may solve the endgame
+  // exactly, always at 100: the top of the dial is the hard bot.
+  // Fitted on NWL2023 in bot-against-bot games: the dial loses to the hard bot
+  // by about 3.8 points a game per step (0: 381, 35: 253, 50: 183, 80: 61,
+  // 90: 28, 100: none), level 35 plays the old medium bot about evenly, and the
+  // old easy sits near 16, so level 0 is a little easier than easy was.
+  // lin: the miss that falls in a straight line to nothing at 100; boost: extra
+  // at the very bottom, where more misses stop costing proportionally more
+  const DIAL = { lin: 26, boost: 14, boostPow: 6, spread: 1, rare: 24 };
+  const lossAt = (d, k) => { k = k || DIAL; const x = 1 - d / 100; return k.lin * x + k.boost * Math.pow(x, k.boostPow); };
+  const rarePenaltyAt = (d, k) => (k || DIAL).rare * (1 - d / 100);
+  function botMoveAt(state, d, rnd, dict, opts) {
+    d = Math.max(0, Math.min(100, Number(d) || 0));
+    const p = state.turn, rack = state.racks[p], bagEmpty = state.bag.length === 0;
+    if (!rack.length) return { t: 'pass' };
+    if (bagEmpty && d >= 90 && !(opts && opts.noEndgame) && rnd() < (d - 90) / 10 + (d >= 100 ? 1 : 0)) {
+      const e = endgameMove(state, dict);
+      if (e) return e.move;
+    }
+    const common = opts && opts.vocab && opts.vocab !== dict ? opts.vocab : null;
+    const moves = rank(generate(state.board, rack, dict), rack, bagEmpty);
+    const w = Math.min(1, 0.25 + 0.75 * d / 100);   // how much the kept tiles count
+    const k = (opts && opts.dial) || DIAL;
+    const penalty = rarePenaltyAt(d, k);
+    for (const m of moves) {
+      const rare = common ? !m.words.every((x) => common.has(x.word)) : false;
+      m.val = m.score + w * (m.equity - m.score) - (rare ? penalty : 0);
+    }
+    moves.sort((a, b) => b.val - a.val);
+    const exch = bestExchange(rack, state.bag.length);
+    if (exch && (!moves.length || (exch.equity > moves[0].equity + 1 && rnd() < d / 100))) return { t: 'swap', tiles: exch.tiles };
+    if (!moves.length) return exch ? { t: 'swap', tiles: exch.tiles } : { t: 'pass' };
+    const loss = lossAt(d, k);
+    if (loss <= 0) return { t: 'play', tiles: moves[0].tiles };
+    // best minus a miss of about `loss`: spread 0 misses by exactly that much every turn, spread 1 by half to one and a half times it
+    const target = moves[0].val - loss * (1 - k.spread / 2 + k.spread * rnd());
+    let pick = moves[0], gap = Infinity;
+    for (const m of moves) { const g = Math.abs(m.val - target); if (g < gap) { gap = g; pick = m; } }
+    return { t: 'play', tiles: pick.tiles };
+  }
+  // the old named levels, as points on the dial for stored games and links
+  const LEVELS = { easy: 15, medium: 35, hard: 100 };
+
   function botMove(state, level, rnd, dict, opts) {
+    if (typeof level === 'number' || /^\d+$/.test(String(level))) return botMoveAt(state, Number(level), rnd, dict, opts);
     const p = state.turn, rack = state.racks[p];
     if (!rack.length) return { t: 'pass' };
     if (level === 'hard' && state.bag.length === 0 && !(opts && opts.noEndgame)) {
@@ -832,5 +882,5 @@
   }
 
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, transpose, pack, unpack, encodeLexicon, decodeLexicon, packLexicon, unpackLexicon };
+           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, botMoveAt, lossAt, LEVELS, DIAL, transpose, pack, unpack, encodeLexicon, decodeLexicon, packLexicon, unpackLexicon };
 });
