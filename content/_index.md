@@ -3,7 +3,7 @@ description: "Product Reliability Engineer"
 projects:
   - name: "Hangul Practice"
     url: "/hangul/"
-    blurb: "Drill Korean romanization with random syllables and everyday phrases, with pronunciation playback and recording."
+    blurb: "Hear a Korean word and pick how it is written, or read one aloud and check yourself against the audio. Covers common words, phrases and every batchim."
   - name: "Vine"
     url: "https://vine-learning-app.vercel.app/vine-app"
     blurb: "English learning practice built for the Vine community."

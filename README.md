@@ -21,13 +21,13 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: homepage projects grid, the self-contained Hangul practice app, the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, favicon partial |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`) |
+| `layouts/` | Custom templates: homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, favicon partial |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Seven Tiles's online games |
-| `tools/` | `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
+| `tools/` | `hangul/audio.py`: generates the Hangul practice clips with edge-tts and checks them with Whisper; `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
 | `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Seven Tiles scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
