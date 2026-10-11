@@ -19,6 +19,9 @@ projects:
   - name: "Seven Tiles"
     url: "/seven-tiles/"
     blurb: "A two-player word game with a bot, pass-and-play, online games and a move-by-move review."
+  - name: "Eval Bar"
+    url: "/evalbar/"
+    blurb: "A chess-style eval bar beside the official Pokémon VGC broadcasts: each side's win chance and the best options for every Pokémon, turn by turn. Unofficial."
 ---
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)
