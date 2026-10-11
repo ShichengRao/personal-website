@@ -3,10 +3,11 @@
 import { purgeCache, type Config, type Context } from '@netlify/functions';
 
 const CDN: Record<string, string> = {
-  a: 'public, durable, s-maxage=5',
-  b: 'public, durable, s-maxage=60',
-  c: 'public, durable, s-maxage=5, stale-while-revalidate=30',
-  d: 'public, durable, s-maxage=60, stale-while-revalidate=30',
+  s10: 'public, durable, s-maxage=10',
+  s15: 'public, durable, s-maxage=15',
+  s20: 'public, durable, s-maxage=20',
+  s30: 'public, durable, s-maxage=30',
+  s45: 'public, durable, s-maxage=45',
   e: 'public, durable, s-maxage=31536000',
   f: 'public, durable, s-maxage=31536000, stale-while-revalidate=30',
 };
