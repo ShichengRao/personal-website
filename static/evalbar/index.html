@@ -1,0 +1,617 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}</style></head><body><title>Champions Eval Bar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: one column; the bar and the turn stepper stay pinned to the top, the game scrolls underneath (graph, board, what happened). */
+:root{
+  --ground:#f4f3f7; --panel:#ffffff; --panel-2:#faf9fc;
+  --ink:#16141b; --ink2:#55525f; --ink3:#858292;
+  --rule:#dfdce6; --rule-2:#ecebf1;
+  --accent:#6a43c7; --accent-soft:#ece6fb;
+  --p1:#2a78d6; --p2:#eb6834;
+  --ok:#00734f; --warn:#8a5e00; --off:#b8431c;
+  --hp-ok:#1b9a6c; --hp-warn:#d49a12; --hp-off:#d2502a;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --disp:'Archivo','Helvetica Neue',Arial,sans-serif;
+  --body:'Source Sans 3',system-ui,-apple-system,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#141318; --panel:#1c1b21; --panel-2:#222128;
+  --ink:#f2f1f6; --ink2:#aca9b7; --ink3:#7b7886;
+  --rule:#2e2c36; --rule-2:#27252e;
+  --accent:#a68cf3; --accent-soft:#2a2342;
+  --p1:#3987e5; --p2:#d95926;
+  --ok:#4cc79a; --warn:#e0a83c; --off:#f08055;
+  --hp-ok:#2fae7e; --hp-warn:#d49a12; --hp-off:#e0603a;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --ground:#141318; --panel:#1c1b21; --panel-2:#222128;
+  --ink:#f2f1f6; --ink2:#aca9b7; --ink3:#7b7886;
+  --rule:#2e2c36; --rule-2:#27252e;
+  --accent:#a68cf3; --accent-soft:#2a2342;
+  --p1:#3987e5; --p2:#d95926;
+  --ok:#4cc79a; --warn:#e0a83c; --off:#f08055;
+  --hp-ok:#2fae7e; --hp-warn:#d49a12; --hp-off:#e0603a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto;padding-inline:16px;padding-block:28px 56px;display:flex;flex-direction:column;gap:22px}
+h1,h2,h3{font-family:var(--disp);text-wrap:balance;margin:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-family:var(--disp);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+header h1{font-size:clamp(22px,4.5vw,28px);font-weight:700;letter-spacing:-.02em;line-height:1.1;margin-top:4px}
+.sub{color:var(--ink2);margin:4px 0 0;max-width:70ch;font-size:14px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ol .cond{display:block;font-size:12px;color:var(--ink3);margin-top:1px}
+.checklist{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:-4px 0 12px;font-size:14px;color:var(--warn)}
+.checklist button,.checks button{font:inherit;font-size:13px;padding:3px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--panel-2);color:var(--ink);cursor:pointer}
+.checks{border:1px solid var(--warn);border-radius:6px;background:var(--panel);padding:10px 14px 12px;margin:0 0 16px}
+.checks h3{font-family:var(--disp);font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--warn);margin:0 0 4px}
+.checks p{margin:0 0 8px;color:var(--ink2);font-size:14px;max-width:70ch}
+.checks .tbl{overflow-x:auto}
+.checks table{border-collapse:collapse;width:100%;font-size:14px}
+.checks td{padding:6px 8px 6px 0;border-top:1px solid var(--rule-2);vertical-align:middle;white-space:nowrap}
+.checks td:first-child{white-space:normal}
+.checks .v{font-family:var(--mono);color:var(--ink)}
+.checks .k{color:var(--ink3);font-size:12px;margin-right:4px}
+.checks button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.checks tr.done td{color:var(--ink3)}
+.chip{font-family:var(--mono);font-size:11px;padding:4px 9px;border:1px solid var(--rule);border-radius:3px;color:var(--ink2);background:var(--panel)}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;flex:none}
+.sw.p1{background:var(--p1)} .sw.p2{background:var(--p2)} .sw.none{background:var(--ink3)}
+
+/* the pinned bar */
+.live{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--ground);border-bottom:2px solid var(--ink);
+  padding-block:10px 10px;display:flex;flex-direction:column;gap:8px}
+.sides{display:grid;grid-template-columns:1fr auto 1fr;align-items:baseline;gap:12px}
+.sides .side:last-child{justify-content:flex-end}
+.side{display:flex;align-items:baseline;gap:8px;min-width:0}
+.side .who{font-family:var(--disp);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);display:flex;align-items:center;gap:6px}
+.ghead{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
+.gmode{display:flex;gap:4px}
+.gmode button{font:inherit;font-size:13px;padding:3px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--panel-2);color:var(--ink2);cursor:pointer}
+.gmode button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.side .pc{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.bar{position:relative;display:flex;gap:2px;height:16px}
+.evn{align-self:center;text-align:center;font-family:var(--mono);font-size:22px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.evn small{display:block;font-family:var(--body);font-size:11px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-top:4px}
+.evn.p1{color:var(--p1)} .evn.p2{color:var(--p2)}
+.bar i{display:block;height:100%;min-width:0;transition:flex-basis .35s ease}
+.bar .a{background:var(--p1);border-radius:4px 0 0 4px}
+.bar .b{background:var(--p2);border-radius:0 4px 4px 0;flex:1}
+.bar::after{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink);opacity:.55}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.watch{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:10px}
+.watch button{font-family:var(--disp);font-size:13px;font-weight:600;color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:6px 12px;cursor:pointer}
+.watch button:hover{border-color:var(--ink3)}
+.watch .on{border-color:var(--accent);color:var(--accent)}
+.nav button{font-family:var(--disp);font-size:13px;font-weight:600;color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:4px;
+  padding:8px 14px;min-width:84px;cursor:pointer}
+.nav button:hover:not(:disabled){border-color:var(--ink3)}
+.nav button:disabled{color:var(--ink3);cursor:default;opacity:.6}
+.nav button:focus-visible,.hit:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.where{font-family:var(--disp);font-weight:600;font-size:15px;text-align:center}
+.where small{display:block;font-family:var(--body);font-weight:400;font-size:12.5px;color:var(--ink2)}
+
+.picker{display:flex;flex-direction:column;gap:10px}
+.video{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:4px;overflow:hidden}
+.video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.views{display:inline-flex;border:1px solid var(--rule);border-radius:4px;overflow:hidden;align-self:flex-start;max-width:100%}
+.views button{font-family:var(--disp);font-size:13px;font-weight:600;color:var(--ink2);background:var(--panel);border:0;padding:8px 14px;cursor:pointer}
+.views button + button{border-left:1px solid var(--rule)}
+.views button.on{background:var(--ink);color:var(--ground)}
+.views button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.vnote{font-size:13.5px;color:var(--ink2);margin:0;max-width:70ch}
+.sleep{font-size:13.5px;color:var(--ink2);margin:0 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sleep button{font:inherit;padding:6px 12px;border:1px solid var(--rule);border-radius:3px;background:var(--panel);color:var(--ink);cursor:pointer}
+.games{display:flex;flex-wrap:wrap;gap:6px}
+.games button{font-family:var(--disp);font-size:12px;font-weight:600;color:var(--ink2);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:5px 10px;cursor:pointer;display:flex;gap:7px;align-items:baseline}
+.games button small{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--ink3)}
+.games button.on{background:var(--accent-soft);color:var(--ink);border-color:var(--accent)}
+.games button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section > h2{font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);margin-bottom:10px}
+
+/* graph */
+.graph{position:relative;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px 6px 4px}
+.graph svg{display:block;width:100%;height:auto;overflow:visible}
+.graph text{font-family:var(--mono);font-size:10.5px;fill:var(--ink3)}
+.graph .lab{font-family:var(--disp);font-weight:600;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink2)}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--ground);font-size:12px;padding:4px 8px;border-radius:3px;white-space:nowrap;transform:translate(-50%,-100%)}
+
+/* board */
+.field{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.board{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.team{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px 10px 6px;min-width:0}
+.team h3{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin-bottom:6px}
+.team h3 .left{margin-left:auto;font-family:var(--mono);font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink3);font-size:11px}
+.grp{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-family:var(--disp);font-weight:600;margin:8px 0 2px}
+.mon{padding:6px 0;border-top:1px solid var(--rule-2);min-width:0}
+.grp + .mon{border-top:0}
+.mon .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.mon .nm{font-weight:600;overflow-wrap:anywhere;line-height:1.25}
+.mon .hpn{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink2);flex:none}
+.hp{height:5px;background:var(--rule);border-radius:3px;margin:4px 0 4px;overflow:hidden}
+.hp i{display:block;height:100%;border-radius:3px}
+.hp .ok{background:var(--hp-ok)} .hp .warn{background:var(--hp-warn)} .hp .off{background:var(--hp-off)}
+.tags{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:12px;color:var(--ink3);line-height:1.3}
+.tag{font-family:var(--mono);font-size:10.5px;padding:1px 5px;border-radius:3px;border:1px solid var(--rule);color:var(--ink2);background:var(--panel-2);white-space:nowrap}
+.tag.up{color:var(--ok)} .tag.down{color:var(--off)} .tag.st{color:var(--warn)}
+.item.gone{text-decoration:line-through}
+.mon.bench .nm{font-weight:400}
+.mon.out .nm,.mon.out .hpn{color:var(--ink3)} .mon.out .nm{text-decoration:line-through;font-weight:400}
+.mon.unseen .nm{color:var(--ink2);font-weight:400}
+
+/* best options */
+.optnote{color:var(--ink2);font-size:13.5px;margin:-4px 0 10px;max-width:70ch}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ocard{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px 10px 6px;min-width:0}
+.ocard h3{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:600;margin-bottom:4px}
+.orow{display:grid;grid-template-columns:minmax(0,1fr) 78px 46px;column-gap:10px;align-items:center;padding:5px 0;border-top:1px solid var(--rule-2);font-size:14px}
+.orow.hd{border-top:0;padding:0 0 3px;font-family:var(--disp);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+.orow .r{text-align:right}
+.orow .ol{overflow-wrap:anywhere;line-height:1.3}
+.orow.played .ol{font-weight:600}
+.pick{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.pick .pb{flex:1;height:5px;background:var(--rule);border-radius:3px;overflow:hidden}
+.pick .pb i{display:block;height:100%;background:var(--ink2);border-radius:3px}
+.orow .n{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.orow .n.rough{color:var(--ink3)}
+.played-tag{font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px;background:var(--accent-soft);color:var(--ink);margin-left:6px;white-space:nowrap;font-weight:400}
+.omore{font-size:12.5px;color:var(--ink3);padding:4px 0 2px;border-top:1px solid var(--rule-2)}
+@media (max-width:560px){.opts{grid-template-columns:1fr}}
+
+/* what happened */
+.ev{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.ev > li{padding:8px 0;border-top:1px solid var(--rule-2)}
+.ev > li:first-child{border-top:0;padding-top:0}
+.ev .head{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.ev .head.plain{font-weight:600;color:var(--ink2)}
+.ev ul{list-style:none;margin:2px 0 0;padding:0 0 0 11px;color:var(--ink2);font-size:14px}
+.m{white-space:nowrap}
+.m .sw{width:7px;height:7px;margin:0 4px 1px 0;vertical-align:middle}
+.after{margin-top:12px;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.after .k{font-family:var(--disp);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+.after .v{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.after .d{font-family:var(--mono);font-size:12.5px;color:var(--ink2)}
+.none{color:var(--ink2)}
+.notes{border-top:1px solid var(--rule);padding-top:16px;color:var(--ink2);font-size:14px}
+.notes p{margin:0 0 8px;max-width:70ch}
+.notes b{color:var(--ink);font-weight:600}
+@media (max-width:480px){
+  .side .pc{font-size:22px}
+  .nav button{min-width:72px;padding:8px 10px}
+  .team{padding:8px 8px 4px}
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow" id="eyebrow">Prototype · version 0</div>
+    <h1>Eval bar</h1>
+    <p class="sub" id="sub"></p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="picker" id="picker">
+    <div class="views" id="views" hidden role="group" aria-label="What the bar knows">
+      <button type="button" data-v="seen">As you saw it</button><button type="button" data-v="hind">With hindsight</button>
+    </div>
+    <p class="vnote" id="vnote" hidden></p>
+    <nav class="games" id="games" hidden aria-label="Games"></nav>
+  </div>
+
+  <div class="video" id="video" hidden><div id="ytplayer"></div></div>
+  <p class="sleep" id="sleep" hidden>Stopped updating after 30 minutes without activity.<button type="button" id="wake">Carry on</button></p>
+
+  <div class="live" id="live">
+    <div class="sides">
+      <div class="side"><span class="who"><i class="sw p1"></i><span id="n1">Player 1</span></span><span class="pc" id="pc1"></span></div>
+      <div class="evn" id="evn" title="The win chance on a chess-style scale, from Player 1's side: +1.0 is as far ahead as being one Pokémon up"></div>
+      <div class="side"><span class="pc" id="pc2"></span><span class="who"><span id="n2">Player 2</span><i class="sw p2"></i></span></div>
+    </div>
+    <div class="bar" id="bar" role="img"><i class="a" id="barA"></i><i class="b"></i></div>
+    <div class="nav">
+      <button id="prev" type="button">‹ Back</button>
+      <div class="where" id="where"></div>
+      <button id="next" type="button">Next ›</button>
+    </div>
+    <div class="watch" id="watch" hidden>
+      <button type="button" id="wGame">▶ Watch this game</button><button type="button" id="wTurn">▶ Watch from this turn</button>
+      <button type="button" id="wStop" class="on" hidden>Stop following the video</button>
+    </div>
+  </div>
+
+  <section>
+    <div class="ghead"><h2 id="graphTitle">Player 1's win chance through the game</h2>
+      <div class="gmode" role="group" aria-label="Graph scale"><button type="button" data-g="wp">Win chance</button><button type="button" data-g="ev">Eval</button></div></div>
+    <div class="graph" id="graph"></div>
+  </section>
+
+  <section>
+    <h2 id="boardTitle"></h2>
+    <div class="checklist" id="checklist" hidden></div>
+    <div class="checks" id="checks" hidden></div>
+    <div class="field" id="field"></div>
+    <div class="board" id="board"></div>
+  </section>
+
+  <section id="optSec" hidden>
+    <h2 id="optTitle"></h2>
+    <p class="optnote" id="optNote"></p>
+    <div class="opts" id="opts"></div>
+  </section>
+
+  <section>
+    <h2 id="evTitle"></h2>
+    <div id="events"></div>
+  </section>
+
+  <section class="notes" id="notes"></section>
+</div>
+
+<script>
+let DATA = {"games": [], "video": null, "live": {"url": null, "status": "starting", "format": "Champions broadcast", "public": {"base": "/api/evalbar"}}};
+const NAMES = DATA.names || null, REC = !!DATA.recorded, VIEWS = DATA.views || null;
+let view = VIEWS ? 'seen' : null, GAMES = VIEWS ? VIEWS[view] : DATA.games || [DATA];
+let G, N, M, WP, gi = 0;                                    // steps 0..N-1 are turns 1..N; step N is the result; M: the last step to show
+const VNOTE = {seen: 'Only what you knew at the start of each turn: their team preview, the Pokémon they had sent in, and what those had shown. Pokémon they had not sent in yet are averaged over.',
+               hind: 'Everything the game showed by its end, known from turn 1: their four Pokémon and what each revealed.'};
+function load(k) {
+  if (VIEWS) GAMES = VIEWS[view];
+  if (!GAMES.length) { G = {steps: [], final: {wp: null, state: null}, live: true, winner: null, engine: null}; N = 0; M = -1; WP = []; return; }
+  gi = Math.max(0, Math.min(GAMES.length - 1, k)); G = GAMES[gi]; N = G.steps.length;
+  M = G.live && G.winner == null ? N - 1 : N;                 // a game still going on has no result step yet
+  WP = N ? G.steps.map(s => s.wp).concat([G.final.wp === null ? G.steps[N - 1].wp : G.final.wp]) : [];
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const $ = id => document.getElementById(id);
+const pct = (x, live) => { const v = Math.round(100 * x); return live ? Math.max(1, Math.min(99, v)) : v; };
+// the eval: the win chance's log-odds per Pokemon of advantage (one Pokemon up wins 75% of real games; evalbar/unit.py), like a chess eval
+const UNIT = 1.115;
+const evOf = p => { const q = Math.max(0.002, Math.min(0.998, p)); return Math.log(q / (1 - q)) / UNIT; };
+const evTxt = p => { const v = evOf(p); return (Math.abs(v) < 0.05 ? '0.0' : (v > 0 ? '+' : '−') + Math.abs(v).toFixed(1)); };
+let gmode = 'wp';
+try { gmode = localStorage.getItem('evalbar-graph') || 'wp'; } catch (e) {}
+const who = s => NAMES ? NAMES[s] : (G && G.players && G.players[s]) || 'Player ' + s[1];   // a broadcast: the names on its scoreboard (live page only)
+const towards = s => NAMES ? {p1: 'you', p2: 'the opponent'}[s] : who(s);
+const seg = segs => segs.map(x => typeof x === 'string' ? esc(x) : `<span class="m"><i class="sw ${x[0]}"></i>${esc(x[1])}</span>`).join('');
+const STAT = {atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe', accuracy: 'Acc', evasion: 'Eva'};
+const STATUS = {slp: 'Asleep', brn: 'Burned', par: 'Paralysed', psn: 'Poisoned', tox: 'Badly poisoned', frz: 'Frozen'};
+let cur = 0;
+
+function head() {
+  const r = G.rating ? `players rated about ${Math.round(G.rating)}` : null;
+  $('n1').textContent = who('p1'); $('n2').textContent = who('p2');
+  $('graphTitle').textContent = NAMES ? 'Your win chance through the game' : `${who('p1')}'s win chance through the game`;
+  if (DATA.live) {
+    const bc = (DATA.live.format || '').startsWith('Champions');
+    $('eyebrow').textContent = bc ? 'Pokémon Champions broadcast' : 'Live · spectating';
+    $('sub').textContent = bc ? `Read from the video: who is winning at the start of each turn, the best options for each Pokémon on the field, and what happened.${G.players ? '' : ' Player 1 is the player on the left.'}`
+      : 'A Reg M-C battle going on now on Showdown, as a spectator sees it: who is winning at the start of each turn, the best options for each Pokémon on the field, and what happened. For watching other people\'s games only.';
+    // a game still being played: "so far", and the reader's status (with a video, the player's place: the reader may be ahead of it)
+    const going = !G.winner && G.end == null && gi === GAMES.length - 1 && !/^finished/.test(DATA.live.status || '');
+    const status = !going ? null : DATA.video && (!DATA.video.live || followVideo) ? (N ? `turn ${G.steps[N - 1].turn}` : 'waiting for the first turn in the video') : DATA.live.status;
+    const sheets = bc ? (G.sheets === false ? 'no team sheets on stream' : 'team sheets from the stream') : DATA.live.format;
+    $('meta').innerHTML = [sheets, N ? `${N} turn${N === 1 ? '' : 's'}${going ? ' so far' : ''}` : null, r, status, G.winner ? `${who(G.winner)} won${G.forfeit ? ' by forfeit' : ''}` : null]
+      .filter(Boolean).map(x => `<span class="chip">${esc(x)}</span>`).join('');
+  } else if (REC) {
+    $('eyebrow').textContent = 'Your recorded ladder games';
+    $('sub').textContent = 'Your recorded Reg M-C ladder games, turn by turn: who is winning at the start of each turn, the best options for each Pokémon on the field, and what happened next.';
+    $('meta').innerHTML = [G.title, `${N} turn${N === 1 ? '' : 's'}`, `${G.result === 'win' ? 'You won' : 'You lost'}: ${G.how}`, `recorded ${G.recorded}`]
+      .map(x => `<span class="chip">${esc(x)}</span>`).join('');
+  } else {
+    $('sub').textContent = G.engine ? 'One Reg M-C best-of-three ladder game from Showdown, turn by turn: who is winning at the start of each turn, the best options for each Pokémon on the field, and what happened next.'
+      : 'One Reg M-C best-of-three ladder game from Showdown, turn by turn: who is winning at the start of each turn, and what happened next.';
+    if (G.engine) $('eyebrow').textContent = G.engine.bar ? 'Prototype · engine version' : 'Prototype · bar version 0 · options from the engine';
+    $('meta').innerHTML = [`${N} turns`, r, G.winner ? `${who(G.winner)} won${G.forfeit ? ' by forfeit' : ''}` : 'no result', 'replay ' + G.id.split('-').pop()]
+      .filter(Boolean).map(x => `<span class="chip">${esc(x)}</span>`).join('');
+  }
+  if (VIEWS) {
+    $('views').hidden = false; $('vnote').hidden = false; $('vnote').textContent = VNOTE[view];
+    $('views').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === view); b.setAttribute('aria-pressed', b.dataset.v === view); });
+  }
+  const nav = $('games'); nav.hidden = GAMES.length < 2;
+  nav.innerHTML = GAMES.map((g, k) => `<button type="button" data-k="${k}" class="${k === gi ? 'on' : ''}" aria-pressed="${k === gi}"${g.versus ? ` title="${esc(g.versus)}"` : ''}>${esc(g.title || 'Game ' + (k + 1))}<small>${g.result === 'win' ? 'won' : g.result === 'loss' ? 'lost' : ''}</small></button>`).join('');
+  nav.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { load(+b.dataset.k); head(); notes(); go(0); }));
+}
+
+function bar() {
+  const live = cur < N || G.final.wp === null, a = pct(WP[cur], live), b = 100 - a;
+  $('pc1').textContent = a + '%'; $('pc2').textContent = b + '%';
+  // between the two win chances: the eval, from Player 1's side like a chess eval (+ ahead, - behind; see the notes)
+  const e = cur < N || G.final.wp === null ? evTxt(WP[cur]) : '';
+  $('evn').innerHTML = e ? `${e}<small>eval</small>` : ''; $('evn').className = 'evn' + (!e || e === '0.0' ? '' : WP[cur] > 0.5 ? ' p1' : ' p2');
+  $('barA').style.flexBasis = `calc(${a}% - 1px)`;
+  $('bar').setAttribute('aria-label', `${who('p1')} ${a}%, ${who('p2')} ${b}%`);
+  $('where').innerHTML = cur < N ? `Turn ${G.steps[cur].turn}${G.live && G.winner == null ? '' : ' of ' + N}<small>${G.live && cur === M ? 'the latest turn' : 'at the start of the turn'}</small>`
+    : `Result<small>${G.winner ? who(G.winner) + ' won' + (G.forfeit ? ' by forfeit' : '') : 'no winner recorded'}</small>`;
+  if (NAMES && cur === N) $('where').innerHTML = `Result<small>${G.result === 'win' ? 'You won' : 'You lost'}</small>`;
+  $('prev').disabled = cur === 0; $('next').disabled = cur >= M;
+  watchButtons();
+}
+// watch a game, or from a turn, "live" again: the video goes there and the page shows only what the video has reached
+function watchButtons() {
+  const has = !!(player && DATA.video && DATA.video.id && G.steps && G.steps.length && G.steps[0].vt != null);
+  $('watch').hidden = !has; if (!has) return;
+  const t = cur < N ? G.steps[cur].vt : null;
+  $('wTurn').hidden = t == null; if (t != null) $('wTurn').textContent = `▶ Watch from turn ${G.steps[cur].turn}`;
+  $('wStop').hidden = !followVideo;
+}
+function watchAt(t) {
+  if (!player || t == null) return;
+  followVideo = true; VT = Math.max(0, t); try { player.seekTo(VT, true); player.playVideo(); } catch (e) {}
+  shownKey = ''; apply(); watchButtons();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('#watch button'); if (!b) return;
+  if (b.id === 'wGame') watchAt(G.steps[0].vt - 20);                  // the leads come out a little before the first turn
+  else if (b.id === 'wTurn' && cur < N) watchAt(G.steps[cur].vt - 1);
+  else if (b.id === 'wStop') { followVideo = false; shownKey = ''; apply(); watchButtons(); }
+});
+
+function graph() {
+  const box = $('graph'), W = Math.max(280, box.clientWidth - 12), H = 170, L = 36, R = 14, T = 16, B = 24;
+  const x = i => L + (W - L - R) * i / Math.max(1, M), y = v => T + (H - T - B) * (1 - v);
+  const EV = gmode === 'ev', sc = p => EV ? (Math.max(-4, Math.min(4, evOf(p))) + 4) / 8 : p;      // the eval scale: -4 to +4
+  document.querySelectorAll('.gmode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === gmode)));
+  $('graphTitle').textContent = (NAMES ? 'Your ' : `${who('p1')}'s `) + (EV ? 'eval through the game' : 'win chance through the game');
+  const pts = WP.slice(0, M + 1).map((v, i) => [x(i), y(sc(v))]);
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  const area = `${line} L${x(M)} ${y(.5)} L${x(0)} ${y(.5)} Z`;
+  const step = (W - L - R) / Math.max(1, M);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${who('p1')}'s win chance at the start of each turn">
+    <defs><clipPath id="up"><rect x="0" y="0" width="${W}" height="${y(.5)}"/></clipPath><clipPath id="dn"><rect x="0" y="${y(.5)}" width="${W}" height="${H}"/></clipPath></defs>`;
+  for (const v of [0, .25, .5, .75, 1]) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule${v === .5 ? '' : '-2'})" stroke-width="1" fill="none"/>
+    <text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${EV ? ['−4', '−2', '0', '+2', '+4'][4 * v] : 100 * v + '%'}</text>`;
+  s += `<path d="${area}" fill="var(--p1)" opacity=".28" clip-path="url(#up)"/><path d="${area}" fill="var(--p2)" opacity=".28" clip-path="url(#dn)"/>`;
+  s += `<text class="lab" x="${L + 6}" y="${T + 11}">${esc(who('p1'))} ahead</text><text class="lab" x="${L + 6}" y="${H - B - 6}">${esc(who('p2'))} ahead</text>`;
+  s += `<line x1="${x(cur)}" x2="${x(cur)}" y1="${T}" y2="${H - B}" stroke="var(--ink)" stroke-width="1" fill="none" opacity=".5"/>`;
+  s += `<path d="${line}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  pts.forEach((p, i) => { s += `<circle cx="${p[0]}" cy="${p[1]}" r="${i === cur ? 5.5 : 3.5}" fill="${i === cur ? 'var(--accent)' : 'var(--ink)'}" stroke="var(--panel)" stroke-width="2"/>`; });
+  const every = N > 16 ? 2 : 1;
+  for (let i = 0; i <= M; i++) if (i === N || i % every === 0) s += `<text x="${x(i)}" y="${H - 7}" text-anchor="middle" ${i === cur ? 'style="fill:var(--ink);font-weight:700"' : ''}>${i === N ? 'End' : G.steps[i].turn}</text>`;
+  for (let i = 0; i <= M; i++) s += `<rect class="hit" data-i="${i}" tabindex="0" role="button" aria-label="${i === N ? 'Result' : 'Turn ' + G.steps[i].turn}" x="${x(i) - step / 2}" y="0" width="${step}" height="${H}" fill="transparent" style="cursor:pointer"/>`;
+  box.innerHTML = s + '</svg><div class="tip" id="tip" hidden></div>';
+  const tip = $('tip');
+  box.querySelectorAll('.hit').forEach(r => {
+    const i = +r.dataset.i;
+    const show = () => { const a = pct(WP[i], i < N); tip.textContent = `${i === N ? 'Result' : 'Turn ' + G.steps[i].turn}: ${who('p1')} ${a}%, ${who('p2')} ${100 - a}%` + (i < N ? ` · eval ${evTxt(WP[i])}` : '');
+      const left = Math.max(110, Math.min(box.clientWidth - 110, 6 + pts[i][0] * (box.clientWidth - 12) / W)); tip.style.left = left + 'px'; tip.style.top = (10 + pts[i][1] - 10) + 'px'; tip.hidden = false; };
+    r.addEventListener('mouseenter', show); r.addEventListener('focus', show);
+    r.addEventListener('mouseleave', () => { tip.hidden = true; }); r.addEventListener('blur', () => { tip.hidden = true; });
+    r.addEventListener('click', () => go(i));
+    r.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(i); } });
+  });
+}
+
+function monHtml(m) {
+  if (m.pool) return `<div class="mon unseen"><div class="top"><span class="nm">${esc(m.n)}</span></div><div class="tags"><span>not sent in yet</span></div></div>`;
+  const cls = m.f ? 'out' : !m.seen ? 'unseen' : m.slot ? 'on' : 'bench';
+  const hpc = m.hp > 50 ? 'ok' : m.hp > 20 ? 'warn' : 'off';
+  const tags = [];
+  if (m.st) tags.push(`<span class="tag st">${STATUS[m.st] || esc(m.st)}</span>`);
+  for (const [k, v] of Object.entries(m.b)) tags.push(`<span class="tag ${v > 0 ? 'up' : 'down'}">${STAT[k] || esc(k)} ${v > 0 ? '+' : '−'}${Math.abs(v)}</span>`);
+  if (m.item) tags.push(`<span class="item${m.gone ? ' gone' : ''}">${esc(m.item)}</span>`);
+  if (!m.seen) tags.push('<span>not sent in yet</span>');
+  return `<div class="mon ${cls}"><div class="top"><span class="nm">${esc(m.n)}</span><span class="hpn">${m.f ? 'fainted' : m.hp + '%'}</span></div>
+    ${m.f ? '' : `<div class="hp"><i class="${hpc}" style="width:${m.hp}%"></i></div>`}<div class="tags">${m.f ? '' : tags.join('')}</div></div>`;
+}
+
+function board() {
+  const st = cur < N ? G.steps[cur].state : G.final.state, f = st.field, chips = [];
+  $('boardTitle').textContent = cur < N ? `The position at the start of turn ${G.steps[cur].turn}` : 'The final position';
+  const turns = n => n ? ` · ${n} turn${n === 1 ? '' : 's'} left` : '';
+  if (f.weather) chips.push(f.weather + turns(f.wturns));
+  if (f.terrain) chips.push(f.terrain + ' Terrain' + turns(f.tturns));
+  if (f.tr) chips.push('Trick Room' + turns(f.tr));
+  for (const sd of ['p1', 'p2']) {
+    if (st[sd].tailwind) chips.push(`Tailwind for ${who(sd)}` + turns(st[sd].tailwind));
+    for (const [k, v] of Object.entries(st[sd].screens)) chips.push(`${k} for ${who(sd)}` + turns(v));
+    for (const h of st[sd].hazards) chips.push(`${h} on ${who(sd)}'s side`);
+  }
+  $('field').innerHTML = chips.map(c => `<span class="chip">${esc(c)}</span>`).join('');
+  $('field').hidden = !chips.length;
+  $('board').innerHTML = ['p1', 'p2'].map(sd => {
+    const ms = st[sd].mons, on = ms.filter(m => m.slot && !m.f).sort((a, b) => a.slot < b.slot ? -1 : 1), back = ms.filter(m => !(m.slot && !m.f));
+    const left = ms.filter(m => !m.f).length + Math.max(0, 4 - ms.length);
+    return `<div class="team"><h3><i class="sw ${sd}"></i>${who(sd)}<span class="left">${left} left</span></h3>
+      ${on.length ? '<div class="grp">On the field</div>' + on.map(monHtml).join('') : ''}
+      ${back.length ? '<div class="grp">In the back</div>' + back.map(monHtml).join('') : ''}</div>`;
+  }).join('');
+}
+
+function options() {
+  const o = cur < N ? G.steps[cur].opt : null;
+  $('optSec').hidden = !o; if (!o) return;
+  $('optTitle').textContent = `Best options at the start of turn ${G.steps[cur].turn}`;
+  const pc = v => Math.round(100 * v) + '%', e1 = Math.max(1, Math.min(99, Math.round(100 * G.steps[cur].ev)));
+  $('optNote').textContent = (G.engine.bar ? 'Picks: how often the planner would choose the option. Wins: that player\'s win chance if it is chosen and the opponent answers with their best mix.'
+    : `The engine's planner rates this position ${who('p1')} ${e1}%, ${who('p2')} ${100 - e1}%. Picks: how often it would choose the option. Wins: that player's win chance, on the engine's scale, if the option is chosen and the opponent answers with their best mix.`)
+    + (G.engine.staged ? ' A value marked ~ is rough: the option is clearly worse and was sampled less.' : '');
+  $('opts').innerHTML = ['p1', 'p2'].map(sd => o[sd].map(slot => {
+    const all = slot.options.slice().sort((a, b) => b.w - a.w || b.v - a.v), top = all.slice(0, 5);
+    const pl = all.find(x => x.played); if (pl && !top.includes(pl)) top.push(pl);
+    const cond = x => x.cond ? `<small class="cond">${/^Switch to /.test(x.l) ? `if ${esc(x.l.slice(10))} was brought` : 'in some guesses'} · ${pc(x.cond)}</small>` : '';
+    const rows = top.map(x => `<div class="orow${x.played ? ' played' : ''}"><div class="ol">${esc(x.l)}${x.played ? '<span class="played-tag">played</span>' : ''}${cond(x)}</div>
+      <div class="pick"><span class="pb"><i style="width:${Math.round(100 * x.w)}%"></i></span><span class="n">${pc(x.w)}</span></div><div class="n r${x.rough ? ' rough' : ''}">${x.rough ? '~' : ''}${pc(x.v)}</div></div>`).join('');
+    const more = all.length - top.length;
+    return `<div class="ocard"><h3><i class="sw ${sd}"></i>${esc(slot.mon)}</h3>
+      <div class="orow hd"><div>Option</div><div class="r">Picks</div><div class="r">Wins</div></div>${rows}
+      ${more > 0 || slot.played === null ? `<div class="omore">${[more > 0 ? `${more} more option${more === 1 ? '' : 's'} not shown` : '', slot.played === null ? `the ${REC ? 'recording' : 'log'} does not show what it chose` : ''].filter(Boolean).join(' · ')}</div>` : ''}</div>`;
+  }).join('')).join('');
+}
+
+function events() {
+  if (cur === N) {
+    $('evTitle').textContent = 'Result';
+    $('events').innerHTML = REC ? `<p class="none">${G.result === 'win' ? 'You won' : 'You lost'}: ${esc(G.how)}.</p>`
+      : `<p class="none">${G.winner ? `<span class="m"><i class="sw ${G.winner}"></i>${who(G.winner)}</span> won${G.forfeit ? ' when the other player forfeited' : ''} after ${N} turns.` : 'The log has no winner.'}</p>`;
+    return;
+  }
+  const s = G.steps[cur];
+  $('evTitle').textContent = `What happened in turn ${s.turn}`;
+  if (G.live && G.winner == null && cur === M) {
+    $('evTitle').textContent = `Turn ${s.turn}`; $('events').innerHTML = '<p class="none">This turn is under way. What happens appears here when the next turn starts.</p>'; return;
+  }
+  const a = pct(WP[cur], true), b = pct(WP[cur + 1], cur + 1 < N || G.final.wp === null), d = b - a;
+  const rows = s.events.map(e => `<li><div class="head${e.side ? '' : ' plain'}">${seg(e.head)}</div>
+    ${e.notes.length ? '<ul>' + e.notes.map(n => `<li>${seg(n)}</li>`).join('') + '</ul>' : ''}</li>`).join('');
+  $('events').innerHTML = (rows ? `<ol class="ev">${rows}</ol>` : '<p class="none">Nothing was recorded for this turn.</p>') +
+    `<div class="after"><span class="k">${cur + 1 < N ? 'Bar after this turn' : 'Result'}</span><span class="v">${who('p1')} ${a}% → ${b}%</span>
+     <span class="d">${d === 0 ? 'no change' : `${Math.abs(d)} points towards ${d > 0 ? towards('p1') : towards('p2')}`}</span></div>`;
+}
+
+const CALTXT = '0.74';
+function notes() {
+  const a = G.acc, f = v => (100 * v).toFixed(0) + '%';
+  const cal = a && a.calibration.find(c => c.lo >= .7 && c.lo < .8);
+  const samples = G.engine ? (G.engine.staged ? `up to ${G.engine.seeds} samples of the turn's luck, most for the options that are close` : `${G.engine.seeds} samples of the turn's luck each`) : '';
+  const how0 = `A model fitted on ${a && !G.engine?.bar ? a.games.toLocaleString('en-US') : 'about 4,500'} real Reg M-C games reads eleven things at the start of the turn: share of HP left, Pokémon left, stat boosts on the field, Trick Room and who is slower, who used Protect last turn, type matchups, sleep, paralysis, burn or poison, Tailwind, and screens. It does not look ahead and knows nothing about the moves each Pokémon could click.`;
+  const solve = `For each turn the battle engine plays every pair of choices one turn ahead (${samples}), scores the positions that result, and solves the turn as a game between the two players.`;
+  let html;
+  if (DATA.live) {
+    html = `<p><b>How the bar is made.</b> ${G.engine ? solve : 'For each turn the battle engine plays every pair of choices one turn ahead, scores the positions that result, and solves the turn as a game between the two players.'} The bar is the value of that game for Player 1, rescaled to match how real games turned out (log-odds times ${CALTXT}). It updates a few seconds after each turn starts.</p>
+    ${(DATA.live.format || '').startsWith('Champions') ? `<p><b>What it reads.</b> Both open team sheets as the broadcast shows them, the HP percentages in the four HP boxes, and the battle text. The HP boxes at each decision screen set the HP and who is on the field, so a moment the broadcast cut away from is corrected at the next turn; a move or stat change shown only during a cutaway can be missed. Stat points are not on team sheets, so the engine assumes each Pokémon's most common spread. For the Pokémon a player has not sent in yet, the three most likely combinations from their sheet (given their leads) are evaluated for each player and averaged.</p>` : ''}
+    <p${(DATA.live.format || '').startsWith('Champions') ? ' hidden' : ''}><b>What it knows.</b> What a spectator knows at the start of the turn: both team previews${DATA.live.format && DATA.live.format.startsWith('Bo3') ? ' and the open team sheets' : ''}, the Pokémon that have come in and what they have shown. ${DATA.live.format && DATA.live.format.startsWith('Bo3') ? '' : 'Sets are each species\' most common Reg M-C set until the game shows otherwise (moves used, items that activated, Mega Evolution), and stat points are guesses. '}For the Pokémon a player has not sent in yet, the three most likely combinations from their preview (given their leads) are evaluated for each player and averaged.</p>
+    <p><b>Fair play.</b> For watching other people's games. Do not use it on a game you are playing, and do not pass what it shows to a player while their game is going on.</p>
+    ${DATA.live.public ? '<p><b>Unofficial.</b> Not affiliated with The Pokémon Company, Nintendo or Play! Pokémon. The video is the official Play! Pokémon stream, embedded from YouTube; the bar is read from it by an amateur program and can be wrong.</p>' : ''}`;
+  } else if (G.engine && G.engine.bar) {
+    html = `<p><b>How the bar is made.</b> ${solve} The bar is the value of that game for ${REC ? 'you' : 'Player 1'}, rescaled so that it matches how real games turned out: the engine alone is too sure of itself, so its odds are pulled towards even (log-odds times ${G.engine.cal.toFixed(2)}).</p>
+    <p><b>Best options.</b> Picks is each option's share of the solution, so a mixed answer means the planner would vary its play. Wins is on the same scale as the bar.</p>
+    ${a ? `<p><b>How good it is.</b> On ${a.games.toLocaleString('en-US')} real games it was not fitted on (${a.positions.toLocaleString('en-US')} turns), the side it favoured won ${f(a.favourite_won)} of the time. Log loss ${a.log_loss.toFixed(3)}; the earlier bar without the engine scores ${a.v0.log_loss.toFixed(3)} on the same turns, and a coin flip 0.693 (lower is better).${cal ? ` Positions it rated around ${f(cal.rated)} were won ${f(cal.won)} of the time.` : ''}</p>` : ''}
+    ${REC ? `<p><b>What it knows about your games.</b> Positions are transcribed from the screen recording, turn by turn. Your sets are exact. The opponent's are each species' most common Reg M-C set (from Showdown team sheets) with what the game showed laid on top: moves used, items that activated, Mega Evolution. Their stat points are guesses. Their HP comes from the on-screen percentages; the few values that had to be inferred say so in that turn's events.</p>
+    ${G.view === 'seen' ? `<p><b>As you saw it.</b> The bar knows their team preview, the Pokémon that had come in by the start of the turn, and what those had shown by then. Every pair (or single) of preview Pokémon they could still have brought is evaluated, weighted by how often each is brought when it is on team preview, and the bar, the picks and the values are averaged over them. Illusion fools this view until it breaks, as it fooled you. The rescaling to real results was fitted on positions with full information, so this view is not separately calibrated.</p>`
+      : `<p><b>With hindsight.</b> The engine knows the opponent's four and everything they revealed from the start, which you only learned as the game went on. Where one of their four never came in, the bar and the options average over the team-preview Pokémon it could have been.</p>`}`
+      : `<p><b>Hindsight and guesses.</b> Each bench lists all the Pokémon that player brought, which the opponent only learned as they came in, and the engine knows them too. Items, abilities, natures and moves come from the open team sheets. Stat points are not on team sheets: the engine assumes each Pokémon's most common spread.</p>`}`;
+  } else {
+    html = `<p><b>How the bar is made (version 0).</b> ${how0}</p>
+    ${a ? `<p><b>How good it is.</b> On games it was not fitted on, the side it favoured won ${f(a.favourite_won)} of the time, counting every turn of every game. Log loss ${a.log_loss.toFixed(3)} (a coin flip scores 0.693; lower is better).${cal ? ` It is well calibrated: positions it rated around ${f(cal.rated)} were won ${f(cal.won)} of the time.` : ''}</p>` : ''}
+    <p><b>Hindsight.</b> Each bench lists all the Pokémon that player brought, which the opponent only learned as they came in. Items come from the open team sheets. The bar itself counts a Pokémon that has not come in yet as full HP.</p>
+    ${G.engine ? `<p><b>Best options.</b> ${solve} Picks is each option's share of that solution, so a mixed answer means the planner would vary its play. The engine's percentages come from its own self-play scale and are not yet matched to real results, so they can sit a few points away from the bar. Stat points are not on team sheets: the engine assumes each Pokémon's most common spread.</p>`
+      : '<p><b>Not here yet.</b> The best options for each Pokémon on the field, with how often the planner would pick each and what each is worth. That needs the battle engine and is the next version.</p>'}`;
+  }
+  html += `<p><b>The eval.</b> The number between the two win chances is the same win chance on a chess-style scale, from ${esc(who('p1'))}'s side: its log-odds divided by what one Pokémon of advantage is worth (in 2,789 Showdown games, the side a Pokémon up won 75%). So +1.0 means ${esc(who('p1'))} is as far ahead as being a whole Pokémon up, −1.0 the same for ${esc(who('p2'))}, and equal steps are equal changes in the odds: 40% to 20% is −0.9, 40% to 60% is +0.7.</p>`;
+  $('notes').innerHTML = html + (G.perish ? '<p><b>Perish Song was used in this game.</b> The planner cannot play the Perish trap, so treat the bar with care around it.</p>' : '');
+}
+
+function go(i) {
+  if (!N) {                                                     // live, before the first turn has been evaluated
+    $('pc1').textContent = '–'; $('pc2').textContent = '–'; $('barA').style.flexBasis = 'calc(50% - 1px)'; $('evn').innerHTML = '';
+    $('where').innerHTML = `Waiting<small>${esc(DATA.live?.status || '')}</small>`; $('prev').disabled = $('next').disabled = true;
+    for (const id of ['graph', 'board', 'events']) $(id).innerHTML = '<p class="none">The first turn appears here once the engine has evaluated it.</p>';
+    $('field').hidden = true; $('optSec').hidden = true; $('boardTitle').textContent = 'The position'; $('evTitle').textContent = 'What happened';
+    return;
+  }
+  cur = Math.max(0, Math.min(M, i)); bar(); graph(); board(); checks(); options(); events();
+}
+// where the battle text and the rules disagree about the state (broadcasts): the user says which is right, and the bar uses that
+function checks() {
+  if (DATA.live && DATA.live.public) { $('checklist').hidden = $('checks').hidden = true; return; }   // the public page is read-only
+  const steps = G.steps || [], open = steps.filter(s => (s.checks || []).some(c => !c.choice)), canSave = DATA.live && G.idx !== undefined;
+  $('checklist').hidden = !open.length;
+  $('checklist').innerHTML = open.length ? '<span>Battle text and rules disagree at</span>' + open.map(s => `<button type="button" data-go="${steps.indexOf(s)}">turn ${s.turn}</button>`).join('') : '';
+  const cs = cur < N ? (G.steps[cur].checks || []) : [];
+  $('checks').hidden = !cs.length; if (!cs.length) { $('checks').innerHTML = ''; return; }
+  const btn = (c, k, label) => `<button type="button" class="${c.choice === k ? 'on' : ''}" data-key="${esc(c.key)}" data-choice="${k}" aria-pressed="${c.choice === k}">${label}</button>`;
+  $('checks').innerHTML = `<h3>Check the state at the start of turn ${G.steps[cur].turn}</h3>
+    <p>The battle text and the rules (what this team's abilities, items and moves must have done) disagree. The bar uses the battle text unless you pick the rules.</p>
+    <div class="tbl"><table>${cs.map(c => `<tr class="${c.choice ? 'done' : ''}"><td>${esc(c.what)}</td>
+      <td><span class="k">text</span><span class="v">${esc(c.messages)}</span></td><td><span class="k">rules</span><span class="v">${esc(c.rules)}</span></td>
+      <td>${canSave ? btn(c, 'messages', 'Text is right') + ' ' + btn(c, 'rules', 'Rules are right') : (c.choice ? 'settled: ' + esc(c.choice) : '')}</td></tr>`).join('')}</table></div>`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.gmode [data-g]'); if (!b) return;
+  gmode = b.dataset.g; try { localStorage.setItem('evalbar-graph', gmode); } catch (err) {}
+  if (N) graph();
+});
+document.addEventListener('click', async e => {
+  const g = e.target.closest('#checklist [data-go]'); if (g) { go(+g.dataset.go); return; }
+  const b = e.target.closest('#checks [data-choice]'); if (!b || (DATA.live && DATA.live.public)) return;
+  b.disabled = true;
+  try {
+    await fetch('fix', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({game: G.idx, turn: G.steps[cur].turn, key: b.dataset.key, choice: b.classList.contains('on') ? 'none' : b.dataset.choice})});   // pressed again: take it back
+  } catch (err) {}
+  poll();
+});
+let lastLive = '';
+// with a video on the page, only what the player has reached is shown: turns after its time, and a result it has not got to, wait
+let RAW = null, VT = null, player = null, shownKey = '', followVideo = false;   // followVideo: the user sent the video to a game or turn
+function upToPlayer(d) {
+  if (VT === null || !d.video || (d.video.live && !followVideo)) return d;
+  const games = d.games.filter(g => g.steps.length && (g.steps[0].vt ?? 0) <= VT + 1).map(g => {
+    const steps = g.steps.filter(s => s.vt == null || s.vt <= VT + 1), over = g.end != null && VT >= g.end;
+    return {...g, steps, winner: over ? g.winner : null, final: over ? g.final : {...g.final, wp: null}, live: true};
+  });
+  return {...d, games};
+}
+function apply() {
+  if (!RAW) return;
+  const v = upToPlayer(RAW), key = v.games.map(g => g.steps.length + (g.winner || '') + g.steps.map(s => (s.checks || []).map(c => c.key + (c.choice || '')).join()).join()).join(',') + '|' + (RAW.live && RAW.live.status);
+  if (key === shownKey) return; shownKey = key;
+  const follow = cur >= M, lastGame = gi >= GAMES.length - 1; DATA = v; GAMES = DATA.games;
+  const moved = lastGame && GAMES.length - 1 > gi; if (lastGame) gi = Math.max(0, GAMES.length - 1);   // a new game of the set: follow it
+  load(gi); head(); notes(); go(follow || moved ? M : cur);
+}
+async function poll() {
+  try {
+    const t = await (await fetch(DATA.live.url + '?t=' + Date.now(), {cache: 'no-store'})).text();
+    if (t === lastLive) return; lastLive = t; RAW = JSON.parse(t); apply();
+  } catch (e) {}
+}
+function video() {
+  const v = DATA.video; if (!v || !v.id || /[?&]novideo\b/.test(location.search)) return;          // ?novideo: the bar without the player
+  $('video').hidden = false;
+  window.onYouTubeIframeAPIReady = () => {
+    player = new YT.Player('ytplayer', {videoId: v.id, playerVars: {start: v.start || 0, autoplay: DATA.live && DATA.live.public ? 0 : 1, playsinline: 1, rel: 0},
+      events: {onReady: () => { try { watchButtons(); } catch (e) {} }}});
+    setInterval(() => { try { const t = player.getCurrentTime(); if (typeof t === 'number' && t > 0) { VT = t; apply(); } } catch (e) {} }, 1000);
+  };
+  const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(sc);
+}
+// the public page on the user's site: the uploader's small head.json every 10 seconds while the tab is visible, and a game's file when
+// its version changes (both from the site's CDN); after 30 minutes without the visitor doing anything it stops until they carry on
+function pub() {
+  const base = DATA.live.public.base, ver = {}, file = {}; let at = null, idle = Date.now(), asleep = false, vid = null;
+  async function tick() {
+    if (asleep || document.visibilityState !== 'visible') return;
+    if (Date.now() - idle > 30 * 60e3) { asleep = true; $('sleep').hidden = false; return; }
+    try {
+      const h = await (await fetch(base + '/head.json', {cache: 'no-cache'})).json();
+      if (h.updated === at) return;
+      for (const g of h.games) if (ver[g.key] !== g.v) { file[g.key] = await (await fetch(`${base}/${g.key}?v=${g.v}`)).json(); ver[g.key] = g.v; }
+      at = h.updated; const id = h.stream && h.stream.id !== 'none' ? h.stream.id : null;
+      RAW = {games: h.games.map(g => file[g.key]).filter(Boolean), video: id ? {id, start: 0, live: !!h.stream.live} : null, live: {...DATA.live, status: h.status}};
+      apply();
+      if (id && id !== vid) { if (!vid) { DATA.video = RAW.video; video(); } else if (player && player.cueVideoById) player.cueVideoById(id); vid = id; }
+    } catch (e) {}
+  }
+  const wake = () => { idle = Date.now(); if (asleep) { asleep = false; $('sleep').hidden = true; tick(); } };
+  ['pointerdown', 'keydown', 'scroll'].forEach(t => document.addEventListener(t, wake, {passive: true}));
+  $('wake').addEventListener('click', wake);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+  tick(); setInterval(tick, 10e3);
+}
+function start(saved) {
+  if (VIEWS && saved && VIEWS[saved.view]) view = saved.view;
+  load(saved && Number.isInteger(saved.gi) ? saved.gi : 0);
+  head(); notes(); go(saved && Number.isInteger(saved.cur) ? saved.cur : 0);
+  if (VIEWS) $('views').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.v === view) return; view = b.dataset.v; const c = cur; load(gi); head(); notes(); go(Math.min(c, N));
+  }));
+  $('prev').addEventListener('click', () => go(cur - 1)); $('next').addEventListener('click', () => go(cur + 1));
+  document.addEventListener('keydown', e => {
+    if (e.target.closest && e.target.closest('.hit')) return;
+    if (e.key === 'ArrowLeft') go(cur - 1); else if (e.key === 'ArrowRight') go(cur + 1);
+  });
+  let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(graph, 120); });
+  window.claude?.hot?.snapshot?.(() => ({cur, gi, view}));
+  if (DATA.live && DATA.live.public) pub();
+  else if (DATA.live) { video(); poll(); setInterval(poll, 2000); }
+}
+if (window.claude?.hot?.ready) window.claude.hot.ready(start); else start(window.claude?.hot?.data ?? {});
+</script>
+</body></html>
