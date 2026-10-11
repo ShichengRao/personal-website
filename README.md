@@ -177,6 +177,7 @@ store `evalbar`. The Mac writes with `PUT` and `Authorization: Bearer
 <EVALBAR_TOKEN>` (a functions-scoped site variable): `head.json`, and one
 `<streamId>-g<i>.json` per game, JSON only, at most 512 KB, keys matching
 `^[A-Za-z0-9_-]{1,80}\.json$`. Uploads go to Blobs and never trigger a deploy.
-The page polls `head.json`, which the CDN keeps for 5 seconds, so the function
-runs about once per 5 seconds however many people watch; game files are asked
-for as `<key>?v=<hash>` and cached for a year.
+The page polls `head.json`, which the CDN keeps for 10 seconds, so the
+function runs about once per 10 seconds however many people watch (Netlify's
+durable cache, which shares responses across edge nodes, skips anything held
+for less); game files are asked for as `<key>?v=<hash>` and cached for a year.

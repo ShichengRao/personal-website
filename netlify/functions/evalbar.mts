@@ -1,13 +1,16 @@
 /* Eval bar data for /evalbar/. The Mac that reads the VGC broadcast PUTs
    head.json and one file per game; visitors' pages GET them. head.json is
-   polled, so the CDN holds it for 5 seconds and the function runs at most
-   about once per 5 seconds however many people watch. Game files are asked
+   polled, so the CDN holds it for 10 seconds and the function runs about
+   once per 10 seconds however many people watch: the durable cache, which
+   shares a response across edge nodes, skips anything held for less (it
+   bypassed s-maxage=5 when measured on 2026-10-10). Game files are asked
    for as <key>?v=<version> and cached for a year: query strings
    are part of the CDN cache key for function responses, and Netlify-Vary
    keeps any other query parameter out of it.
 
-   Environment (Netlify site settings, functions scope): EVALBAR_TOKEN, the
-   bearer token the Mac sends with every write. */
+   Environment (Netlify site settings, a production-only secret):
+   EVALBAR_TOKEN, the bearer token the Mac sends with every write. Deploy
+   previews have no token, so they read the same store but cannot write. */
 import { getStore } from '@netlify/blobs';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Config, Context } from '@netlify/functions';
@@ -25,7 +28,7 @@ const reply = (status: number, body: string | null = null, versioned = false) =>
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate',
-    'Netlify-CDN-Cache-Control': versioned ? 'public, durable, s-maxage=31536000, immutable' : 'public, durable, s-maxage=5, stale-while-revalidate=30',
+    'Netlify-CDN-Cache-Control': versioned ? 'public, durable, s-maxage=31536000, immutable' : 'public, durable, s-maxage=10',
     'Netlify-Vary': 'query=v',
   },
 });
