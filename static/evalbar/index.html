@@ -108,6 +108,11 @@ header h1{font-size:clamp(22px,4.5vw,28px);font-weight:700;letter-spacing:-.02em
 .sleep{font-size:13.5px;color:var(--ink2);margin:0 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .sleep button{font:inherit;padding:6px 12px;border:1px solid var(--rule);border-radius:3px;background:var(--panel);color:var(--ink);cursor:pointer}
 .games{display:flex;flex-wrap:wrap;gap:6px}
+.gpick{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.gpick .views{align-self:auto}
+.views button small{font-family:var(--body);font-weight:400;font-size:12px;margin-left:5px;opacity:.75}
+.gpick select{flex:1 1 260px;min-width:0;max-width:100%;font-family:var(--body);font-size:14.5px;color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:7px 10px;cursor:pointer}
+.gpick select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .games button{font-family:var(--disp);font-size:12px;font-weight:600;color:var(--ink2);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:5px 10px;cursor:pointer;display:flex;gap:7px;align-items:baseline}
 .games button small{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--ink3)}
 .games button.on{background:var(--accent-soft);color:var(--ink);border-color:var(--accent)}
@@ -201,6 +206,7 @@ section > h2{font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:u
     </div>
     <p class="vnote" id="vnote" hidden></p>
     <nav class="games" id="games" hidden aria-label="Games"></nav>
+    <div class="gpick" id="gpick" hidden><div class="views" id="grps" role="group" aria-label="Format"></div><select id="gsel" aria-label="Game"></select></div>
   </div>
 
   <div class="video" id="video" hidden><div id="ytplayer"></div></div>
@@ -256,7 +262,8 @@ section > h2{font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:u
 let DATA = {"games": [], "video": null, "live": {"url": null, "status": "starting", "format": "Champions broadcast", "public": {"base": "/api/evalbar"}}};
 const NAMES = DATA.names || null, REC = !!DATA.recorded, VIEWS = DATA.views || null;
 let view = VIEWS ? 'seen' : null, GAMES = VIEWS ? VIEWS[view] : DATA.games || [DATA];
-let G, N, M, WP, gi = 0;                                    // steps 0..N-1 are turns 1..N; step N is the result; M: the last step to show
+let G, N, M, WP, gi = 0;
+const FMT = () => (G && G.format) || (DATA.live && DATA.live.format) || '';      // the game's own format line (the bot page has Bo3 and Bo1 games)                                    // steps 0..N-1 are turns 1..N; step N is the result; M: the last step to show
 const VNOTE = {seen: 'Only what you knew at the start of each turn: their team preview, the Pokémon they had sent in, and what those had shown. Pokémon they had not sent in yet are averaged over.',
                hind: 'Everything the game showed by its end, known from turn 1: their four Pokémon and what each revealed.'};
 function load(k) {
@@ -287,15 +294,16 @@ function head() {
   $('n1').textContent = who('p1'); $('n2').textContent = who('p2');
   $('graphTitle').textContent = NAMES ? 'Your win chance through the game' : `${who('p1')}'s win chance through the game`;
   if (DATA.live) {
-    const bc = (DATA.live.format || '').startsWith('Champions');
+    const bc = (FMT() || '').startsWith('Champions');
     $('eyebrow').textContent = bc ? 'Pokémon Champions broadcast' : 'Live · spectating';
     $('sub').textContent = bc ? `Read from the video: who is winning at the start of each turn, the best options for each Pokémon on the field, and what happened.${G.players ? '' : ' Player 1 is the player on the left.'}`
       : 'A Reg M-C battle going on now on Showdown, as a spectator sees it: who is winning at the start of each turn, the best options for each Pokémon on the field, and what happened. For watching other people\'s games only.';
     // a game still being played: "so far", and the reader's status (with a video, the player's place: the reader may be ahead of it)
     const going = !G.winner && G.end == null && gi === GAMES.length - 1 && !/^finished/.test(DATA.live.status || '');
     const status = !going ? null : DATA.video && (!DATA.video.live || followVideo) ? (N ? `turn ${G.steps[N - 1].turn}` : 'waiting for the first turn in the video') : DATA.live.status;
-    const sheets = bc ? (G.sheets === false ? 'no team sheets on stream' : 'team sheets from the stream') : DATA.live.format;
-    $('meta').innerHTML = [sheets, N ? `${N} turn${N === 1 ? '' : 's'}${going ? ' so far' : ''}` : null, r, status, G.winner ? `${who(G.winner)} won${G.forfeit ? ' by forfeit' : ''}` : null]
+    const sheets = bc ? (G.sheets === false ? 'no team sheets on stream' : 'team sheets from the stream') : FMT();
+    $('meta').innerHTML = [sheets, N ? `${N} turn${N === 1 ? '' : 's'}${going ? ' so far' : ''}` : null, r, status, G.winner ? `${who(G.winner)} won${G.forfeit ? ' by forfeit' : ''}` : null,
+        G.luck ? `luck ${luckTxt(G.luck.p1)}` : null]
       .filter(Boolean).map(x => `<span class="chip">${esc(x)}</span>`).join('');
   } else if (REC) {
     $('eyebrow').textContent = 'Your recorded ladder games';
@@ -313,8 +321,27 @@ function head() {
     $('views').hidden = false; $('vnote').hidden = false; $('vnote').textContent = VNOTE[view];
     $('views').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === view); b.setAttribute('aria-pressed', b.dataset.v === view); });
   }
-  const nav = $('games'); nav.hidden = GAMES.length < 2;
-  nav.innerHTML = GAMES.map((g, k) => `<button type="button" data-k="${k}" class="${k === gi ? 'on' : ''}" aria-pressed="${k === gi}"${g.versus ? ` title="${esc(g.versus)}"` : ''}>${esc(g.title || 'Game ' + (k + 1))}<small>${g.result === 'win' ? 'won' : g.result === 'loss' ? 'lost' : ''}</small></button>`).join('');
+  // games with a format (the bot page): a Bo3 / Bo1 toggle and a list of that format's games, newest first; else a button per game
+  const grouped = GAMES.some(g => g.group), pick = k => { load(k); head(); notes(); go(0); };
+  $('gpick').hidden = !grouped;
+  if (grouped) {
+    const grp = G.group, order = ['Bo3', 'Bo1'], groups = [...new Set(GAMES.map(g => g.group))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    $('grps').innerHTML = groups.map(x => `<button type="button" data-g="${esc(x)}" class="${x === grp ? 'on' : ''}" aria-pressed="${x === grp}">${esc(x)}<small>${GAMES.filter(g => g.group === x).length}</small></button>`).join('');
+    $('grps').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.g === G.group) return;
+      const ks = GAMES.map((g, k) => k).filter(k => GAMES[k].group === b.dataset.g); pick(ks[ks.length - 1]);     // its newest game
+    }));
+    const label = (g, k) => {
+      const res = g.winner === 'p1' ? 'won' : g.winner === 'p2' ? 'lost' : g.live ? 'playing' : '', last = g.steps.length ? g.steps[g.steps.length - 1].turn : 0;
+      const luck = g.luck && typeof g.luck.p1 === 'number' ? `luck ${g.luck.p1 >= 0 ? '+' : '−'}${Math.abs(Math.round(100 * g.luck.p1))}` : '';
+      return [g.title || 'Game ' + (k + 1), res + (g.forfeit && res ? ' by forfeit' : ''), last ? `${last} turn${last === 1 ? '' : 's'}` : '', g.rating ? `vs ${Math.round(g.rating)}` : '', luck].filter(Boolean).join(' · ');
+    };
+    $('gsel').innerHTML = GAMES.map((g, k) => [g, k]).filter(([g]) => g.group === grp).reverse()
+      .map(([g, k]) => `<option value="${k}"${k === gi ? ' selected' : ''}>${esc(label(g, k))}</option>`).join('');
+    $('gsel').onchange = e => pick(+e.target.value);
+  }
+  const nav = $('games'); nav.hidden = grouped || GAMES.length < 2;
+  if (!grouped) nav.innerHTML = GAMES.map((g, k) => `<button type="button" data-k="${k}" class="${k === gi ? 'on' : ''}" aria-pressed="${k === gi}"${g.versus ? ` title="${esc(g.versus)}"` : ''}>${esc(g.title || 'Game ' + (k + 1))}<small>${g.result === 'win' ? 'won' : g.result === 'loss' ? 'lost' : ''}</small></button>`).join('');
   nav.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { load(+b.dataset.k); head(); notes(); go(0); }));
 }
 
@@ -326,7 +353,7 @@ function bar() {
   $('evn').innerHTML = e ? `${e}<small>eval</small>` : ''; $('evn').className = 'evn' + (!e || e === '0.0' ? '' : WP[cur] > 0.5 ? ' p1' : ' p2');
   $('barA').style.flexBasis = `calc(${a}% - 1px)`;
   $('bar').setAttribute('aria-label', `${who('p1')} ${a}%, ${who('p2')} ${b}%`);
-  $('where').innerHTML = cur < N ? `Turn ${G.steps[cur].turn}${G.live && G.winner == null ? '' : ' of ' + N}<small>${G.live && cur === M ? 'the latest turn' : 'at the start of the turn'}</small>`
+  $('where').innerHTML = cur < N ? `Turn ${G.steps[cur].turn}${G.live && G.winner == null ? '' : ' of ' + G.steps[N - 1].turn}<small>${G.live && cur === M ? 'the latest turn' : 'at the start of the turn'}${G.refines && G.steps[cur].tier !== 'refined' ? ' · quick read, a closer one follows' : ''}</small>`
     : `Result<small>${G.winner ? who(G.winner) + ' won' + (G.forfeit ? ' by forfeit' : '') : 'no winner recorded'}</small>`;
   if (NAMES && cur === N) $('where').innerHTML = `Result<small>${G.result === 'win' ? 'You won' : 'You lost'}</small>`;
   $('prev').disabled = cur === 0; $('next').disabled = cur >= M;
@@ -444,6 +471,8 @@ function options() {
   }).join('')).join('');
 }
 
+// luck: win-chance points from the turn's randomness, for whichever player it favoured
+function luckTxt(l) { const p = Math.round(100 * l); return p === 0 ? 'even' : `${who(p > 0 ? 'p1' : 'p2')} +${Math.abs(p)}`; }
 function events() {
   if (cur === N) {
     $('evTitle').textContent = 'Result';
@@ -461,7 +490,9 @@ function events() {
     ${e.notes.length ? '<ul>' + e.notes.map(n => `<li>${seg(n)}</li>`).join('') + '</ul>' : ''}</li>`).join('');
   $('events').innerHTML = (rows ? `<ol class="ev">${rows}</ol>` : '<p class="none">Nothing was recorded for this turn.</p>') +
     `<div class="after"><span class="k">${cur + 1 < N ? 'Bar after this turn' : 'Result'}</span><span class="v">${who('p1')} ${a}% → ${b}%</span>
-     <span class="d">${d === 0 ? 'no change' : `${Math.abs(d)} points towards ${d > 0 ? towards('p1') : towards('p2')}`}</span></div>`;
+     <span class="d">${d === 0 ? 'no change' : `${Math.abs(d)} points towards ${d > 0 ? towards('p1') : towards('p2')}`}</span></div>` +
+    (s.luck == null ? '' : `<div class="after"><span class="k">Luck this turn</span><span class="v">${luckTxt(s.luck)}</span>
+     <span class="d">expected from the choices made: ${who('p1')} ${Math.round(100 * s.expected)}%</span></div>`);
 }
 
 const CALTXT = '0.74';
@@ -474,8 +505,9 @@ function notes() {
   let html;
   if (DATA.live) {
     html = `<p><b>How the bar is made.</b> ${G.engine ? solve : 'For each turn the battle engine plays every pair of choices one turn ahead, scores the positions that result, and solves the turn as a game between the two players.'} The bar is the value of that game for Player 1, rescaled to match how real games turned out (log-odds times ${CALTXT}). It updates a few seconds after each turn starts.</p>
-    ${(DATA.live.format || '').startsWith('Champions') ? `<p><b>What it reads.</b> Both open team sheets as the broadcast shows them, the HP percentages in the four HP boxes, and the battle text. The HP boxes at each decision screen set the HP and who is on the field, so a moment the broadcast cut away from is corrected at the next turn; a move or stat change shown only during a cutaway can be missed. Stat points are not on team sheets, so the engine assumes each Pokémon's most common spread. For the Pokémon a player has not sent in yet, the three most likely combinations from their sheet (given their leads) are evaluated for each player and averaged.</p>` : ''}
-    <p${(DATA.live.format || '').startsWith('Champions') ? ' hidden' : ''}><b>What it knows.</b> What a spectator knows at the start of the turn: both team previews${DATA.live.format && DATA.live.format.startsWith('Bo3') ? ' and the open team sheets' : ''}, the Pokémon that have come in and what they have shown. ${DATA.live.format && DATA.live.format.startsWith('Bo3') ? '' : 'Sets are each species\' most common Reg M-C set until the game shows otherwise (moves used, items that activated, Mega Evolution), and stat points are guesses. '}For the Pokémon a player has not sent in yet, the three most likely combinations from their preview (given their leads) are evaluated for each player and averaged.</p>
+    ${(FMT() || '').startsWith('Champions') ? `<p><b>What it reads.</b> Both open team sheets as the broadcast shows them, the HP percentages in the four HP boxes, and the battle text. The HP boxes at each decision screen set the HP and who is on the field, so a moment the broadcast cut away from is corrected at the next turn; a move or stat change shown only during a cutaway can be missed. Stat points are not on team sheets, so the engine assumes a spread fitted to Reg M-C replays for each species and nature. For the Pokémon a player has not sent in yet, the three most likely combinations from their sheet (given their leads) are evaluated for each player and averaged.</p>` : ''}
+    <p${(FMT() || '').startsWith('Champions') ? ' hidden' : ''}><b>What it knows.</b> What a spectator knows at the start of the turn: both team previews${FMT() && FMT().startsWith('Bo3') ? ' and the open team sheets' : ''}, the Pokémon that have come in and what they have shown. ${FMT() && FMT().startsWith('Bo3') ? '' : 'Sets are guessed from the rest of the team (the sets players with the same core of Pokémon run) until the game shows otherwise (moves used, items that activated, Mega Evolution), and stat points are guesses fitted to Reg M-C replays. '}For the Pokémon a player has not sent in yet, the three most likely combinations from their preview (given their leads) are evaluated for each player and averaged.</p>
+    ${G.luck ? `<p><b>Luck.</b> For each turn, the win chance the turn left against what the choices both players made were expected to give: the engine plays those choices over 32 samples of the turn's randomness (damage rolls, critical hits, accuracy, speed ties, added effects), both measured before any lookahead. A Pokémon whose choice the log does not show (it fainted before moving) counts as the engine's mix. The total adds up the turns. When a Pokémon the opponent had not shown comes in, what that reveals counts too.</p>` : ''}
     <p><b>Fair play.</b> For watching other people's games. Do not use it on a game you are playing, and do not pass what it shows to a player while their game is going on.</p>
     ${DATA.live.public ? '<p><b>Unofficial.</b> Not affiliated with The Pokémon Company, Nintendo or Play! Pokémon. The video is the official Play! Pokémon stream, embedded from YouTube; the bar is read from it by an amateur program and can be wrong.</p>' : ''}`;
   } else if (G.engine && G.engine.bar) {
@@ -552,8 +584,12 @@ function apply() {
   if (!RAW) return;
   const v = upToPlayer(RAW), key = v.games.map(g => g.steps.length + (g.winner || '') + g.steps.map(s => (s.checks || []).map(c => c.key + (c.choice || '')).join()).join()).join(',') + '|' + (RAW.live && RAW.live.status);
   if (key === shownKey) return; shownKey = key;
-  const follow = cur >= M, lastGame = gi >= GAMES.length - 1; DATA = v; GAMES = DATA.games;
-  const moved = lastGame && GAMES.length - 1 > gi; if (lastGame) gi = Math.max(0, GAMES.length - 1);   // a new game of the set: follow it
+  // a new game: follow it if the newest one was showing (on the bot page, the newest of the format showing); else stay on the same game
+  // (by its id: games join the list as they are read, so its place in the list can move)
+  const grp = G && G.group, newest = gs => { for (let k = gs.length - 1; k >= 0; k--) if (!grp || gs[k].group === grp) return k; return gs.length - 1; };
+  const follow = cur >= M, lastGame = gi >= newest(GAMES), id = G && G.id; DATA = v; GAMES = DATA.games;
+  const at = id ? GAMES.findIndex(g => g.id === id) : -1, ng = newest(GAMES);
+  const moved = lastGame && ng > (at >= 0 ? at : gi); gi = lastGame ? Math.max(0, ng) : at >= 0 ? at : gi;
   load(gi); head(); notes(); go(follow || moved ? M : cur);
 }
 async function poll() {
