@@ -5,6 +5,10 @@
     "test": "node --test tests/smoke.test.mjs tests/long-game.test.mjs tests/replay.test.mjs tests/seven-tiles.test.mjs tests/seven-tiles-push.test.mjs"
   },
   "dependencies": {
+    "@netlify/blobs": "^11.1.4",
     "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^6.0.2"
   }
 }

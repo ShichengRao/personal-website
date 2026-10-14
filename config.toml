@@ -61,3 +61,8 @@ weight = 9
 name = "Seven Tiles"
 url = "/seven-tiles/"
 weight = 10
+
+[[menu.main]]
+name = "Eval Bar"
+url = "/evalbar/"
+weight = 11
