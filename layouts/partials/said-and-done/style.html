@@ -1,0 +1,296 @@
+{{/* The Said & Done page's styles. */}}
+<style>
+/* Every selector is scoped to #sd-app or .sd-prose so the page's palette and
+   generic class names cannot touch the theme. Colors follow the dataviz
+   reference palette: three hues for Beam's setups, other open-weight models and
+   closed models (validated all-pairs, light and dark; more hues can't all be
+   told apart), gray for a model of unknown kind, and the fixed status steps
+   for run outcomes. */
+#sd-app{
+ --plane:#fbfbf9;--surface:#ffffff;--ring:rgba(11,11,11,.10);
+ --ink:#0b0b0b;--ink2:#52514e;--muted:#6f6e69;--tick:#898781;
+ --grid:#e1e0d9;--axis:#c3c2b7;
+ --g-beam:#2a78d6;--g-open:#eb6834;--g-closed:#1baf7a;--g-ref:#898781;
+ --good:#0ca30c;--warn:#fab219;--serious:#ec835a;--crit:#d03b3b;--none:#d6d5ce;
+ --banner:#fff4d6;--code:#f3f2ee;
+ color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #sd-app{
+ --plane:#121211;--surface:#1a1a19;--ring:rgba(255,255,255,.10);
+ --ink:#ffffff;--ink2:#c3c2b7;--muted:#a3a29b;--tick:#898781;
+ --grid:#2c2c2a;--axis:#383835;
+ --g-beam:#3987e5;--g-open:#d95926;--g-closed:#199e70;--g-ref:#898781;
+ --none:#4a4a46;--banner:#3a2f12;--code:#202020;
+ color-scheme:dark;
+}}
+:root[data-theme="dark"] #sd-app{
+ --plane:#121211;--surface:#1a1a19;--ring:rgba(255,255,255,.10);
+ --ink:#ffffff;--ink2:#c3c2b7;--muted:#a3a29b;--tick:#898781;
+ --grid:#2c2c2a;--axis:#383835;
+ --g-beam:#3987e5;--g-open:#d95926;--g-closed:#199e70;--g-ref:#898781;
+ --none:#4a4a46;--banner:#3a2f12;--code:#202020;
+ color-scheme:dark;
+}
+main:has(> #sd-app){padding-bottom:0}
+#sd-app{background:var(--plane);color:var(--ink);padding:32px 16px 64px;
+ font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#sd-app *{box-sizing:border-box}
+#sd-app .sd-wrap{max-width:1440px;margin:0 auto}
+#sd-app .sd-prose{max-width:42rem;margin:0 auto 20px;color:var(--ink2)}
+#sd-app .sd-prose h2{color:var(--ink);font-size:20px;margin:28px 0 8px}
+#sd-app .sd-prose strong{color:var(--ink)}
+#sd-app .sd-prose ul,#sd-app .sd-prose ol{padding-left:22px}
+#sd-app .sd-prose li{margin:3px 0}
+#sd-app .sd-sec{margin-top:64px}
+#sd-app .sd-eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+#sd-app h2.sd-h{font-size:28px;line-height:1.2;letter-spacing:-.01em;font-weight:650;margin:0 0 6px}
+#sd-app h3{font-size:17px;font-weight:600;margin:0 0 2px}
+#sd-app .sd-sub{color:var(--ink2);font-size:15px;margin:0 0 16px;max-width:42rem}
+#sd-app .sd-note{color:var(--muted);font-size:13px;margin:14px 0 0;max-width:42rem}
+#sd-app .sd-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:960px;margin:40px auto 0}
+#sd-app .sd-tile{border-top:3px solid var(--c);padding-top:14px}
+#sd-app .sd-tile .k{font-size:14px;color:var(--ink2);font-weight:500}
+#sd-app .sd-tile .v{font-size:56px;line-height:1.05;font-weight:650;letter-spacing:-.02em;margin:6px 0 4px}
+#sd-app .sd-tile .s{font-size:13px;color:var(--muted)}
+@media (max-width:700px){#sd-app .sd-tiles{grid-template-columns:1fr;gap:20px}#sd-app .sd-tile .v{font-size:44px}}
+#sd-app .sd-bars{display:grid;gap:6px}
+#sd-app .sd-row{display:grid;grid-template-columns:minmax(150px,min(30%,280px)) 1fr;align-items:center;gap:16px;
+ padding:5px 8px;margin:0 -8px;border-radius:6px;outline:none;cursor:default}
+#sd-app .sd-row:hover,#sd-app .sd-row:focus-visible{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+#sd-app .sd-name{font-size:14px;color:var(--ink);text-align:right;line-height:1.25}
+#sd-app .sd-ref .sd-name{color:var(--ink2)}
+#sd-app .sd-track{display:flex;align-items:center;gap:8px;min-height:22px}
+#sd-app .sd-bar{height:20px;border-radius:0 4px 4px 0;flex:none;min-width:2px}
+#sd-app .sd-val{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+#sd-app .sd-ref .sd-val{font-weight:500;color:var(--ink2)}
+@media (max-width:600px){#sd-app .sd-row{grid-template-columns:1fr;gap:4px}#sd-app .sd-name{text-align:left;font-size:13px}}
+#sd-app .sd-banner{background:var(--banner);border:1px solid var(--ring);border-radius:10px;
+ padding:10px 14px;margin:0 auto 16px;max-width:42rem;font-size:14px}
+#sd-app .sd-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--ink2);margin:4px 0 12px}
+#sd-app .sd-legend span{display:inline-flex;align-items:center;gap:6px}
+#sd-app .sd-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
+#sd-app .sd-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+#sd-app table{border-collapse:collapse;width:100%;font-size:14px}
+#sd-app th,#sd-app td{padding:6px 8px;border-bottom:1px solid var(--grid);text-align:left;vertical-align:middle}
+#sd-app thead th{color:var(--muted);font-weight:600;font-size:12px;vertical-align:bottom}
+#sd-app td.n,#sd-app th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#sd-app .sd-sticky{position:sticky;left:0;background:var(--plane);z-index:1}
+#sd-app tr.sd-hl > *{background:color-mix(in srgb,var(--c) 9%,var(--plane))}
+#sd-app tr.sd-grp th{padding-top:14px;font-size:12px;font-weight:600;color:var(--ink2);border-bottom:1px solid var(--axis)}
+
+#sd-app #sd-table th.sd-sticky{min-width:150px}
+@media (max-width:600px){
+ #sd-app #sd-table th.sd-sticky{min-width:128px}
+ #sd-app .sd-grid th.sd-task{min-width:124px;font-size:12px}
+}
+#sd-app .sd-notes{font-size:13px;color:var(--ink2);margin:10px 0 0;padding-left:18px}
+#sd-app .sd-notes li{margin:2px 0}
+#sd-app .sd-charts{display:grid;grid-template-columns:1fr;gap:64px}
+#sd-app .sd-chart{width:100%;min-height:300px}
+#sd-app .sd-chart svg{display:block;overflow:visible}
+#sd-app .sd-chart text{font-family:inherit}
+#sd-app .sd-pt{cursor:default;outline:none}
+#sd-app .sd-pt:focus-visible .sd-mark,#sd-app .sd-pt:hover .sd-mark{stroke:var(--ink);stroke-width:2}
+#sd-app .sd-grid th.sd-cfg{font-size:11px;line-height:1.25;font-weight:600;color:var(--ink2);
+ min-width:76px;max-width:96px;border-top:3px solid var(--c,transparent);text-align:center;padding:6px 4px}
+#sd-app .sd-grid td{text-align:center;padding:4px 3px;white-space:nowrap}
+#sd-app .sd-grid th.sd-task{font-weight:500;font-size:13px;min-width:190px;max-width:240px}
+#sd-app .sd-grid th.sd-task small{display:block;color:var(--muted);font-size:11px;font-weight:400}
+#sd-app .sd-grid tr.sd-fam th,#sd-app .sd-grid tr.sd-fam td{background:color-mix(in srgb,var(--ink) 4%,var(--plane));font-size:12px;color:var(--ink2);
+ padding-top:5px;padding-bottom:5px}
+#sd-app .sd-grid tr.sd-fam th{font-weight:600}
+#sd-app .sd-grid tr.sd-fam th.sd-sticky{background:color-mix(in srgb,var(--ink) 4%,var(--plane))}
+#sd-app .sd-chip{display:inline-block;min-width:20px;height:20px;line-height:20px;padding:0 3px;margin:1px;
+ border-radius:4px;font-size:11px;font-weight:700;text-align:center;color:#0b0b0b;cursor:default;
+ font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+#sd-app .sd-c-S{background:color-mix(in srgb,var(--good) 38%,var(--surface));color:var(--ink)}
+#sd-app .sd-c-F{background:var(--crit);color:#fff}
+#sd-app .sd-c-W{background:var(--warn)}
+#sd-app .sd-c-U{background:var(--serious)}
+#sd-app .sd-c-x{background:var(--none);color:var(--ink);font-weight:500}
+#sd-app .sd-c-I{background:transparent;color:var(--muted);box-shadow:inset 0 0 0 1px var(--axis)}
+#sd-app .sd-chip.sd-v{outline:2px solid var(--ink);outline-offset:1px}
+#sd-app .sd-na{color:var(--muted);font-size:12px}
+#sd-app .sd-codes{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--ink2);margin:0 0 12px}
+#sd-app .sd-codes span{display:inline-flex;align-items:center;gap:4px}
+#sd-app details{margin-top:12px}
+#sd-app summary{cursor:pointer;font-weight:600;font-size:14px}
+#sd-app dl.sd-tasks{margin:8px 0 0;font-size:14px}
+#sd-app dl.sd-tasks dt{font-weight:600;margin-top:8px}
+#sd-app dl.sd-tasks dd{margin:0;color:var(--ink2)}
+#sd-app .sd-foot{font-size:13px;color:var(--ink2);margin:28px 0 0}
+#sd-app .sd-foot code{font-size:12px}
+#sd-app a{color:var(--g-beam)}
+#sd-app .sd-tip{position:fixed;z-index:30;pointer-events:none;background:var(--surface);color:var(--ink);
+ border:1px solid var(--ring);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);
+ padding:8px 10px;font-size:13px;line-height:1.4;max-width:290px;display:none}
+#sd-app .sd-tip .t{font-weight:600;margin-bottom:4px}
+#sd-app .sd-tip .r{display:flex;gap:8px;align-items:baseline}
+#sd-app .sd-tip .r b{font-variant-numeric:tabular-nums;white-space:nowrap}
+#sd-app .sd-tip .r span{color:var(--ink2)}
+#sd-app .sd-tip .s{color:var(--ink2);margin-top:4px}
+#sd-app .sd-err{color:var(--crit)}
+/* What each setup did and said: a bar split at the line between done and not done. */
+#sd-app .sd-outcomes{display:grid;gap:6px}
+#sd-app .sd-outcomes .sd-legend{margin-bottom:10px}
+#sd-app .sd-sw{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+#sd-app .sd-otrack{display:flex;align-items:center;min-height:24px}
+#sd-app .sd-oleft{display:flex;justify-content:flex-end;border-right:2px solid var(--ink2);align-self:stretch;align-items:center}
+#sd-app .sd-oright{display:flex;align-self:stretch;align-items:center}
+#sd-app .sd-oseg{height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;
+ font-variant-numeric:tabular-nums;overflow:hidden;white-space:nowrap;flex:none}
+#sd-app .sd-oright .sd-oseg:last-child{border-radius:0 4px 4px 0}
+#sd-app .sd-oleft .sd-oseg:first-child{border-radius:4px 0 0 4px}
+#sd-app .sd-oseg + .sd-oseg{box-shadow:inset 2px 0 0 var(--plane)}
+#sd-app .sd-o-good{background:color-mix(in srgb,var(--good) 60%,var(--surface));color:var(--ink)}
+#sd-app .sd-o-warn{background:var(--warn);color:#0b0b0b}
+#sd-app .sd-o-none{background:var(--none);color:var(--ink)}
+#sd-app .sd-o-crit{background:var(--crit);color:#fff}
+#sd-app .sd-oaxis{display:grid;grid-template-columns:minmax(150px,min(30%,280px)) 1fr;gap:16px;font-size:12px;color:var(--muted);margin-top:4px}
+#sd-app .sd-oaxis-t{display:flex}
+@media (max-width:600px){#sd-app .sd-oaxis{grid-template-columns:1fr;gap:0}}
+/* Sections below the table: expandable rows, as wide as the charts above. */
+#sd-app .sd-acc-sec{margin-top:16px}
+#sd-app details.sd-acc{border-top:1px solid var(--grid);border-bottom:1px solid var(--grid);margin:0}
+#sd-app .sd-acc-sec + .sd-acc-sec details.sd-acc{border-top:0}
+#sd-app details.sd-acc > summary{list-style:none;display:flex;align-items:center;gap:16px;padding:18px 4px;font-weight:400}
+#sd-app details.sd-acc > summary::-webkit-details-marker{display:none}
+#sd-app details.sd-acc > summary::after{content:"+";margin-left:auto;font-size:22px;color:var(--muted);line-height:1}
+#sd-app details.sd-acc[open] > summary::after{content:"\2212"}
+#sd-app details.sd-acc > summary .t{display:block;font-size:19px;font-weight:600;color:var(--ink)}
+#sd-app details.sd-acc > summary .d{display:block;font-size:14px;color:var(--ink2);margin-top:2px}
+#sd-app details.sd-acc > .sd-eyebrow,#sd-app details.sd-acc > h2.sd-h,#sd-app details.sd-acc .sd-prose > h2:first-child{display:none}
+#sd-app details.sd-acc[open]{padding-bottom:24px}
+#sd-app details.sd-acc .sd-prose{max-width:none;margin:0}
+@media (min-width:900px){
+ #sd-app details.sd-acc .sd-prose{column-count:2;column-gap:56px}
+ #sd-app details.sd-acc .sd-prose p,#sd-app details.sd-acc .sd-prose li{break-inside:avoid}
+}
+#sd-app .sd-block h3.sd-h3{font-size:16px;font-weight:600;margin:20px 0 8px}
+
+/* Wide screens: the intro beside the headline numbers, and two charts side by side. */
+@media (min-width:1200px){
+ #sd-app .sd-top{display:grid;grid-template-columns:minmax(0,42rem) minmax(0,1fr);gap:72px;align-items:center}
+ #sd-app .sd-top .sd-banner,#sd-app .sd-top .sd-prose{margin-left:0;margin-right:0}
+ #sd-app .sd-top .sd-prose{margin-bottom:0}
+ #sd-app .sd-top .sd-tiles{grid-template-columns:1fr;gap:20px;max-width:none;margin:0}
+ #sd-app .sd-top .sd-tile{display:grid;grid-template-columns:9.5rem minmax(0,1fr);column-gap:20px;align-items:center}
+ #sd-app .sd-top .sd-tile .v{grid-column:1;grid-row:1 / span 2;margin:0}
+ #sd-app .sd-top .sd-tile .k,#sd-app .sd-top .sd-tile .s{grid-column:2}
+ #sd-app .sd-top .sd-tile .k{align-self:end}
+ #sd-app .sd-top .sd-tile .s{align-self:start;margin-top:2px}
+ #sd-app .sd-charts{grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:56px}
+ #sd-app .sd-charts > div:first-child{grid-column:1 / -1}
+}
+
+/* The fix and the quiz, linked under the headline numbers. */
+#sd-app .sd-next{display:grid;grid-template-columns:2fr 1fr;gap:16px;max-width:960px;margin:40px auto 0}
+@media (min-width:1200px){#sd-app .sd-next{max-width:none;margin-top:48px}}
+#sd-app .sd-next a{display:grid;gap:4px;align-content:start;text-decoration:none;color:inherit;background:var(--surface);
+ border:1px solid var(--ring);border-radius:12px;padding:18px 20px;position:relative}
+#sd-app .sd-next a:hover,#sd-app .sd-next a:focus-visible{border-color:var(--axis)}
+#sd-app .sd-next .e{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+#sd-app .sd-next .t{font-size:20px;font-weight:650;color:var(--ink);line-height:1.25}
+#sd-app .sd-next .d{font-size:14px;color:var(--ink2)}
+#sd-app .sd-next .sd-fix{border-left:4px solid var(--g-beam);padding-right:52px}
+#sd-app .sd-next .go{position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:24px;color:var(--g-beam)}
+@media (max-width:700px){#sd-app .sd-next{grid-template-columns:1fr}}
+
+/* Shared by the sections below: badges, labels, quoted reasoning. */
+#sd-app .sd-badge{display:inline-block;font-size:12px;font-weight:650;border-radius:999px;padding:1px 9px;letter-spacing:.02em}
+#sd-app .sd-badge.good{background:color-mix(in srgb,var(--good) 30%,var(--surface));color:var(--ink)}
+#sd-app .sd-badge.warn{background:var(--warn);color:#0b0b0b}
+#sd-app .sd-badge.bad{background:var(--crit);color:#fff}
+#sd-app .sd-badge.neutral{background:var(--grid);color:var(--ink)}
+#sd-app .lab{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 4px}
+#sd-app .mono{font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;
+ background:var(--code);border-radius:8px;padding:10px 12px;color:var(--ink)}
+#sd-app .dim{color:var(--muted);font-weight:400}
+#sd-app .nv-h3{font-size:17px;font-weight:600;margin:40px 0 4px}
+#sd-app .nv-read{max-width:46rem}
+#sd-app .nv-read p{color:var(--ink2);margin:0 0 12px}
+#sd-app .nv-read b{color:var(--ink)}
+#sd-app .nv-list{padding-left:20px;max-width:46rem;color:var(--ink2);margin:0 0 12px}
+#sd-app .nv-list li{margin:6px 0}
+#sd-app .nv-list b{color:var(--ink)}
+#sd-app .nv-list code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 5px;border-radius:5px}
+
+/* When there's no right answer: reported separately from the score. */
+#sd-app .sd-o-serious{background:var(--serious);color:#0b0b0b}
+#sd-app .nv-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px 28px;margin:28px 0 0}
+#sd-app .nv-stat{border-top:1px solid var(--axis);padding-top:12px}
+#sd-app .nv-stat .v{font-size:36px;line-height:1.1;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+ display:flex;flex-wrap:wrap;align-items:baseline;gap:0 .2em}
+#sd-app .nv-stat .v .from,#sd-app .nv-stat .v .arrow{color:var(--muted);font-weight:500}
+#sd-app .nv-stat .k{font-size:14px;color:var(--ink2);margin-top:4px}
+#sd-app .nv-chart{display:grid;gap:8px}
+#sd-app .nv-row{display:grid;grid-template-columns:minmax(150px,min(30%,280px)) 1fr 80px;gap:16px;align-items:center}
+#sd-app .nv-row .nm{text-align:right;font-size:14px;line-height:1.25}
+#sd-app .nv-row small{display:block;font-size:12px;color:var(--muted);font-weight:400}
+#sd-app .nv-row .v{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.25}
+#sd-app .nv-stack{display:flex;gap:2px;height:24px}
+#sd-app .nv-seg{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;
+ min-width:4px;overflow:hidden;cursor:default;outline-offset:2px}
+#sd-app .nv-seg:first-child{border-radius:4px 0 0 4px}
+#sd-app .nv-seg:last-child{border-radius:0 4px 4px 0}
+#sd-app .nv-seg:only-child{border-radius:4px}
+@media (max-width:600px){#sd-app .nv-row{grid-template-columns:1fr 64px;gap:4px 12px}#sd-app .nv-row .nm{grid-column:1/-1;text-align:left;font-size:13px}}
+#sd-app .nv-acc{margin-top:28px}
+#sd-app .nv-acc .sd-acc-sec{margin-top:0}
+#sd-app .nv-acc details.sd-acc > summary{padding:14px 4px}
+#sd-app .nv-acc details.sd-acc > summary .t{font-size:16px}
+#sd-app .nv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:16px}
+#sd-app .nv-card{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:16px 18px}
+#sd-app .nv-card.control{border-style:dashed}
+#sd-app .nv-card .n{font-size:13px;font-weight:600;color:var(--muted)}
+#sd-app .nv-card p{margin:0;font-size:14px;color:var(--ink2)}
+#sd-app .nv-card p.ticket{color:var(--ink)}
+#sd-app .nv-card .ans{margin-top:auto;padding-top:6px;font-size:13px;color:var(--muted)}
+#sd-app .nv-grid tbody th{font-weight:500;white-space:nowrap}
+#sd-app .nv-grid tr.ctl > *{background:color-mix(in srgb,var(--ink) 4%,var(--plane))}
+#sd-app .nv-sum tbody th{font-weight:400}
+#sd-app .nv-chips{display:flex;gap:3px}
+#sd-app button.sd-chip{border:0;cursor:pointer}
+#sd-app .nv-ex{border:1px solid var(--ring);border-radius:12px;background:var(--surface);margin-top:16px;overflow:hidden}
+#sd-app .nv-ex .head{padding:14px 18px 0}
+#sd-app .nv-ex h4{margin:0 0 2px;font-size:16px;font-weight:600}
+#sd-app .nv-ex .meta{font-size:13px;color:var(--muted)}
+#sd-app .nv-ex .cols{display:grid;grid-template-columns:1fr 1fr}
+#sd-app .nv-ex .cols > div{padding:4px 18px 16px}
+#sd-app .nv-ex .cols > div + div{border-left:1px solid var(--grid)}
+#sd-app .nv-ex p{font-size:14px;margin:0}
+@media (max-width:760px){#sd-app .nv-ex .cols{grid-template-columns:1fr}#sd-app .nv-ex .cols > div + div{border-left:0;border-top:1px solid var(--grid)}}
+
+/* Quote cards (the excerpts and the addendum) and the addendum, collapsed to a paragraph and four numbers. */
+#sd-app .bk-box{background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:28px 28px 0}
+#sd-app .bk-nums{display:grid;grid-template-columns:repeat(4,1fr);gap:20px 28px;margin:24px 0 0}
+@media (max-width:900px){#sd-app .bk-nums{grid-template-columns:repeat(2,1fr)}}
+#sd-app .bk-num .v{font-size:30px;font-weight:650;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+#sd-app .bk-num .k{font-size:13px;color:var(--ink2);margin-top:4px}
+#sd-app .bk-dl{font-size:14px;color:var(--ink2);margin:22px 0 0}
+#sd-app .bk-dl a{font-weight:600}
+#sd-app .bk-dl.pending{color:var(--muted);border:1px dashed var(--axis);border-radius:8px;padding:6px 12px;display:inline-block}
+#sd-app details.bk-more{margin:22px -28px 0;border-top:1px solid var(--grid);padding:0 28px}
+#sd-app details.bk-more > summary{list-style:none;display:flex;align-items:center;gap:16px;padding:16px 0;font-size:15px}
+#sd-app details.bk-more > summary::-webkit-details-marker{display:none}
+#sd-app details.bk-more > summary::after{content:"+";margin-left:auto;font-size:22px;font-weight:400;color:var(--muted);line-height:1}
+#sd-app details.bk-more[open] > summary::after{content:"\2212"}
+#sd-app details.bk-more[open]{padding-bottom:28px}
+#sd-app details.bk-more > .nv-h3:first-of-type{margin-top:8px}
+@media (max-width:600px){#sd-app .bk-box{padding:20px 16px 0}#sd-app details.bk-more{margin:22px -16px 0;padding:0 16px}#sd-app .bk-nums{grid-template-columns:1fr}}
+#sd-app .sd-q{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--ring);border-radius:12px;overflow:hidden;background:var(--plane);margin-top:14px}
+#sd-app .sd-q.contrast{border-style:dashed}
+#sd-app .sd-q .head{grid-column:1/-1;padding:12px 16px 0;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+#sd-app .sd-q h4{margin:0;font-size:15px;font-weight:600}
+#sd-app .sd-q .meta{font-size:12px;color:var(--muted)}
+#sd-app .sd-q .thought,#sd-app .sd-q .said{padding:4px 16px 14px}
+#sd-app .sd-q .said{border-left:1px solid var(--grid)}
+#sd-app .sd-q p{font-size:14px;margin:0 0 4px}
+#sd-app .sd-q.one{grid-template-columns:1fr}
+#sd-app .sd-q .ctx{color:var(--ink2);margin:10px 0 0}
+#sd-app #sd-excerpts .sd-q{background:var(--surface)}
+@media (max-width:760px){#sd-app .sd-q{grid-template-columns:1fr}#sd-app .sd-q .said{border-left:0;border-top:1px solid var(--grid)}}
+#sd-app tr.bk-beam > *{background:color-mix(in srgb,var(--g-beam) 9%,var(--surface))}
+#sd-app #bk-models tbody th,#sd-app #bk-trip tbody th{font-weight:500}
+#sd-app #does-beam-know + .sd-acc-sec{margin-top:64px}
+</style>

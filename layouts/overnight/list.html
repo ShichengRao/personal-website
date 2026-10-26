@@ -1,0 +1,42 @@
+{{ define "head" }}{{ partial "project/style.html" . }}
+<style>
+.on-list{display:grid;gap:16px;margin-top:8px}
+.on-item{display:grid;grid-template-columns:56px 1fr auto;gap:18px;align-items:start;text-decoration:none;color:inherit;
+ background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:22px 24px}
+.on-item:hover{border-color:var(--axis)}
+.on-item .num{font-size:28px;font-weight:700;color:var(--muted);line-height:1}
+.on-item h2{font-size:22px;margin:0 0 4px;letter-spacing:-.01em;color:var(--ink)}
+.on-item .what{color:var(--ink2);margin:0 0 8px;font-size:15px}
+.on-item .for{font-size:13px;color:var(--muted)}
+.on-item .go{font-size:20px;color:var(--ink2);align-self:center}
+@media (max-width:640px){.on-item{grid-template-columns:1fr;gap:8px}.on-item .go{display:none}}
+</style>
+{{ end }}
+{{ define "header" }}{{ partial "project/header.html" . }}{{ end }}
+
+{{ define "main" }}
+<!-- An index of the Beam drafts on this local copy of the site: Said & Done leads, and links to the rest. -->
+<div class="pj">
+<div class="pj-wrap" style="max-width:900px">
+  <header class="pj-hero">
+    <p class="pj-eyebrow">Drafts · local only</p>
+    <h1>The Beam story</h1>
+    <p class="pj-lede">Said &amp; Done leads: the benchmark, with the tasks where no option is valid and the “Does Beam know?” addendum folded in as sections. Checked /goal is the fix it links to, and the quiz is a way in.</p>
+  </header>
+  <div class="on-list">
+    {{ range $i, $p := slice
+      (dict "url" "/said-and-done/" "title" "Said & Done" "what" "The full benchmark: twelve setups, the walls chart, every run and the method. Below the results, a separately reported section on six safety-critical tasks where no option is valid, and a collapsible addendum on whether Beam knew, with the raw reasoning to download." "for" "The lead. The addendum's own data, the raw reasoning and every model on the no-valid-option tasks are still to come." "state" "Lead")
+      (dict "url" "/checked-goal/" "title" "Checked /goal" "what" "The fix as a product: a prototype Mirror extension, the four checks behind it (three ship in it), real before/after runs side by side, and results with caveats. Its source is held back until a known bug is fixed." "for" "Linked from the top of Said & Done. A live Mirror demo is recorded, and its results are being corrected." "state" "Ready")
+      (dict "url" "/spot-the-false-completion/" "title" "Spot the false completion" "what" "An interactive quiz: fourteen real Beam runs that all say they're done. Accept or reject each, then see what the hidden checks found." "for" "Linked from the top of Said & Done, as a way in." "state" "Ready")
+    }}
+    <a class="on-item" href="{{ $p.url }}">
+      <span class="num">{{ add $i 1 }}</span>
+      <span><h2>{{ $p.title }}</h2><p class="what">{{ $p.what }}</p><span class="for">{{ $p.for }} · <b>{{ $p.state }}</b></span></span>
+      <span class="go">→</span>
+    </a>
+    {{ end }}
+  </div>
+  <p class="pj-foot">Nothing here is published: this is a local copy of the site. Each page reads its content from the benchmark's site-projects packages.</p>
+</div>
+</div>
+{{ end }}

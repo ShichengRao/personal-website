@@ -1,0 +1,5 @@
+<section class="sd-sec sd-block" data-key="method" data-title="How it's scored" data-desc="The tasks, the evidence behind each score, the setups, and how the tasks were calibrated.">
+  {{ with resources.Get "said-and-done/method.md" }}
+  <div class="sd-prose">{{ $.RenderString (dict "display" "block") .Content }}</div>
+  {{ end }}
+</section>

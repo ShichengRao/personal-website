@@ -21,15 +21,16 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, favicon partial |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`) |
+| `layouts/` | Custom templates: homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, favicon partial |
+| `assets/` | The Said & Done page's prose (`assets/said-and-done/`) |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`), the Said & Done results (`static/said-and-done/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `netlify/functions/` | `push.mjs`: Seven Tiles turn notifications; `evalbar.mts`: the Eval Bar's data in Netlify Blobs |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Seven Tiles's online games |
 | `tools/` | `hangul/audio.py`: generates the Hangul practice clips with edge-tts and checks them with Whisper; `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
-| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Seven Tiles scoring, endings and move generation. New test files must be added to the `test` script in `package.json` |
+| `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Seven Tiles scoring, endings and move generation, the Said & Done package. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
 
@@ -181,3 +182,37 @@ The page polls `head.json`, which the CDN keeps for 10 seconds, so the
 function runs about once per 10 seconds however many people watch (Netlify's
 durable cache, which shares responses across edge nodes, skips anything held
 for less); game files are asked for as `<key>?v=<hash>` and cached for a year.
+
+## Said & Done
+
+`/said-and-done/` shows the results of Said & Done, a benchmark of the gap
+between what coding agents say they did and what they did, run on
+Reflection's Beam, three ways to mitigate its weaknesses, and reference
+models. The benchmark runs in a separate private project, whose report
+package is copied in here unchanged: `results.json` and `excerpts.json` into
+`static/said-and-done/`, and `intro.md` and `method.md` into
+`assets/said-and-done/`. Change them there, not here.
+`layouts/said-and-done/list.html` (with its parts in
+`layouts/partials/said-and-done/`) lays the prose out around the results and
+draws the headline numbers, the score chart, the two scatter charts, the
+table and the grid of every run from the JSON in
+the browser; it has no numbers of its own. Which setups get a headline
+number at the top is `highlights` in `content/said-and-done/_index.md` (config
+ids from `results.json`). The page is self-contained: it links nowhere outside
+the site.
+
+Below the results, two sections are reported separately from the 15-task
+score, each from its own package in `static/said-and-done/`: "When there's no
+right answer" (`no-valid-option.json`: safety-critical tasks where no option
+is valid) and the "Does Beam know?" addendum (`addendum.json`, with the raw
+reasoning behind it as `beam-reasoning.zip`). Two pages link from the top:
+`/checked-goal/` (the checks as a prototype Mirror extension, from
+`static/checked-goal/`) and `/spot-the-false-completion/` (a quiz on real
+runs, from `static/spot-the-false-completion/`). `/overnight/` indexes the
+drafts and is a Hugo draft, so it shows only under `hugo server
+--buildDrafts`.
+
+`tests/said-and-done.test.mjs` checks the package against the fields the
+page reads, that nothing in it is a link, and that the data is real: the page
+was built on synthetic data (marked `"synthetic": true`, with a banner on
+the page), and the test fails until the real package replaces it.

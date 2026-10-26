@@ -1,0 +1,155 @@
+{{ define "head" }}{{ partial "project/style.html" . }}
+<style>
+.qz-top{display:flex;align-items:center;gap:16px;margin:8px 0 18px}
+.qz-progress{flex:1;height:6px;border-radius:3px;background:var(--grid);overflow:hidden}
+.qz-progress span{display:block;height:100%;background:var(--accent);transition:width .3s}
+.qz-count{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.qz-card{background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:26px 28px}
+@media (max-width:600px){.qz-card{padding:18px 16px}}
+.qz-card .fam{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.qz-card h2{font-size:22px;margin:6px 0 10px;letter-spacing:-.01em}
+.qz-ticket{color:var(--ink2);font-size:15px;margin:0 0 6px;white-space:pre-wrap}
+.qz-ticket code,.qz-report code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 5px;border-radius:5px}
+details.qz-tx{margin:14px 0 4px}
+details.qz-tx summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--ink2)}
+.qz-term{background:#0f0f0e;color:#e6e6e1;border-radius:10px;padding:12px 14px;margin-top:8px;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+.qz-term .cmd{color:#8fc1ff}
+.qz-term .out{color:#bdbdb6;display:block;margin:2px 0 10px}
+.qz-think{border-left:3px solid var(--axis);padding:2px 0 2px 14px;margin:16px 0;font-style:italic;color:var(--ink2)}
+.qz-report{border:1px solid var(--ring);border-radius:12px;padding:14px 16px;margin-top:10px;background:var(--plane)}
+.qz-report .sum{color:var(--ink);margin:6px 0 8px}
+.qz-claims{font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink2);margin:0;padding:0;list-style:none}
+.qz-claims b{color:var(--ink);font-weight:600}
+.qz-claims ul.sub{list-style:disc;padding-left:18px;margin:2px 0 6px}
+.qz-claims ul.sub li{margin:3px 0}
+.qz-claims ul.sub .k{color:var(--muted)}
+.qz-q{font-size:18px;font-weight:600;margin:22px 0 12px}
+.qz-btns{display:flex;gap:12px;flex-wrap:wrap}
+.qz-btns button{font:inherit;font-size:16px;font-weight:650;border-radius:10px;padding:12px 22px;cursor:pointer;border:1px solid var(--ring);background:var(--surface);color:var(--ink)}
+.qz-btns button.acc{border-color:var(--good)}
+.qz-btns button.rej{border-color:var(--bad)}
+.qz-btns button:hover{filter:brightness(.97)}
+.qz-btns button[disabled]{opacity:.45;cursor:default}
+.qz-btns button.next{background:var(--accent);color:#fff;border-color:var(--accent)}
+.qz-btns .key{font-size:12px;font-weight:500;color:var(--muted);margin-left:8px}
+.qz-btns button.next .key{color:rgba(255,255,255,.75)}
+.qz-reveal{margin-top:18px;border-radius:12px;padding:16px 18px}
+.qz-reveal.right{background:var(--good-soft)}
+.qz-reveal.wrong{background:var(--bad-soft)}
+.qz-reveal .v{font-size:18px;font-weight:700;margin-bottom:6px}
+.qz-reveal .kind{font-size:14px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+.qz-reveal p{margin:0;color:var(--ink)}
+.qz-end{text-align:left}
+.qz-end .big{font-size:clamp(40px,6vw,64px);font-weight:700;letter-spacing:-.02em;line-height:1}
+.qz-list{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:6px}
+.qz-list li{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;font-size:14px;color:var(--ink2)}
+.qz-list .ok{color:var(--good);font-weight:700}
+.qz-list .no{color:var(--bad);font-weight:700}
+</style>
+{{ end }}
+{{ define "header" }}{{ partial "project/header.html" . }}{{ end }}
+
+{{ define "main" }}
+<!-- Spot the false completion: a quiz over real Beam runs. Items come from
+     /spot-the-false-completion/content.json (the benchmark's site-projects package). -->
+<div class="pj">
+<div class="pj-wrap" style="max-width:860px">
+  <header class="pj-hero" style="padding-bottom:24px">
+    <p class="pj-eyebrow">A quiz · real runs of Reflection's Beam</p>
+    <h1 id="qz-title">Spot the false completion</h1>
+    <p class="pj-lede" id="qz-intro"></p>
+    <p class="pj-meta" id="qz-meta"></p>
+  </header>
+  <div class="qz-top"><div class="qz-progress"><span id="qz-bar" style="width:0"></span></div><span class="qz-count" id="qz-count"></span></div>
+  <div id="qz-stage"></div>
+  <p class="pj-foot" id="qz-source"></p>
+</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+function el(t,a,k){var n=document.createElement(t);if(a)for(var x in a){if(x==="text")n.textContent=a[x];else if(x==="cls")n.className=a[x];else n.setAttribute(x,a[x]);}
+  (k||[]).forEach(function(c){if(c!=null)n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;}
+function $(id){return document.getElementById(id);}
+/* `code` spans for text in backticks. */
+function rich(text){var out=[],parts=String(text).split(/(`[^`]+`)/);parts.forEach(function(p){if(/^`[^`]+`$/.test(p))out.push(el("code",{text:p.slice(1,-1)}));else if(p)out.push(p);});return out;}
+var C,i=0,answers=[];
+function show(){
+  var st=$("qz-stage");st.textContent="";
+  var n=C.items.length;
+  $("qz-bar").style.width=(100*i/n)+"%";
+  $("qz-count").textContent=i<n?(i+1)+" of "+n:"Done";
+  if(i>=n)return end();
+  var it=C.items[i],a=it.answer;
+  /* Report fields, verbatim: a list of records becomes a sub-list, one record per line. */
+  function claimValue(v){
+    if(Array.isArray(v)&&v.some(function(x){return x&&typeof x==="object";}))
+      return el("ul",{cls:"sub"},v.map(function(o){return el("li",null,typeof o!=="object"||!o?[String(o)]:Object.keys(o).map(function(k,j){
+        return el("span",null,[j?" · ":"",el("span",{cls:"k",text:k.replace(/_/g," ")+": "}),typeof o[k]==="string"?o[k]:JSON.stringify(o[k])]);}));}));
+    return typeof v==="string"?v:JSON.stringify(v);
+  }
+  var claims=Object.keys(it.report).filter(function(k){return k!=="status"&&k!=="summary";});
+  var reportBox=el("div",{cls:"qz-report"},[
+    el("div",null,[el("span",{cls:"pj-badge neutral",text:it.report.status})," ",el("span",{cls:"pj-note",text:"Beam's report, verbatim"})]),
+    it.report.summary?el("div",{cls:"sum"},rich(it.report.summary)):null,
+    claims.length?el("ul",{cls:"qz-claims"},claims.map(function(k){var v=it.report[k];
+      return el("li",null,[el("b",{text:k.replace(/_/g," ")+": "}),claimValue(v)]);})):null]);
+  var term=el("div",{cls:"qz-term"});
+  (it.transcript||[]).forEach(function(t){term.appendChild(el("span",{cls:"cmd",text:"$ "+t.command}));term.appendChild(el("span",{cls:"out",text:t.output}));});
+  var btns=el("div",{cls:"qz-btns"}),reveal=el("div");
+  function choose(acc){
+    if(answers[i]!==undefined)return;
+    var right=acc===a.accept;answers[i]={acc:acc,right:right};
+    [].forEach.call(btns.querySelectorAll("button"),function(b){b.disabled=true;});
+    reveal.appendChild(el("div",{cls:"qz-reveal "+(right?"right":"wrong")},[
+      el("div",{cls:"v",text:(right?"Right. ":"Not quite. ")+(a.accept?"This one should be accepted.":"This one shouldn't be accepted.")}),
+      el("div",{cls:"kind",text:(C.answer_kinds[a.kind]||a.kind)+" · "+a.difficulty}),
+      el("p",null,rich(a.explanation))]));
+    var nx=el("button",{cls:"next",type:"button"},[i+1<C.items.length?"Next run":"See your score",el("span",{cls:"key",text:"Enter"})]);
+    nx.addEventListener("click",function(){i++;show();window.scrollTo({top:$("qz-stage").getBoundingClientRect().top+window.scrollY-90,behavior:"smooth"});});
+    reveal.appendChild(el("div",{cls:"qz-btns",style:"margin-top:14px"},[nx]));nx.focus({preventScroll:true});
+  }
+  var acc=el("button",{cls:"acc",type:"button"},["Accept it",el("span",{cls:"key",text:"A"})]),rej=el("button",{cls:"rej",type:"button"},["Reject it",el("span",{cls:"key",text:"R"})]);
+  acc.addEventListener("click",function(){choose(true);});rej.addEventListener("click",function(){choose(false);});
+  btns.append(acc,rej);
+  st.appendChild(el("article",{cls:"qz-card"},[
+    el("div",{cls:"fam",text:it.label}),
+    el("h2",{text:"The ticket"}),el("p",{cls:"qz-ticket"},rich(it.setup)),
+    el("details",{cls:"qz-tx"},[el("summary",{text:it.transcript.length+" of its commands"}),term]),
+    el("div",{cls:"pj-label",style:"margin-top:16px",text:"Its last thought before submitting"}),
+    el("div",{cls:"qz-think",text:"“"+it.last_reasoning+"”"}),
+    el("div",{cls:"pj-label",text:"What it reported"}),reportBox,
+    el("div",{cls:"qz-q",text:it.question}),btns,reveal]));
+}
+function end(){
+  var st=$("qz-stage"),n=C.items.length,right=answers.filter(function(x){return x&&x.right;}).length;
+  var bad=C.items.map(function(it,k){return {it:it,a:answers[k]};}).filter(function(x){return !x.it.answer.accept;});
+  var good=C.items.map(function(it,k){return {it:it,a:answers[k]};}).filter(function(x){return x.it.answer.accept;});
+  var caught=bad.filter(function(x){return x.a&&!x.a.acc;}).length,kept=good.filter(function(x){return x.a&&x.a.acc;}).length;
+  st.appendChild(el("article",{cls:"qz-card qz-end"},[
+    el("div",{cls:"fam",text:"Your score"}),
+    el("div",{cls:"big",text:right+" of "+n}),
+    el("p",{cls:"pj-lede",style:"margin-top:10px"},["You caught "+caught+" of the "+bad.length+" runs that shouldn't be accepted, and accepted "+kept+" of the "+good.length+" that should."]),
+    el("ul",{cls:"qz-list"},C.items.map(function(it,k){var x=answers[k];
+      return el("li",null,[el("span",{cls:x&&x.right?"ok":"no",text:x&&x.right?"✓":"✗"}),el("span",{text:it.label}),el("span",{cls:"pj-note",text:C.answer_kinds[it.answer.kind]||it.answer.kind})]);})),
+    el("p",{style:"margin-top:22px"},[C.outro]),
+    el("div",{cls:"qz-btns",style:"margin-top:16px"},[
+      el("a",{cls:"",href:"/checked-goal/",style:"font-weight:650"},["See the checks that catch these →"])]),
+    el("p",{style:"margin-top:14px"},[(function(){var b=el("button",{type:"button",style:"font:inherit;border:0;background:none;color:var(--accent);cursor:pointer;padding:0"},["Start over"]);
+      b.addEventListener("click",function(){i=0;answers=[];show();});return b;})()])]));
+}
+document.addEventListener("keydown",function(e){
+  if(!C||e.metaKey||e.ctrlKey||e.altKey||/input|textarea/i.test((e.target||{}).tagName))return;
+  var stage=$("qz-stage"),k=e.key.toLowerCase();
+  if(k==="a"||k==="r"){var b=stage.querySelector(k==="a"?"button.acc":"button.rej");if(b&&!b.disabled){b.click();e.preventDefault();}}
+  else if(k==="enter"){var nx=stage.querySelector("button.next");if(nx){nx.click();e.preventDefault();}}
+});
+fetch("/spot-the-false-completion/content.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(c){
+  C=c;$("qz-title").textContent=c.title;$("qz-intro").textContent=c.intro;
+  $("qz-meta").textContent=c.items.length+" runs · "+c.tally.done+" should be accepted, "+c.tally.not_acceptable+" shouldn't · about ten minutes";
+  $("qz-source").textContent=c.source||"";show();
+}).catch(function(err){$("qz-stage").appendChild(el("p",{cls:"pj-pending",text:"The quiz didn't load ("+err.message+")."}));});
+})();
+</script>
+{{ end }}
