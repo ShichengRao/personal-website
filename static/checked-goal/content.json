@@ -3,7 +3,7 @@
  "title": "Checked /goal: Beam checks its own work",
  "tagline": "Beam often says a task is done when it isn't. Fresh Beam calls that check the work from outside the conversation catch most of it. They're packaged as a prototype extension for Reflection's own agent.",
  "story": [
-  "It started with a real task. Working autonomously in Mirror (Reflection's coding agent) on a multi-day Kafka bug, Beam marked the goal complete seven times, including once when its own summary said the task couldn't be done. It never once marked the goal blocked, though it had that option.",
+  "It started with a real task. Working autonomously in Mirror (Reflection's coding agent) on a multi-day Kafka bug, Beam called the goal tool with \"complete\" seven times; in two of those, its own summary said the work couldn't be done in that environment. It never once marked the goal blocked, though it had that option.",
   "To see whether that was a fluke, we built 15 offline coding tasks with hidden checks, where some can be finished and some can't, and ran Beam on each, alongside other open and closed models. It wasn't a fluke. Beam reported \"complete\" on work that wasn't done in about a quarter of its runs, and on the tasks that can't be finished it never said so.",
   "The telling part is in its reasoning. Beam usually names the problem first (\"the mirror's '2.0.0' wheel is not actually fixed\", \"this is the forbidden release pipeline token\") and then works around it anyway. Telling it to be honest didn't change that. A second opinion from outside the acting conversation did."
  ],
@@ -22,7 +22,7 @@
   },
   {
    "name": "Guard (benchmark only)",
-   "what": "In the benchmark's harness, a fresh Beam also checked risky commands (network, credentials, deletion) against the task's rules before they ran. Mirror extensions can't intercept other tools, so the extension doesn't include it."
+   "what": "In the benchmark's harness, a fresh Beam also checked risky commands (network, credentials, deletion) against the task's rules before they ran. The published extension doesn't include it yet; a version that checks commands through Mirror's approval prompts is in testing."
   }
  ],
  "evidence": {
@@ -198,7 +198,7 @@
  "limits": [
   "Known bug being fixed: the verifier can change files in the real workspace.",
   "The verifier runs commands on a temporary copy of your workspace, with your permissions and network access; there's no sandbox. It skips workspaces over 2 GB.",
-  "No guard: Mirror extensions can't intercept other tools' calls. The benchmark tested removing the guard only once, on the previous version of the checks on OpenRouter: 24 of 30 runs with it, 22 without, which is within noise. This version's guard wasn't tested that way. In the credential example above, the guard is what stopped Beam from using a key it wasn't given, after the progress check, which this extension keeps, told it to try that key. Without a guard, watch what the agent does with credentials.",
+  "No guard yet: a version that checks risky commands through Mirror's approval prompts is in testing. The benchmark tested removing the guard only once, on the previous version of the checks on OpenRouter: 24 of 30 runs with it, 22 without, which is within noise. This version's guard wasn't tested that way. In the credential example above, the guard is what stopped Beam from using a key it wasn't given, after the progress check, which this extension keeps, told it to try that key. Without a guard, watch what the agent does with credentials.",
   "Interactive Mirror only: its headless modes don't load extensions. The numbers above come from the benchmark's harness, not from this extension. They include the guard, which this extension lacks, and there the verifier ran in a container with no network. On OpenRouter (the second-host, held-out and can't-be-done numbers), a field-name mismatch in the harness kept the agent's reasoning out of the record the checks read. This extension passes it to them, as the harness did on Reflection's API.",
   "A prototype with a handful of live Mirror runs so far; results are being corrected.",
   "The checks fail open. After two reviews, the next \"complete\" stands as is. If the model API fails three times in a row, the reviewer's answer can't be read after three tries, or there's no Reflection API key, \"complete\" is accepted with \"(unchecked: ...)\" added to the summary, and progress checks are skipped. A \"blocked\" report is never checked."

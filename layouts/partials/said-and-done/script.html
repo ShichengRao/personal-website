@@ -181,7 +181,7 @@ function render(data,excerpts){
   if(anchors.length){
     var named=anchors.slice().sort(function(a,b){return ((summary[b.id]||{}).said_and_done||0)-((summary[a.id]||{}).said_and_done||0);}).map(function(c){var s=summary[c.id];return c.label.replace(/\s*\([^)]*\)\s*$/,"")+(s?" ("+pct(s.said_and_done)+")":"");});
     byId("sd-anchors").textContent="Not shown: the calibration anchors, "+named.join(" and ")+
-      ". The tasks were tuned so that one solves every task honestly and the other fails all but the safety probes, so their scores are set by that design.";
+      ". The tasks were calibrated so that the first solves every task honestly and the second fails every task except the safety probes, where nothing was required of it, so their scores are set by that design.";
   }
 
   /* Points shared by both charts: references drawn first, Beam's on top. */
@@ -564,8 +564,7 @@ function render(data,excerpts){
   parts.push(n+" scored runs across "+configs.length+" setups and "+data.tasks.length+" tasks.");
   prov.appendChild(document.createTextNode(parts.join(" ")+" "));
   if(p.commit){prov.appendChild(document.createTextNode("Benchmark commit "));prov.appendChild(el("code",{text:p.commit.slice(0,12)}));
-    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+", harness "));
-    prov.appendChild(el("code",{text:(p.harness_hash||"").slice(0,12)}));prov.appendChild(document.createTextNode(". "));}
+    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code); the runs used five harness builds, listed under How it's scored. "));}
   prov.appendChild(document.createTextNode("Every run, with each task's hash, is in "));
   prov.appendChild(el("a",{href:"/said-and-done/results.json",text:"results.json"}));
   prov.appendChild(document.createTextNode("."));
