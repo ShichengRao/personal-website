@@ -22,6 +22,9 @@ projects:
   - name: "Eval Bar"
     url: "/evalbar/"
     blurb: "A chess-style eval bar beside the official Pokémon VGC broadcasts: each side's win chance and the best options for every Pokémon, turn by turn. Unofficial."
+  - name: "Said & Done"
+    url: "/said-and-done/"
+    blurb: "Do coding agents do the work they say they did? Said & Done puts Reflection's Beam, three ways to mitigate its weaknesses, and the models it's compared to through 15 tasks built to tempt a false 'done'."
 ---
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)

@@ -1,0 +1,196 @@
+{{ define "head" }}{{ partial "project/style.html" . }}
+<style>
+.cg-pair{margin-top:44px}
+.cg-pair .task{font-size:21px;font-weight:650;margin:0 0 6px}
+.cg-pair .setup{color:var(--ink2);max-width:46rem;margin:0 0 16px;font-size:15px}
+.cg-pair .row{margin:10px 0 0}
+.cg-pair .row .pj-label{margin-top:0}
+.cg-pair .said{font-size:15px;color:var(--ink)}
+.cg-checks{list-style:none;padding:0;margin:4px 0 0;display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:start;font-size:14px;color:var(--ink)}
+.cg-checks li{display:contents}
+.cg-kind{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;padding:2px 7px;background:var(--accent-soft);color:var(--accent);max-width:10em;justify-self:start;margin-top:2px}
+.cg-steps{counter-reset:s;list-style:none;padding:0;margin:8px 0 0;display:grid;gap:12px;max-width:46rem}
+.cg-steps li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start;color:var(--ink2)}
+.cg-steps li::before{content:counter(s);width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:650;display:flex;align-items:center;justify-content:center;font-size:14px}
+.cg-steps code,.cg-limits code,.pj-note code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 5px;border-radius:5px}
+.cg-limits{padding-left:20px;max-width:46rem;color:var(--ink2)}
+.cg-limits li{margin:6px 0}
+.cg-caveats{padding-left:20px;max-width:46rem;color:var(--ink2);font-size:15px}
+.cg-ev h3{margin-top:28px}
+.pj .cg-files{margin:22px 0 0;color:var(--ink2);max-width:46rem}
+.cg-files+.pj-label{margin-top:22px}
+details.cg-src summary{cursor:pointer;font-weight:600;color:var(--ink2);margin-top:20px}
+details.cg-src pre{max-height:520px;overflow:auto}
+</style>
+{{ end }}
+{{ define "header" }}{{ partial "project/header.html" . }}{{ end }}
+
+{{ define "main" }}
+<!-- Checked /goal: the fix for Beam's false "done", as a Mirror extension. Everything
+     below the hero comes from /checked-goal/content.json (the benchmark's
+     site-projects package); this template only lays it out. -->
+<div class="pj">
+<div class="pj-wrap">
+  <header class="pj-hero">
+    <p class="pj-eyebrow">A prototype extension for Reflection's Mirror</p>
+    <h1 id="cg-title">Checked /goal</h1>
+    <p class="pj-lede" id="cg-tagline"></p>
+    <p class="pj-meta">By Shicheng Rao · measured with the <a href="/said-and-done/">Said &amp; Done</a> benchmark</p>
+    <div class="pj-stats" id="cg-stats"></div>
+  </header>
+
+  <section class="pj-sec">
+    <p class="pj-eyebrow">The problem</p>
+    <h2>Beam doesn't stop at a wall</h2>
+    <div class="pj-read" id="cg-story"></div>
+  </section>
+
+  <section class="pj-sec">
+    <p class="pj-eyebrow">How it works</p>
+    <h2>A second opinion from outside the conversation</h2>
+    <div class="pj-read"><p>Every check is a fresh Beam call that didn't do the work, so it hasn't talked itself into the answer. No other model is involved.</p></div>
+    <div class="pj-grid c4" id="cg-how" style="margin-top:20px"></div>
+  </section>
+
+  <section class="pj-sec">
+    <p class="pj-eyebrow">Before and after</p>
+    <h2>The same task, with and without the checks</h2>
+    <div class="pj-read"><p>Real runs from the benchmark's harness, quoted as they happened. On the left, Beam on its own; on the right, the same task with the checks. The harness ran its own guard; the extension's guard does the same job through Mirror's approval prompts.</p></div>
+    <div id="cg-examples"></div>
+  </section>
+
+  <section class="pj-sec cg-ev">
+    <p class="pj-eyebrow">Results</p>
+    <h2>Same model, more honest finishes</h2>
+    <div class="pj-read"><p id="cg-score-note"></p></div>
+    <div id="cg-evidence"></div>
+    <h3 style="margin-top:32px" id="cg-caveats-h">Read these with some caveats</h3>
+    <ul class="cg-caveats" id="cg-caveats"></ul>
+  </section>
+
+  <section class="pj-sec">
+    <p class="pj-eyebrow">Try it</p>
+    {{- if .Params.extension_held }}
+    <h2>Coming soon</h2>
+    <div class="pj-read"><p>The extension's source and install steps will be posted once an independent security review of its latest build is done and its fixes are tested. It's a prototype, with only a few live Mirror runs so far (see the limits below).</p></div>
+    {{- else }}
+    <h2>Install</h2>
+    <p class="pj-note">It's a prototype, with only a few live Mirror runs so far (see the limits below).</p>
+    <ol class="cg-steps" id="cg-steps"></ol>
+    <p class="cg-files"><a href="/checked-goal/extension.py" download>Download extension.py</a> · <a href="/checked-goal/README.md">Its README</a>, on the sandbox, the guard, and the live runs</p>
+    <p class="pj-label" style="margin-top:22px">Settings, with their defaults</p>
+    <div class="pj-mono" id="cg-settings"></div>
+    <p class="pj-note">They go under the extension's entry in <code>~/.mirror/config.json</code>.</p>
+    <p class="pj-note" id="cg-uses"></p>
+    <details class="cg-src"><summary>Read the extension's source</summary><pre class="pj-mono" id="cg-source">Loading…</pre></details>
+    {{- end }}
+  </section>
+
+  <section class="pj-sec">
+    <p class="pj-eyebrow">Limits</p>
+    <h2>What it doesn't do yet</h2>
+    <ul class="cg-limits" id="cg-limits"></ul>
+  </section>
+
+  <p class="pj-foot" id="cg-source-note"></p>
+</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+function el(t,a,k){var n=document.createElement(t);if(a)for(var x in a){if(x==="text")n.textContent=a[x];else if(x==="cls")n.className=a[x];else n.setAttribute(x,a[x]);}
+  (k||[]).forEach(function(c){if(c!=null)n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;}
+function $(id){return document.getElementById(id);}
+function pct(v){return typeof v==="number"?Math.round(v*100)+"%":String(v);}
+function money(v){return "$"+(v<1?v.toPrecision(2):v.toFixed(2));}
+function frac(v){if(typeof v==="number")return v;var m=/(\d+)\s*of\s*(\d+)/.exec(v||"");return m?+m[1]/+m[2]:0;}
+/* `code` spans for anything in backticks or that looks like a path or command. */
+function rich(text){
+  var out=[],re=/(`[^`]+`|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
+  while((m=re.exec(text))){if(m.index>last)out.push(text.slice(last,m.index));out.push(el("code",{text:m[0].replace(/`/g,"")}));last=re.lastIndex;}
+  if(last<text.length)out.push(text.slice(last));return out;
+}
+function stat(from,to,k){return el("div",{cls:"pj-stat"},[el("div",{cls:"v"},[el("span",{cls:"from",text:from}),el("span",{cls:"arrow",text:"→"}),to]),el("div",{cls:"k",text:k})]);}
+function bars(host,title,ev,fmt,note){
+  host.appendChild(el("h3",{text:title}));
+  if(note)host.appendChild(el("p",{cls:"pj-note",style:"margin:0 0 6px",text:note}));
+  var box=el("div",{cls:"pj-bars"});
+  [["Beam",ev.beam,"var(--axis)"],["Beam + the checks",ev.beam_with_checks,"var(--accent)"]].forEach(function(r){
+    var v=frac(r[1]),b=el("span",{cls:"b"});b.style.width="calc((100% - 80px) * "+v+")";b.style.background=r[2];
+    box.appendChild(el("div",{cls:"pj-barrow"},[el("span",{cls:"nm",text:r[0]}),el("span",{cls:"tr"},[b,el("span",{cls:"v",text:fmt(r[1])})])]));
+  });
+  host.appendChild(box);
+}
+function render(c){
+  var t=(c.title||"").split(":");
+  $("cg-title").textContent=t[0];document.title=t[0]+" | Shicheng Rao";
+  $("cg-tagline").textContent=c.tagline||"";
+  var e=c.evidence||{};
+  $("cg-stats").append(
+    stat(pct(e.main.beam),pct(e.main.beam_with_checks),"of runs done and honestly reported: "+e.main.label),
+    stat(pct(e.held_out.beam),pct(e.held_out.beam_with_checks),e.held_out.label),
+    stat(e.cant_be_done.beam.replace(" of ","/"),e.cant_be_done.beam_with_checks.replace(" of ","/"),e.cant_be_done.label),
+    stat("$"+e.cost.beam.toFixed(2),"$"+e.cost.beam_with_checks.toFixed(2),e.cost.label+", checks included"));
+  (c.story||[]).forEach(function(p){$("cg-story").appendChild(el("p",{text:p}));});
+  var lead=(c.examples||[])[0];
+  if(lead&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
+    "“"+lead.without.noticed+"”",el("cite",{text:"Beam's reasoning, shortly before it "+lead.without.did.charAt(0).toLowerCase()+lead.without.did.slice(1).replace(/\.$/,"")+", and reported “complete”"})]));
+  (c.how_it_works||[]).forEach(function(h,i){
+    var m=/^(.*?)\s*\((.*)\)$/.exec(h.name),name=m?m[1]:h.name;
+    $("cg-how").appendChild(el("div",{cls:"pj-card"},[el("div",{cls:"n",text:(i+1)+" · "+name+(m?" · "+m[2]:"")}),el("p",{text:h.what})]));
+  });
+  (c.examples||[]).forEach(function(x){
+    function side(s,cls,head,isWith){
+      var kids=[el("div",{cls:"h"},[head])];
+      var told=/^\((.*)\)$/.exec(s.noticed||"");
+      kids.push(told?el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"What it did"}),el("div",{cls:"said",text:told[1]})])
+        :el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"Its reasoning noticed"}),el("div",{cls:"pj-mono",text:"“"+s.noticed+"”"})]));
+      if(s.did)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"Then it"}),el("div",{cls:"said",text:s.did})]));
+      if(isWith&&s.checks)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"The checks"}),
+        el("ul",{cls:"cg-checks"},s.checks.map(function(k){return el("li",null,[el("span",{cls:"cg-kind",text:k.kind}),el("span",{text:k.text})]);}))]));
+      var st=/^(\w+):\s*([\s\S]*)$/.exec(s.reported||"");
+      kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"It reported"}),
+        el("div",{cls:"said"},[st?el("span",{cls:"pj-badge "+(st[1]==="blocked"?"warn":"neutral"),text:st[1]}):null," ",st?st[2]:s.reported])]));
+      var v=s.verdict||"",good=/^correct/i.test(v),graded=/^graded correct/i.test(v),bad=/false|violation|wrong|broken rule/i.test(v);
+      kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"The grader"}),
+        el("div",{cls:"said"},[el("span",{cls:"pj-badge "+(good?"good":graded?"warn":bad?"bad":"neutral"),text:good?"done right":graded?"report fixed, work not":bad?"wrong":"verdict"})," ",v])]));
+      return el("div",{cls:"pj-side "+cls},kids);
+    }
+    $("cg-examples").appendChild(el("article",{cls:"cg-pair"},[
+      el("h3",{cls:"task",text:x.task}),el("p",{cls:"setup",text:x.setup}),
+      el("div",{cls:"pj-ba"},[side(x.without,"bad","Beam alone",false),side(x["with"],/^graded correct/i.test(x["with"].verdict||"")?"":"good","With the checks",true)])]));
+  });
+  $("cg-score-note").textContent=e.score_note||"";
+  [["main","Done and honestly reported",pct],["second_host","The same, on a second host",pct],["held_out","On tasks the checks never saw",pct],
+   ["cant_be_done","Said \"blocked\" when the task couldn't be done",function(v){return v;}],["cost","Median cost per run",money]].forEach(function(r){
+    var ev=e[r[0]];if(!ev)return;
+    if(r[0]==="cost"){
+      var m=Math.max(ev.beam,ev.beam_with_checks);
+      bars($("cg-evidence"),r[1],{beam:ev.beam/m,beam_with_checks:ev.beam_with_checks/m},function(v){return money(v*m);},ev.note);
+    }else{bars($("cg-evidence"),r[1],ev,r[2],ev.label);}
+  });
+  var cv=e.honest_caveats||[];
+  $("cg-caveats-h").textContent="Read these with "+(["no","one","two","three","four","five","six","seven"][cv.length]||cv.length)+" caveat"+(cv.length===1?"":"s");
+  cv.forEach(function(t){$("cg-caveats").appendChild(el("li",{text:t}));});
+  var ins=$("cg-steps")?c.install||{}:{};
+  (ins.steps||[]).forEach(function(s){$("cg-steps").appendChild(el("li",null,[el("span",null,rich(s))]));});
+  /* As config.json takes them: the package gives list settings as "20, 40", which the extension reads as a list. */
+  function setting(v){return typeof v==="string"&&v.indexOf(", ")>0?"["+v.split(", ").map(function(x){return /^\d+$/.test(x)?x:JSON.stringify(x);}).join(", ")+"]":JSON.stringify(v);}
+  if($("cg-settings")){
+    $("cg-settings").textContent=Object.keys(ins.settings||{}).map(function(k){return JSON.stringify(k)+": "+setting(ins.settings[k]);}).join(",\n");
+    $("cg-uses").textContent=ins.uses||"";
+  }
+  (c.limits||[]).forEach(function(t){$("cg-limits").appendChild(el("li",null,rich(t)));});
+  $("cg-source-note").textContent="Numbers: "+(c.numbers_source||"Said & Done benchmark runs").replace(/\.$/,"")+".";
+}
+fetch("/checked-goal/content.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
+  .catch(function(err){$("cg-story").appendChild(el("p",{cls:"pj-pending",text:"The page's content didn't load ("+err.message+")."}));});
+var src=document.querySelector("details.cg-src");
+if(src)src.addEventListener("toggle",function(){
+  var pre=$("cg-source");if(pre.dataset.loaded)return;pre.dataset.loaded=1;
+  fetch("/checked-goal/extension.py",{cache:"no-cache"}).then(function(r){return r.text();}).then(function(t){pre.textContent=t;});
+});
+})();
+</script>
+{{ end }}

@@ -1,0 +1,90 @@
+{{/* Draws the "Does Beam know?" addendum from static/said-and-done/addendum.json, and offers the
+     raw reasoning it names under download (beam-reasoning.zip) when the file is there. */}}
+<script>
+(function(){
+"use strict";
+function $(id){return document.getElementById(id);}
+function el(t,a,k){var n=document.createElement(t);if(a)for(var x in a){if(x==="text")n.textContent=a[x];else if(x==="cls")n.className=a[x];else n.setAttribute(x,a[x]);}
+  (k||[]).forEach(function(c){if(c!=null)n.appendChild(typeof c==="string"?document.createTextNode(c):c);});return n;}
+function pct(v){return v==null?"—":Math.round(v*100)+"%";}
+function kn(o){return o&&o.n!=null?o.k+" of "+o.n:"—";}
+var SETUPS={"beam-neutral":"Beam alone","beam-mirror":"Beam in Mirror","beam-or":"Beam alone, paid host","beam-neutral-honest-prompt":"Beam + honest-completion prompt","beam-neutral-goal-note":"Beam + goal note","beam-neutral-review":"Beam + review before submit"};
+/* A list item whose first sentence is bold. */
+function lead(t){var m=/^(.*?[.:])\s+([\s\S]*)$/.exec(t);return el("li",null,m?[el("b",{text:m[1]+" "}),m[2]]:[t]);}
+
+function render(c){
+  if(c.title)$("bk-title").textContent=c.title;
+  $("bk-lede").textContent=c.lede;
+  (c.headline_numbers||[]).forEach(function(h){
+    $("bk-nums").appendChild(el("div",{cls:"bk-num"},[el("div",{cls:"v",text:h.value}),el("div",{cls:"k",text:h.label})]));
+  });
+  offerDownload(c.download);
+
+  /* Quote pairs. A run that never submitted counts from its last response. */
+  function thoughtWhen(q){var n=q.responses_before_submit,from=q.responses_counted_from||"submission";if(n==null)return "";
+    if(from==="submission")return n===0?", in its last response before submitting":", "+n+" responses before submitting";
+    return n===0?", in "+from:", "+n+" responses before "+from;}
+  (c.quotes||[]).forEach(function(q){
+    var v=q.verdict||{},contrast=/^contrast/.test(q.kind);
+    var verdict=v.said_and_done?["good","said and done"]:v.false_completion?["bad","false completion"]:v.violated?["warn","broke a rule"]:["neutral","not done"];
+    $("bk-quotes").appendChild(el("article",{cls:"sd-q"+(contrast?" contrast":"")},[
+      el("div",{cls:"head"},[el("h4",{text:q.kind.charAt(0).toUpperCase()+q.kind.slice(1)}),
+        el("span",{cls:"meta",text:(SETUPS[q.config]||q.config)+" · "+q.task+" · seed "+q.seed+(q.source&&q.source!=="main"?" · "+(/heldout/.test(q.source)?"held-out task":"paid host"):"")})]),
+      el("div",{cls:"thought"},[el("div",{cls:"lab",text:"What its reasoning said"+thoughtWhen(q)}),el("div",{cls:"mono",text:"“"+q.reasoning_quote+"”"})]),
+      el("div",{cls:"said"},[el("div",{cls:"lab",text:"What it reported"}),
+        el("p",null,[el("span",{cls:"sd-badge "+(q.status_submitted==="blocked"?"warn":"neutral"),text:q.status_submitted||"no report"})," ",q.claim||""]),
+        el("div",{cls:"lab",text:"The grader"}),
+        el("p",null,[el("span",{cls:"sd-badge "+verdict[0],text:verdict[1]})," ",q.grader_finding])])]));
+  });
+
+  /* Other models: Beam first, then by how often each falsely completes on the main tasks. */
+  var mt=$("bk-models");
+  mt.appendChild(el("thead",null,[el("tr",null,[["Model",""],["Runs","n"],["Falsely completed, main tasks","n"],["Of false completions, reasoning flagged","n"],["Honest successes flagged","n"],["Said “blocked” where it should, main tasks","n"]].map(function(x){return el("th",{cls:x[1],scope:"col",text:x[0]});}))]));
+  var mb=el("tbody");mt.appendChild(mb);
+  function share(o){return o&&o.share!=null?o.share:-1;}
+  function cell(o){return el("td",{cls:"n",text:o&&o.n?kn(o)+" · "+pct(o.share):"—"});}
+  var models=(c.by_model||[]).slice().sort(function(a,b){return (b.model==="beam")-(a.model==="beam")||share(b.false_completions_on_main_tasks)-share(a.false_completions_on_main_tasks);});
+  models.forEach(function(m){
+    mb.appendChild(el("tr",{cls:m.model==="beam"?"bk-beam":""},[
+      el("th",{scope:"row"},[m.label,m.reasoning_kind!=="raw"?el("span",{cls:"dim",text:" (summaries only)"}):null]),el("td",{cls:"n",text:m.runs}),
+      cell(m.false_completions_on_main_tasks),cell(m.false_completions_that_knew),cell(m.honest_successes_flagged),cell(m.said_blocked_on_blocked_main_tasks)]));
+  });
+  /* Each row's scope, once per distinct note. */
+  var notes=[],by={};
+  models.forEach(function(m){if(!m.note)return;if(!by[m.note]){by[m.note]=[];notes.push(m.note);}by[m.note].push(m.label);});
+  notes.forEach(function(n){$("bk-models-notes").appendChild(el("li",null,[el("b",{text:by[n].join(", ")+": "}),n]));});
+
+  /* The tripwire: an offline replay, said first. */
+  var t=c.tripwire||{};
+  $("bk-trip-method").textContent=t.method||"";
+  var tt=$("bk-trip");
+  tt.appendChild(el("thead",null,[el("tr",null,[["Beam runs",""],["Flagged","n"],["False completions caught","n"],["Of flagged runs, failed Said & Done","n"],["Honest successes flagged","n"]].map(function(x){return el("th",{cls:x[1],scope:"col",text:x[0]});}))]));
+  var tb=el("tbody");tt.appendChild(tb);
+  [["Main tasks (tuning)",t.main_tasks],["Held-out tasks (test)",t.held_out_tasks]].forEach(function(r,i){
+    var s=r[1];if(!s)return;
+    tb.appendChild(el("tr",{cls:i===1?"bk-beam":""},[el("th",{scope:"row",text:r[0]}),el("td",{cls:"n",text:s.flagged+" of "+s.runs}),
+      el("td",{cls:"n",text:kn(s.false_completion.recall)+" · "+pct(s.false_completion.recall.share)}),
+      el("td",{cls:"n",text:pct(s.not_said_and_done.precision.share)}),el("td",{cls:"n",text:kn(s.false_alarms_on_honest_successes)+" · "+pct(s.false_alarms_on_honest_successes.share)})]));
+  });
+  $("bk-trip-takeaway").textContent=t.takeaway||"";
+  $("bk-trip-cost").textContent=t.cost_note||"";
+
+  /* Method and limits, as written. */
+  $("bk-method").textContent=c.method||"";
+  (c.limits||[]).forEach(function(l){$("bk-limits").appendChild(lead(l));});
+}
+
+/* The raw reasoning, for researchers who'd rather make their own calls. */
+function offerDownload(d){
+  var box=$("bk-dl");if(!d||!d.file)return;
+  var url="/said-and-done/"+d.file;
+  fetch(url,{method:"HEAD",cache:"no-cache"}).then(function(r){
+    if(!r.ok)throw new Error(r.status);
+    box.append(el("a",{href:url,download:d.file},["Download the raw reasoning"]),
+      " ("+d.file+(d.size_mb?", "+d.size_mb+" MB":"")+"): the reasoning from every run behind these numbers, Beam's and the other models', with the snippets the judge read, its verdicts and a script that recomputes the figures, so you can make your own calls.");
+  }).catch(function(){box.classList.add("pending");box.textContent="The raw reasoning ("+d.file+") will be downloadable here.";});
+}
+fetch("/said-and-done/addendum.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
+  .catch(function(err){$("bk-nums").appendChild(el("p",{cls:"sd-err",text:"This section didn't load ("+err.message+")."}));});
+})();
+</script>

@@ -1,0 +1,84 @@
+{{ define "head" }}
+{{ partial "said-and-done/style.html" . }}
+{{ end }}
+
+{{ define "main" }}
+<!-- ananke's masthead above renders .Title and .Description. The prose comes
+     from the benchmark's report package (assets/said-and-done/*.md) and the
+     numbers from static/said-and-done/*.json; this template only lays them out.
+     The no-valid-option section and the "Does Beam know?" addendum are reported
+     separately from the 15-task score, each from its own package. -->
+<div id="sd-app">
+<div class="sd-wrap">
+  <div class="sd-top">
+    <div class="sd-lead">
+      <div id="sd-banner"></div>
+      {{ with resources.Get "said-and-done/intro.md" }}
+      <div class="sd-prose">{{ $.RenderString (dict "display" "block") .Content }}</div>
+      {{ end }}
+    </div>
+    <div id="sd-tiles" class="sd-tiles" data-ids="{{ delimit (.Params.highlights | default slice) "," }}"></div>
+  </div>
+
+  <nav class="sd-next" aria-label="Related">
+    <a class="sd-fix" href="/checked-goal/">
+      <span class="e">Try the checks</span>
+      <span class="t">Checked /goal</span>
+      <span class="d">All four checks as a prototype extension for Reflection's Mirror, with its live trials and limits. The source follows its security review.</span>
+      <span class="go" aria-hidden="true">→</span>
+    </a>
+    <a href="/spot-the-false-completion/">
+      <span class="e">Try it</span>
+      <span class="t">Spot the false completion</span>
+      <span class="d">Fourteen real Beam runs that all say they're done. Which would you accept?</span>
+    </a>
+  </nav>
+
+  <section class="sd-sec">
+    <p class="sd-eyebrow">Results</p>
+    <h2 class="sd-h">Said &amp; Done score</h2>
+    <p class="sd-sub">The share of runs in which the agent did the work, said truthfully what it did, and broke no rule.</p>
+    <div id="sd-legend" class="sd-legend"></div>
+    <div id="sd-bars" class="sd-bars" role="list"></div>
+    <p class="sd-note" id="sd-anchors"></p>
+  </section>
+
+  <section class="sd-sec">
+    <div class="sd-charts">
+      <div>
+        <h3>Breaking walls vs. admitting them</h3>
+        <p class="sd-sub" id="sd-walls-sub">Some of the tasks are walls: there is no honest way to finish them, so the right answer is to stop and say "blocked". Across, how often a setup does the work on the tasks it can finish; up, how often it admits a wall on the ones it can't. Arrows run from Beam to its mitigations.</p>
+        <div id="sd-walls" class="sd-chart"></div>
+      </div>
+      <div>
+        <h3>What each setup did, and what it said</h3>
+        <p class="sd-sub">Every run of a setup in one bar. Right of the line the work got done; left of it the work didn't, and red marks the runs where the agent said it had.</p>
+        <div id="sd-outcomes" class="sd-outcomes" role="list"></div>
+      </div>
+      <div>
+        <h3>Score vs. cost</h3>
+        <p class="sd-sub">Median cost per run, on a log scale. Filled dots are billed costs (OpenRouter's bill or Claude Code's own cost report); hollow dots are estimated from tokens at list prices.</p>
+        <div id="sd-cost" class="sd-chart"></div>
+      </div>
+    </div>
+    <p class="sd-note"><span id="sd-nocost"></span>Hover a bar or dot for its counts; every run behind these charts is in "Every run" below.</p>
+  </section>
+
+  <div id="sd-blocks">
+  {{ partial "said-and-done/block-table.html" . }}
+  {{ partial "said-and-done/block-excerpts.html" . }}
+  {{ partial "said-and-done/block-no-valid-option.html" . }}
+  {{ partial "said-and-done/block-knows.html" . }}
+  {{ partial "said-and-done/block-runs.html" . }}
+  {{ partial "said-and-done/block-method.html" . }}
+  {{ partial "said-and-done/block-details.html" . }}
+  </div>
+  <p class="sd-foot" id="sd-prov"></p>
+</div>
+<div class="sd-tip" id="sd-tip" role="tooltip"></div>
+</div>
+
+{{ partial "said-and-done/script.html" . }}
+{{ partial "said-and-done/script-no-valid-option.html" . }}
+{{ partial "said-and-done/script-knows.html" . }}
+{{ end }}

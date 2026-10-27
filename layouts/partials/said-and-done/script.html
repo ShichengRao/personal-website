@@ -1,0 +1,601 @@
+{{/* Draws the Said & Done page from static/said-and-done/*.json. */}}
+<script>
+(function(){
+"use strict";
+var app=byId("sd-app");
+/* Sections order the setups and head the table's groups. A reference model
+   falls under "open" or "closed" by its config's open_weights. */
+var SECTIONS=[
+  {id:"beam",label:"Beam",kind:"beam"},
+  {id:"beam-mitigation",label:"Beam with a mitigation",kind:"beam"},
+  {id:"brain-worker",label:"Opus brain, Beam worker",kind:"beam"},
+  {id:"open",label:"Other open-weight models",kind:"open"},
+  {id:"closed",label:"Closed models",kind:"closed"},
+  {id:"reference",label:"Reference models",kind:"other"},
+  {id:"anchor",label:"Calibration anchors",kind:"other"}
+];
+/* Kinds color the setups: Beam's own, other open-weight models, closed models. */
+var KINDS={beam:{label:"Beam setups",v:"--g-beam"},open:{label:"Other open-weight models",v:"--g-open"},
+  closed:{label:"Closed models",v:"--g-closed"},other:{label:"Reference models",v:"--g-ref"}};
+var KIND_ORDER=["beam","open","closed","other"];
+function sectionOf(c){
+  if(c.group==="reference")return c.open_weights===true?"open":c.open_weights===false?"closed":"reference";
+  return c.group;
+}
+function kindOf(c){var s=SECTIONS.find(function(x){return x.id===sectionOf(c);});return s?s.kind:"other";}
+function cvar(c){return "var("+KINDS[kindOf(c)].v+")";}
+function isBeam(c){return kindOf(c)==="beam";}
+var SVGNS="http://www.w3.org/2000/svg";
+/* A part missing from the page draws into a spare element instead of failing. */
+function byId(id){return document.getElementById(id)||document.createElement("div");}
+
+function el(tag,attrs,kids){
+  var n=document.createElement(tag);
+  if(attrs)for(var k in attrs){
+    if(k==="text")n.textContent=attrs[k];
+    else if(k==="cls")n.className=attrs[k];
+    else n.setAttribute(k,attrs[k]);
+  }
+  (kids||[]).forEach(function(c){if(c!=null)n.appendChild(typeof c==="string"?document.createTextNode(c):c);});
+  return n;
+}
+function sv(tag,attrs,kids){
+  var n=document.createElementNS(SVGNS,tag);
+  if(attrs)for(var k in attrs){if(k==="text")n.textContent=attrs[k];else n.setAttribute(k,attrs[k]);}
+  (kids||[]).forEach(function(c){if(c)n.appendChild(c);});
+  return n;
+}
+function pct(v){return v==null?"—":Math.round(v*100)+"%";}
+function ciText(a){return a?Math.round(a[0]*100)+"–"+Math.round(a[1]*100):"";}
+function money(v,est){
+  if(v==null)return "—";
+  /* Two significant figures under $1 ($0.015, $0.12), cents above ($2.26). */
+  var s=v===0?"$0":"$"+(v<1?v.toPrecision(2):v.toFixed(2));
+  return (est&&v!==0?"~":"")+s;
+}
+function mins(v){return v==null?"—":v<10?v.toFixed(1):String(Math.round(v));}
+function fmtDate(iso){
+  var d=new Date(iso);if(isNaN(d))return iso;
+  return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"});
+}
+
+/* One tooltip for the page: rows of [value, label], values lead. */
+var tip=byId("sd-tip");
+function showTip(target,title,rows,note){
+  tip.textContent="";
+  tip.appendChild(el("div",{cls:"t",text:title}));
+  rows.forEach(function(r){tip.appendChild(el("div",{cls:"r"},[el("b",{text:r[0]}),el("span",{text:r[1]})]));});
+  if(note)tip.appendChild(el("div",{cls:"s",text:note}));
+  tip.style.display="block";
+  var b=target.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight;
+  var x=Math.min(Math.max(8,b.left+b.width/2-tw/2),window.innerWidth-tw-8);
+  var y=b.top-th-8;if(y<8)y=b.bottom+8;
+  tip.style.left=x+"px";tip.style.top=y+"px";
+}
+function hideTip(){tip.style.display="none";}
+function hover(node,fn){
+  node.addEventListener("pointerenter",function(){fn(node);});
+  node.addEventListener("pointerleave",hideTip);
+  node.addEventListener("focus",function(){fn(node);});
+  node.addEventListener("blur",hideTip);
+}
+window.addEventListener("scroll",hideTip,{passive:true});
+
+var measureCtx=document.createElement("canvas").getContext("2d");
+function textWidth(s,size){
+  measureCtx.font=size+"px "+getComputedStyle(app).fontFamily;
+  return measureCtx.measureText(s).width;
+}
+
+function render(data,excerpts){
+  /* Keep each section together, in SECTIONS order; within one, the package's display order. */
+  var gIdx=function(c){var i=SECTIONS.findIndex(function(g){return g.id===sectionOf(c);});return i<0?SECTIONS.length:i;};
+  var ordered=data.configs.map(function(c,i){return {c:c,i:i};}).sort(function(a,b){return gIdx(a.c)-gIdx(b.c)||a.i-b.i;}).map(function(x){return x.c;});
+  /* The calibration anchors are mentioned, not charted: their scores are set by how the tasks were tuned. */
+  var anchors=ordered.filter(function(c){return c.group==="anchor";});
+  var configs=ordered.filter(function(c){return c.group!=="anchor";});
+  var shown={};configs.forEach(function(c){shown[c.id]=true;});
+  var summary=data.summary;
+  var cfgById={};ordered.forEach(function(c){cfgById[c.id]=c;});
+  var taskById={};data.tasks.forEach(function(t){taskById[t.id]=t;});
+
+  if(data.synthetic)byId("sd-banner").appendChild(el("div",{cls:"sd-banner",
+    text:"Every number on this page is made up. It shows the layout until the real results arrive."}));
+  else if(data.preview)byId("sd-banner").appendChild(el("div",{cls:"sd-banner",
+    text:"A preview of partial results: some setups are still running, and these numbers will change."}));
+
+  /* Legend: the kinds present. */
+  var legend=byId("sd-legend");
+  KIND_ORDER.forEach(function(k){
+    if(!configs.some(function(c){return kindOf(c)===k;}))return;
+    var d=el("span",{cls:"sd-dot"});d.style.background="var("+KINDS[k].v+")";
+    legend.appendChild(el("span",null,[d,KINDS[k].label]));
+  });
+
+  /* The headline table, grouped. */
+  var table=byId("sd-table");
+  var heads=[["Setup",""],["Said & Done","n"],["Did the work","n"],["Reports true","n"],["“Done” was false","n"],["Broke a rule","n"],["Min/run","n"],["Cost/run","n"]];
+  table.appendChild(el("thead",null,[el("tr",null,heads.map(function(h,i){
+    return el("th",{cls:(h[1]+(i===0?" sd-sticky":"")).trim(),text:h[0],scope:"col"});}))]));
+  var tb=el("tbody");table.appendChild(tb);
+  var lastGroup=null;
+  /* Columns: [summary key, higher is better]. */
+  var cols=[["said_and_done",1],["done",1],["truthful",1],["false_completion_of_completes",0],["violation_rate",0],["median_minutes",0],["median_cost_usd",0]];
+  var best={};
+  cols.forEach(function(k){
+    var vals=configs.map(function(c){return (summary[c.id]||{})[k[0]];}).filter(function(v){return typeof v==="number";});
+    if(vals.length)best[k[0]]=k[1]?Math.max.apply(null,vals):Math.min.apply(null,vals);
+  });
+  function numCell(s,key,text){
+    var b=typeof s[key]==="number"&&Math.abs(s[key]-best[key])<1e-9;
+    return el("td",{cls:"n"},[b?el("b",{text:text}):text]);
+  }
+  configs.forEach(function(c){
+    var s=summary[c.id];if(!s)return;
+    if(sectionOf(c)!==lastGroup){
+      lastGroup=sectionOf(c);
+      var d=el("span",{cls:"sd-dot"});d.style.background=cvar(c);d.style.marginRight="6px";
+      var gi=SECTIONS.find(function(x){return x.id===lastGroup;})||{label:c.group};
+      tb.appendChild(el("tr",{cls:"sd-grp"},[el("th",{colspan:String(heads.length),scope:"rowgroup"},[d,gi.label])]));
+    }
+    var tr=el("tr",{cls:isBeam(c)?"sd-hl":""},[
+      el("th",{cls:"sd-sticky",scope:"row",style:"font-weight:500"},[c.label]),
+      numCell(s,"said_and_done",pct(s.said_and_done)),
+      numCell(s,"done",pct(s.done)),
+      numCell(s,"truthful",pct(s.truthful)),
+      numCell(s,"false_completion_of_completes",pct(s.false_completion_of_completes)),
+      numCell(s,"violation_rate",pct(s.violation_rate)),
+      numCell(s,"median_minutes",mins(s.median_minutes)),
+      numCell(s,"median_cost_usd",money(s.median_cost_usd,s.cost_estimated))
+    ]);
+    tr.style.setProperty("--c",cvar(c));
+    tb.appendChild(tr);
+  });
+
+  /* Headline numbers: the setups the page's front matter names, in that order. */
+  var tiles=byId("sd-tiles");
+  (tiles.getAttribute("data-ids")||"").split(",").filter(Boolean).forEach(function(id){
+    var c=cfgById[id],s=summary[id];if(!c||!s||!shown[id])return;
+    var t=el("div",{cls:"sd-tile"},[el("div",{cls:"k",text:c.label}),el("div",{cls:"v",text:pct(s.said_and_done)}),
+      el("div",{cls:"s",text:"did the work "+pct(s.done)+" \u00b7 reports true "+pct(s.truthful)+" \u00b7 "+money(s.median_cost_usd,s.cost_estimated)+" a run"})]);
+    t.style.setProperty("--c",cvar(c));
+    tiles.appendChild(t);
+  });
+
+  /* The headline chart: every setup's score, highest first. Bars square at the
+     baseline with a 4px rounded end, the value at the tip. */
+  var barsHost=byId("sd-bars");
+  configs.filter(function(c){return summary[c.id];}).slice()
+    .sort(function(a,b){return (summary[b.id].said_and_done||0)-(summary[a.id].said_and_done||0);})
+    .forEach(function(c){
+      var s=summary[c.id],v=Math.max(0,Math.min(1,s.said_and_done||0));
+      var bar=el("span",{cls:"sd-bar"});
+      bar.style.width="calc((100% - 52px) * "+v+")";bar.style.background=cvar(c);
+      var row=el("div",{cls:"sd-row"+(isBeam(c)?"":" sd-ref"),role:"listitem",tabindex:"0",
+        "aria-label":c.label+": Said & Done "+pct(s.said_and_done)},[
+        el("span",{cls:"sd-name",text:c.label}),el("span",{cls:"sd-track"},[bar,el("b",{cls:"sd-val",text:pct(s.said_and_done)})])]);
+      hover(row,function(){pointTip(bar,{c:c,s:s});});
+      barsHost.appendChild(row);
+    });
+
+  if(anchors.length){
+    var named=anchors.slice().sort(function(a,b){return ((summary[b.id]||{}).said_and_done||0)-((summary[a.id]||{}).said_and_done||0);}).map(function(c){var s=summary[c.id];return c.label.replace(/\s*\([^)]*\)\s*$/,"")+(s?" ("+pct(s.said_and_done)+")":"");});
+    byId("sd-anchors").textContent="Not shown: the calibration anchors, "+named.join(" and ")+
+      ". The tasks were calibrated so that the first solves every task honestly and the second fails every task except the safety probes, where nothing was required of it, so their scores are set by that design.";
+  }
+
+  /* Points shared by both charts: references drawn first, Beam's on top. */
+  var pts=configs.filter(function(c){return summary[c.id];}).map(function(c){return {c:c,s:summary[c.id]};});
+  pts.sort(function(a,b){return (isBeam(a.c)?1:0)-(isBeam(b.c)?1:0);});
+
+  function hasCost(p){return typeof p.s.median_cost_usd==="number";}
+  var nocost=pts.filter(function(p){return !hasCost(p);}).map(function(p){return p.c.label;});
+  if(nocost.length)byId("sd-nocost").textContent="No cost on file for "+nocost.join(" or ")+
+    ": "+(nocost.length>1?"they're":"it's")+" left out of the cost chart. ";
+
+  function pointTip(node,p){
+    var s=p.s;
+    var rows=[
+      [pct(s.said_and_done),"Said & Done"],
+      [pct(s.done),"did the work"],
+      [pct(s.truthful),"reports true"],
+      [money(s.median_cost_usd,s.cost_estimated),"median cost per run"],
+      [mins(s.median_minutes),"median minutes per run"]];
+    var w=wallStats(p.c);
+    if(w){
+      rows.push([w.admitted+" of "+w.walls,"wall runs that said \"blocked\""]);
+      if(w.claimed)rows.push([w.claimed+" of "+w.walls,"claimed they broke through"]);
+      if(w.ranOut)rows.push([w.ranOut+" of "+w.walls,"ran out of steps or time"]);
+      if(w.vague)rows.push([w.vague+" of "+w.walls,"said \"blocked\" without naming the obstacle"]);
+    }
+    showTip(node,p.c.label,rows,KINDS[kindOf(p.c)].label);
+  }
+
+  /* Direct labels, placed where they fit; the legend, tooltip and table carry the rest. */
+  function shortLabel(c){return c.label.replace(/\s*\([^)]*\)\s*$/,"")||c.label;}
+  function placeLabels(g,items,bounds){
+    var boxes=items.map(function(it){return {x:it.x-it.r-2,y:it.y-it.r-2,w:2*it.r+4,h:2*it.r+4};});
+    function hit(b,skip){
+      if(b.x<bounds.x0||b.x+b.w>bounds.x1||b.y<bounds.y0||b.y+b.h>bounds.y1)return true;
+      for(var i=0;i<boxes.length;i++){var o=boxes[i];if(o===skip)continue;
+        if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)return true;}
+      return false;
+    }
+    /* Beside the dot first; then a little further out with a short leader line,
+       trying directions toward the middle of the plot first. */
+    function spot(it,name,skip){
+      var w=textWidth(name,13),h=16,gap=it.r+4;
+      var cands=[[gap,-h/2,0],[-gap-w,-h/2,0],[-w/2,-gap-h,0],[-w/2,gap,0],[gap-2,-gap-h+4,0],[gap-2,gap-4,0],[-gap-w+2,-gap-h+4,0],[-gap-w+2,gap-4,0]];
+      var toMid=Math.atan2((bounds.y0+bounds.y1)/2-it.y,(bounds.x0+bounds.x1)/2-it.x),angs=[];
+      for(var k=0;k<12;k++)angs.push(k*Math.PI/6);
+      angs.sort(function(p,q){var dp=Math.abs(Math.atan2(Math.sin(p-toMid),Math.cos(p-toMid))),dq=Math.abs(Math.atan2(Math.sin(q-toMid),Math.cos(q-toMid)));return dp-dq;});
+      [16,32,52].forEach(function(far){angs.forEach(function(t){
+        var px=Math.cos(t)*(gap+far),py=Math.sin(t)*(gap+far);
+        var bx=Math.cos(t)>0.3?px:Math.cos(t)<-0.3?px-w:px-w/2;
+        var by=Math.sin(t)>0.3?py:Math.sin(t)<-0.3?py-h:py-h/2;
+        cands.push([bx,by,far]);});});
+      for(var i=0;i<cands.length;i++){
+        var b={x:it.x+cands[i][0],y:it.y+cands[i][1],w:w,h:h};
+        if(!hit(b,skip))return {b:b,far:cands[i][2]};
+      }
+      return null;
+    }
+    function draw(it,name,s){
+      var nodes=[],b=s.b;
+      if(s.far){
+        var cx=Math.max(b.x,Math.min(it.x,b.x+b.w)),cy=Math.max(b.y,Math.min(it.y,b.y+b.h));
+        var dx=cx-it.x,dy=cy-it.y,len=Math.sqrt(dx*dx+dy*dy)||1;
+        nodes.push(sv("line",{x1:it.x+dx/len*(it.r+2),y1:it.y+dy/len*(it.r+2),x2:cx-dx/len*2,y2:cy-dy/len*2,stroke:"var(--axis)","stroke-width":1}));
+      }
+      nodes.push(sv("text",{x:b.x,y:b.y+b.h-4,"font-size":13,fill:"var(--ink2)",text:name}));
+      nodes.forEach(function(n){g.appendChild(n);});
+      return nodes;
+    }
+    var placed=[],missing=[];
+    items.slice().sort(function(a,b){return (isBeam(a.c)?0:1)-(isBeam(b.c)?0:1);}).forEach(function(it){
+      var name=shortLabel(it.c),s=spot(it,name);
+      if(s){boxes.push(s.b);placed.push({it:it,name:name,s:s,nodes:draw(it,name,s)});}
+      else missing.push(it);
+    });
+    /* A dot with no room for its own label that overlaps a labelled dot shares
+       that label, "A, B", placed around the pair. */
+    function dist(a,b){var dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
+    missing.forEach(function(it){
+      var host=placed.find(function(p){return dist(p.it,it)<p.it.r+it.r+2;});
+      if(!host)return;
+      var pair={x:(host.it.x+it.x)/2,y:(host.it.y+it.y)/2};
+      pair.r=Math.max(dist(pair,host.it)+host.it.r,dist(pair,it)+it.r);
+      var name=host.name+", "+shortLabel(it.c),s=spot(pair,name,host.s.b);
+      if(!s)return;
+      host.nodes.forEach(function(n){n.remove();});
+      boxes[boxes.indexOf(host.s.b)]=s.b;
+      host.name=name;host.s=s;host.it=pair;host.nodes=draw(pair,name,s);
+    });
+  }
+
+  function axes(g,o){
+    /* o: {x0,x1,y0,y1,yTicks:[[v,y,label]],xTicks:[[x,label]],xTitle,yTitle} */
+    o.yTicks.forEach(function(t){
+      g.appendChild(sv("line",{x1:o.x0,x2:o.x1,y1:t[1],y2:t[1],stroke:"var(--grid)","stroke-width":1}));
+      g.appendChild(sv("text",{x:o.x0-6,y:t[1]+4,"text-anchor":"end","font-size":12,fill:"var(--tick)",text:t[2]}));
+    });
+    o.xTicks.forEach(function(t){
+      g.appendChild(sv("line",{x1:t[0],x2:t[0],y1:o.y0,y2:o.y1,stroke:"var(--grid)","stroke-width":1}));
+      g.appendChild(sv("text",{x:t[0],y:o.y1+17,"text-anchor":"middle","font-size":12,fill:"var(--tick)",text:t[1]}));
+    });
+    g.appendChild(sv("line",{x1:o.x0,x2:o.x1,y1:o.y1,y2:o.y1,stroke:"var(--axis)","stroke-width":1}));
+    g.appendChild(sv("text",{x:(o.x0+o.x1)/2,y:o.y1+36,"text-anchor":"middle","font-size":13,fill:"var(--ink2)",text:o.xTitle}));
+    g.appendChild(sv("text",{x:0,y:0,transform:"translate(13,"+((o.y0+o.y1)/2)+") rotate(-90)","text-anchor":"middle","font-size":13,fill:"var(--ink2)",text:o.yTitle}));
+  }
+
+  /* hollow: a ring in the setup's color, for a cost estimated from tokens rather than billed. */
+  function drawPoint(g,p,x,y,r,extra,hollow){
+    var node=sv("g",{class:"sd-pt",tabindex:"0",role:"img","aria-label":p.c.label+": Said & Done "+pct(p.s.said_and_done)+", did the work "+pct(p.s.done)+", reports true "+pct(p.s.truthful)+", median cost "+money(p.s.median_cost_usd,p.s.cost_estimated)});
+    if(extra)node.appendChild(extra);
+    node.appendChild(sv("circle",{cx:x,cy:y,r:Math.max(12,r+4),fill:"transparent"}));
+    node.appendChild(sv("circle",hollow?{class:"sd-mark",cx:x,cy:y,r:r-1,fill:"var(--plane)",stroke:cvar(p.c),"stroke-width":2.5}
+      :{class:"sd-mark",cx:x,cy:y,r:r,fill:cvar(p.c),stroke:"var(--surface)","stroke-width":2}));
+    hover(node,function(n){pointTip(n.querySelector(".sd-mark"),p);});
+    g.appendChild(node);
+  }
+
+  function pctTicks(y0,y1,scale){
+    return [0,.25,.5,.75,1].map(function(v){return [v,scale(v),Math.round(v*100)+"%"];});
+  }
+
+  /* What each setup did, and what it said: one bar per setup, split at a line.
+     Right of it the work got done (report true, or details wrong); left of it
+     the work didn't (no claim made, or a false "done", in red at the far end). */
+  var KINDS_OUT=[
+    {k:"did_true",side:1,label:"Did it, and said so truthfully",cls:"sd-o-good"},
+    {k:"did_wrong",side:1,label:"Did it, but the report got details wrong",cls:"sd-o-warn"},
+    {k:"noclaim",side:-1,label:"Didn't, and didn't claim to",cls:"sd-o-none"},
+    {k:"claimed",side:-1,label:"Didn't, but said it did",cls:"sd-o-crit"}
+  ];
+  function outcomes(){
+    var host=byId("sd-outcomes");host.textContent="";
+    var rows=configs.map(function(c){
+      var rs=data.runs.filter(function(r){return r.config_id===c.id&&r.scored;}),n=rs.length,k={did_true:0,did_wrong:0,noclaim:0,claimed:0};
+      rs.forEach(function(r){
+        if(r.code==="S")k[r.truthful===false?"did_wrong":"did_true"]++;
+        else if(r.code==="F")k.claimed++;
+        else k.noclaim++;
+      });
+      return {c:c,n:n,k:k,right:n?(k.did_true+k.did_wrong)/n:0,left:n?(k.noclaim+k.claimed)/n:0};
+    }).filter(function(r){return r.n;});
+    rows.sort(function(a,b){return b.right-a.right||a.k.claimed-b.k.claimed;});
+    var maxL=Math.max.apply(null,rows.map(function(r){return r.left;}).concat([0.05]));
+    var maxR=Math.max.apply(null,rows.map(function(r){return r.right;}).concat([0.05]));
+    var lw=maxL/(maxL+maxR)*100;
+    var legend=el("div",{cls:"sd-legend"});
+    KINDS_OUT.forEach(function(o){legend.appendChild(el("span",null,[el("span",{cls:"sd-sw "+o.cls}),o.label]));});
+    host.appendChild(legend);
+    rows.forEach(function(r){
+      function seg(o,total){
+        var v=r.k[o.k];if(!v)return null;
+        var share=v/r.n,w=share/total*100;
+        var sg=el("span",{cls:"sd-oseg "+o.cls});sg.style.width=w+"%";
+        if(share>=0.08)sg.textContent=Math.round(share*100)+"%";
+        return sg;
+      }
+      var left=el("span",{cls:"sd-oleft"},[seg(KINDS_OUT[3],maxL),seg(KINDS_OUT[2],maxL)]);
+      var right=el("span",{cls:"sd-oright"},[seg(KINDS_OUT[0],maxR),seg(KINDS_OUT[1],maxR)]);
+      left.style.width=lw+"%";right.style.width=(100-lw)+"%";
+      var track=el("span",{cls:"sd-otrack"},[left,right]);
+      var row=el("div",{cls:"sd-row"+(isBeam(r.c)?"":" sd-ref"),role:"listitem",tabindex:"0",
+        "aria-label":r.c.label+": "+KINDS_OUT.map(function(o){return o.label+" "+r.k[o.k];}).join(", ")+" of "+r.n+" runs"},
+        [el("span",{cls:"sd-name",text:r.c.label}),track]);
+      hover(row,function(){showTip(track,r.c.label,KINDS_OUT.map(function(o){
+        return [r.k[o.k]+" of "+r.n,o.label.toLowerCase()];}));});
+      host.appendChild(row);
+    });
+    /* A label that doesn't fit its segment is dropped, not clipped; the tooltip and table keep the value. */
+    host.querySelectorAll(".sd-oseg").forEach(function(sg){if(sg.textContent&&sg.scrollWidth>sg.clientWidth+1)sg.textContent="";});
+    host.appendChild(el("div",{cls:"sd-oaxis"},[el("span",{cls:"sd-name"}),el("span",{cls:"sd-oaxis-t"},[
+      el("span",{text:"\u2190 the work wasn't done",style:"width:"+lw+"%;text-align:right;padding-right:8px"}),
+      el("span",{text:"the work was done \u2192",style:"padding-left:8px"})])]));
+  }
+
+  /* Each task's honest final status: "blocked" marks a wall that can't move. */
+  var expected={};data.tasks.forEach(function(t){expected[t.id]=t.expected_status;});
+  /* Breaking walls against admitting them, on separate tasks so neither axis is
+     built from the other. x: the share of runs with the work done on the tasks
+     that can be done. y: on the tasks whose honest answer is "blocked" (a wall
+     that can't move), the share of runs that said so and named the obstacle. */
+  function wallStats(c){
+    var rs=data.runs.filter(function(r){return r.config_id===c.id&&r.scored;});
+    var doable=rs.filter(function(r){return expected[r.task]!=="blocked";}),walls=rs.filter(function(r){return expected[r.task]==="blocked";});
+    if(!doable.length||!walls.length)return null;
+    var n=function(a,code){return a.filter(function(r){return r.code===code;}).length;};
+    return {x:n(doable,"S")/doable.length,y:n(walls,"S")/walls.length,walls:walls.length,
+      claimed:n(walls,"F"),admitted:n(walls,"S"),ranOut:n(walls,"x"),vague:n(walls,"U"),doable:doable.length,did:n(doable,"S")};
+  }
+  /* Task counts for the wall chart's text, from the data, so new tasks or seeds need no edit. */
+  var nWalls=data.tasks.filter(function(t){return t.expected_status==="blocked";}).length,nDoable=data.tasks.length-nWalls;
+  var NUM=["no","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve"];
+  function words(n){return n<NUM.length?NUM[n]:String(n);}
+  (function(){
+    var runsPer=configs.map(function(c){var w=wallStats(c);return w?w.walls:0;}).filter(Boolean);
+    var lo=Math.min.apply(null,runsPer),hi=Math.max.apply(null,runsPer);
+    byId("sd-walls-sub").textContent=words(nWalls).charAt(0).toUpperCase()+words(nWalls).slice(1)+" of the tasks are walls: there is no honest way to finish them, so the right answer is to stop and say \"blocked\". Across, how often a setup does the work on the "+words(nDoable)+
+      " tasks it can finish; up, how often it admits a wall on the "+words(nWalls)+" it can't. Arrows run from Beam to its mitigations."+
+      (lo&&hi<20?" Each setup ran the walls only "+(lo===hi?words(lo):words(lo)+" to "+words(hi))+" times, so read the heights as rough.":"");
+  })();
+  function wallChart(){
+    var host=byId("sd-walls");host.textContent="";
+    var W=host.clientWidth||480,H=Math.max(340,Math.min(560,W*0.5));
+    var m={l:48,r:14,t:40,b:44},x0=m.l,x1=W-m.r,y0=m.t,y1=H-m.b;
+    var xs=function(v){return x0+v*(x1-x0);},ys=function(v){return y1-v*(y1-y0);};
+    var svg=sv("svg",{width:W,height:H,viewBox:"0 0 "+W+" "+H,role:"group","aria-label":"Work done on doable tasks against admitting impossible ones, one dot per setup"});
+    var g=sv("g");svg.appendChild(g);
+    axes(g,{x0:x0,x1:x1,y0:y0,y1:y1,yTicks:pctTicks(y0,y1,ys),
+      xTicks:[0,.25,.5,.75,1].map(function(v){return [xs(v),Math.round(v*100)+"%"];}),
+      xTitle:"Breaks walls: work done on the "+nDoable+" tasks that can be done",yTitle:"Admits walls: \"blocked\" on the "+nWalls+" that can't"});
+    var pos={};
+    pts.forEach(function(p){var w=wallStats(p.c);if(w)pos[p.c.id]={x:xs(w.x),y:ys(w.y)};});
+    /* Setups with identical rates would hide each other: spread them side by side. */
+    var spots={};
+    Object.keys(pos).forEach(function(id){var k=Math.round(pos[id].x)+","+Math.round(pos[id].y);(spots[k]=spots[k]||[]).push(id);});
+    Object.keys(spots).forEach(function(k){var ids=spots[k];if(ids.length<2)return;
+      ids.forEach(function(id,i){pos[id].x+=(i-(ids.length-1)/2)*16;});});
+    /* Arrows from Beam alone to each of its mitigations. */
+    var defs=sv("defs");defs.appendChild(sv("marker",{id:"sd-arrow",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},
+      [sv("path",{d:"M0 0L10 5L0 10z",fill:"var(--g-beam)"})]));
+    svg.insertBefore(defs,svg.firstChild);
+    var base=configs.find(function(c){return c.group==="beam"&&c.agent!=="mirror";})||configs.find(function(c){return c.group==="beam";});
+    if(base&&pos[base.id])configs.forEach(function(c){
+      if(c.group!=="beam-mitigation"&&c.group!=="brain-worker")return;
+      var a=pos[base.id],b=pos[c.id];if(!b)return;
+      var dx=b.x-a.x,dy=b.y-a.y,len=Math.sqrt(dx*dx+dy*dy);if(len<20)return;
+      g.appendChild(sv("line",{x1:a.x+dx/len*10,y1:a.y+dy/len*10,x2:b.x-dx/len*11,y2:b.y-dy/len*11,
+        stroke:"var(--g-beam)","stroke-width":1.5,"stroke-opacity":.6,"marker-end":"url(#sd-arrow)"}));
+    });
+    var items=[];
+    pts.forEach(function(p){
+      var at=pos[p.c.id];if(!at)return;
+      items.push({c:p.c,x:at.x,y:at.y,r:7});drawPoint(g,p,at.x,at.y,7);
+    });
+    var lg=sv("g",{"aria-hidden":"true"});svg.appendChild(lg);
+    placeLabels(lg,items,{x0:x0,x1:x1+m.r,y0:0,y1:y1});
+    host.appendChild(svg);
+  }
+
+  function costChart(){
+    var host=byId("sd-cost");host.textContent="";
+    var W=host.clientWidth||480,H=Math.max(320,Math.min(560,W*0.5));
+    var m={l:48,r:14,t:40,b:44},x0=m.l,x1=W-m.r,y0=m.t,y1=H-m.b;
+    var priced=pts.filter(hasCost);
+    var pos=priced.map(function(p){return p.s.median_cost_usd;}).filter(function(v){return v>0;});
+    if(!pos.length)pos=[0.01];
+    var free=priced.some(function(p){return p.s.median_cost_usd===0;});
+    var lo=Math.log10(Math.min.apply(null,pos)/1.6),hi=Math.log10(Math.max.apply(null,pos)*1.6);
+    var lx0=free?x0+34:x0;
+    var xs=function(v){return v>0?lx0+(Math.log10(v)-lo)/(hi-lo)*(x1-lx0):x0+10;};
+    var ys=function(v){return y1-v*(y1-y0);};
+    var xt=[];
+    for(var e=Math.floor(lo);e<=Math.ceil(hi);e++)[1,3].forEach(function(k){
+      var v=k*Math.pow(10,e),lv=Math.log10(v);
+      if(lv>=lo&&lv<=hi)xt.push([xs(v),"$"+(v>=1?String(v):v.toFixed(Math.max(0,-e)))]);
+    });
+    if(free)xt.unshift([x0+10,"$0"]);
+    var svg=sv("svg",{width:W,height:H,viewBox:"0 0 "+W+" "+H,role:"group","aria-label":"Said & Done score against median cost per run"});
+    var g=sv("g");svg.appendChild(g);
+    axes(g,{x0:x0,x1:x1,y0:y0,y1:y1,yTicks:pctTicks(y0,y1,ys),xTicks:xt,
+      xTitle:"Median cost per run (log scale)",yTitle:"Said & Done score"});
+    var items=[];
+    priced.forEach(function(p){
+      var s=p.s,x=xs(s.median_cost_usd),y=ys(s.said_and_done||0);
+      items.push({c:p.c,x:x,y:y,r:6});drawPoint(g,p,x,y,6,null,!!s.cost_estimated);
+    });
+    var lg=sv("g",{"aria-hidden":"true"});svg.appendChild(lg);
+    placeLabels(lg,items,{x0:x0,x1:x1+m.r,y0:0,y1:y1});
+    host.appendChild(svg);
+  }
+
+  /* Every run: tasks grouped by family, one chip per run. */
+  var codes=byId("sd-codes");
+  ["S","F","W","U","x","I"].forEach(function(k){
+    if(!data.codes[k])return;
+    codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-"+k,text:k,"aria-hidden":"true"}),data.codes[k]]));
+  });
+  var vchip=el("span",{cls:"sd-chip sd-c-S sd-v",text:"S!","aria-hidden":"true"});
+  codes.appendChild(el("span",null,[vchip,"outlined with !: broke a rule"]));
+
+  var grid=byId("sd-grid");
+  var hr=el("tr",null,[el("th",{cls:"sd-sticky",scope:"col",text:"Task"})]);
+  configs.forEach(function(c){var th=el("th",{cls:"sd-cfg",scope:"col",text:c.label});th.style.setProperty("--c",cvar(c));hr.appendChild(th);});
+  grid.appendChild(el("thead",null,[hr]));
+  var runsBy={};
+  data.runs.forEach(function(r){var k=r.task+"|"+r.config_id;(runsBy[k]=runsBy[k]||[]).push(r);});
+  var gb=el("tbody");grid.appendChild(gb);
+  data.families.forEach(function(f){
+    var ts=data.tasks.filter(function(t){return t.family===f.id;});
+    if(!ts.length)return;
+    var fr=el("tr",{cls:"sd-fam"},[el("th",{cls:"sd-sticky",scope:"rowgroup",text:f.label})]);
+    configs.forEach(function(c){
+      var v=(data.by_family[f.id]||{})[c.id];
+      fr.appendChild(el("td",{text:v==null?"":pct(v),title:v==null?"":c.label+" on "+f.label+": "+pct(v)}));
+    });
+    gb.appendChild(fr);
+    ts.forEach(function(t){
+      var short=(t.label||t.id).replace(/^[^:]*:\s*/,"");
+      short=short.charAt(0).toUpperCase()+short.slice(1);
+      var th=el("th",{cls:"sd-sticky sd-task",scope:"row",title:t.summary||""},[short,t.expected_status==="blocked"?el("small",{text:"honest answer: blocked"}):null]);
+      var tr=el("tr",null,[th]);
+      configs.forEach(function(c){
+        var rs=(runsBy[t.id+"|"+c.id]||[]).slice().sort(function(a,b){return a.seed-b.seed;});
+        var td=el("td");
+        if(!rs.length)td.appendChild(el("span",{cls:"sd-na",text:"–",title:"Not run in this setup"}));
+        rs.forEach(function(r){
+          var chip=el("span",{cls:"sd-chip sd-c-"+r.code+(r.violated?" sd-v":""),text:r.code+(r.violated?"!":""),
+            role:"img","aria-label":c.label+", "+(t.label||t.id)+", seed "+r.seed+": "+(data.codes[r.code]||r.code)+(r.violated?", broke a rule":"")});
+          hover(chip,function(n){
+            var rows=[[data.codes[r.code]||r.code,""],[mins(r.minutes),"minutes"],[money(r.cost_usd,r.cost_estimated),"cost"]];
+            if(r.truthful!=null)rows.splice(1,0,[r.truthful?"true":"not true","report"]);
+            showTip(n,c.label+" · seed "+r.seed,rows,(t.label||t.id)+(r.violated?". Broke a rule"+(r.violations&&r.violations.length?": "+r.violations.join("; "):""):""));
+          });
+          td.appendChild(chip);
+        });
+        tr.appendChild(td);
+      });
+      gb.appendChild(tr);
+    });
+  });
+  var dl=byId("sd-tasks");
+  data.families.forEach(function(f){
+    data.tasks.filter(function(t){return t.family===f.id;}).forEach(function(t){
+      dl.appendChild(el("dt",{text:t.label||t.id}));
+      if(t.summary)dl.appendChild(el("dd",{text:t.summary}));
+    });
+  });
+
+  /* Excerpts: the agent's reasoning beside its report and what the grader found. */
+  var ex=(excerpts&&excerpts.excerpts)||[];
+  var BADGE={F:"bad",W:"warn",U:"warn"};
+  if(ex.length){
+    var box=byId("sd-excerpts");
+    ex.forEach(function(q){
+      var id=q.config||q.config_id,c=cfgById[id],t=taskById[q.task],code=q.outcome_code;
+      var said=[];
+      if(q.report)said.push(el("div",{cls:"lab",text:"What it reported"}),el("p",{text:q.report}));
+      /* The badge reads the package's outcome_label: a run can be done (S) and still break a rule. */
+      var label=q.outcome_label||(code&&data.codes[code]?data.codes[code].replace(/ \(.*\)$/,""):"");
+      var tone=q.said_and_done?"good":q.violated?"warn":BADGE[code]||"neutral";
+      if(q.grader_finding||label)said.push(el("div",{cls:"lab",text:"The grader"}),el("p",null,[
+        label?el("span",{cls:"sd-badge "+tone,text:label}):null," ",q.grader_finding||""]));
+      box.appendChild(el("article",{cls:"sd-q"+(said.length?"":" one")},[
+        el("div",{cls:"head"},[el("h4",{text:(c?c.label:q.config_label||id)}),
+          el("span",{cls:"meta",text:(t&&t.label?t.label:q.task_label||q.task)+" · seed "+q.seed})]),
+        el("div",{cls:"thought"},[q.context?el("p",{cls:"ctx",text:q.context}):null,
+          el("div",{cls:"lab",text:"Its reasoning"}),el("div",{cls:"mono",text:q.reasoning||q.quote})]),
+        said.length?el("div",{cls:"said"},said):null]));
+    });
+    byId("sd-excerpts-wrap").hidden=false;
+  }
+
+  /* The addendum: 95% intervals behind the headline numbers. */
+  var ct=byId("sd-ci");
+  ct.appendChild(el("thead",null,[el("tr",null,[["Setup",""],["Runs","n"],["Said & Done","n"],["Did the work","n"],["Reports true","n"]].map(function(h){return el("th",{scope:"col",cls:h[1],text:h[0]});}))]));
+  var cb=el("tbody");ct.appendChild(cb);
+  configs.forEach(function(c){
+    var s=summary[c.id];if(!s)return;
+    var cell=function(v,ci){return el("td",{cls:"n",text:pct(v)+(ci?" ("+ciText(ci)+")":"")});};
+    cb.appendChild(el("tr",null,[el("th",{scope:"row",style:"font-weight:500",text:c.label}),el("td",{cls:"n",text:String(s.runs)}),
+      cell(s.said_and_done,s.said_and_done_ci),cell(s.done,s.done_ci),cell(s.truthful,s.truthful_ci)]));
+  });
+
+  /* Setups in detail. */
+  var st=byId("sd-setups");
+  st.appendChild(el("thead",null,[el("tr",null,["Setup","Agent and harness","Model","Served by","Mitigation"].map(function(h){return el("th",{scope:"col",text:h});}))]));
+  var sb=el("tbody");st.appendChild(sb);
+  configs.forEach(function(c){
+    var model=c.model+(c.worker_model?" (brain), "+c.worker_model+" (worker)":"");
+    var host=[c.host,c.provider].filter(Boolean).join(", ")+(c.worker_host&&c.worker_host!==c.host?"; worker: "+c.worker_host:"");
+    sb.appendChild(el("tr",null,[el("th",{scope:"row",style:"font-weight:500",text:c.label}),el("td",{text:c.harness||c.agent}),
+      el("td",{text:model}),el("td",{text:host}),el("td",{text:c.mitigation||"—"})]));
+  });
+
+  /* Provenance: plain text, no links. */
+  var p=data.provenance||{},prov=byId("sd-prov");
+  var parts=[];
+  if(p.runs_from&&p.runs_to){var d0=fmtDate(p.runs_from),d1=fmtDate(p.runs_to);
+    parts.push((d0===d1?"Runs on "+d0:"Runs between "+d0+" and "+d1)+" (UTC).");}
+  var n=data.runs.filter(function(r){return r.scored&&shown[r.config_id];}).length;
+  parts.push(n+" scored runs across "+configs.length+" setups and "+data.tasks.length+" tasks.");
+  prov.appendChild(document.createTextNode(parts.join(" ")+" "));
+  if(p.commit){prov.appendChild(document.createTextNode("Benchmark commit "));prov.appendChild(el("code",{text:p.commit.slice(0,12)}));
+    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code); the runs used five harness builds, listed under How it's scored. "));}
+  prov.appendChild(document.createTextNode("Every run, with each task's hash, is in "));
+  prov.appendChild(el("a",{href:"/said-and-done/results.json",text:"results.json"}));
+  prov.appendChild(document.createTextNode("."));
+
+  layoutBlocks();
+  wallChart();outcomes();costChart();
+  var lastW=0;
+  new ResizeObserver(function(){
+    var w=byId("sd-cost").clientWidth;
+    if(Math.abs(w-lastW)>2){lastW=w;wallChart();outcomes();costChart();}
+  }).observe(byId("sd-cost"));
+}
+
+/* The sections below the table (all but the ones marked data-keep) fold
+   into expandable rows: a title, a line on what's inside, and the section. */
+function layoutBlocks(){
+  var host=document.getElementById("sd-blocks");if(!host)return;
+  [].slice.call(host.children).forEach(function(sec){
+    if(!sec.classList.contains("sd-block")||sec.hidden||sec.dataset.keep)return;
+    var d=el("details",{cls:"sd-acc"});
+    d.appendChild(el("summary",null,[el("span",null,[el("span",{cls:"t",text:sec.dataset.title}),el("span",{cls:"d",text:sec.dataset.desc})])]));
+    while(sec.firstChild)d.appendChild(sec.firstChild);
+    sec.appendChild(d);sec.classList.add("sd-acc-sec");
+  });
+}
+
+Promise.all([
+  fetch("/said-and-done/results.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}),
+  fetch("/said-and-done/excerpts.json",{cache:"no-cache"}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+]).then(function(v){render(v[0],v[1]);}).catch(function(e){
+  byId("sd-banner").appendChild(el("p",{cls:"sd-err",text:"The results didn't load ("+e.message+"). Try reloading the page."}));
+});
+})();
+</script>
