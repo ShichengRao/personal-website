@@ -31,7 +31,7 @@ acting conversation does. This extension adds four, each a fresh call to the mod
 The same checks, run in the Said & Done benchmark's harness on
 Beam's paid host, gave these results:
 
-| | Said & Done, 15 tasks | Held-out tasks (written after the checks were frozen) | "Can't be done" held-out tasks: said so |
+| | Said & Done, 15 tasks | Held-out tasks (written blind, calibrated after the checks were frozen) | "Can't be done" held-out tasks: said so |
 |---|---|---|---|
 | Beam | 57% | 63% | 0 of 6 |
 | Beam with the checks | 83% | 79% | 5 of 6 |
@@ -274,24 +274,10 @@ works through that:
   Mirror has no worker started waits for one: on your own machine the call goes with the worker Mirror then
   stops, and the screen says nothing was sent. Turning the `guard` setting off mid-goal switches back the same way,
   and turning it on switches a goal that's on to manual mode, as starting it would have.
-- **On a remote workspace** (`--remote-endpoint`, `/remote`), a goal switches to manual mode as above but never
-  switches back by itself. Mirror doesn't end a remote worker when it reconnects or opens another conversation; the
-  worker keeps waiting on its calls, and Mirror sends it the mode in force when it attaches again. The extension
-  can't always know that no call still waits there (an answer lost with a connection that broke without Mirror
-  noticing, or a call in a conversation you left), and auto mode would approve one. So the switch back is yours.
-  The goal line says `manual mode kept on this remote workspace (Mirror saved it: it stays after a restart) · F2 for
-  auto, which also approves any call still waiting at a worker`, or, while it knows of a call that waits, what
-  waits and that F2 now would approve it. Until Mirror restarts, the next goal still approves for you what auto mode
-  would; Mirror saves the manual mode, though, so after a restart it's your own mode until you switch back. Any mode
-  you choose ends the kept one. The guard's verdict reaches the same worker after a reconnect, or waits for one if
-  Mirror has none started. A block is kept until the worker confirms it, through reconnects, other conversations
-  and goals, and goes again when the worker asks about that call again (matched by its conversation and text as well
-  as its id); a block for a call the guard was still checking when you left its conversation is kept for that worker
-  too (and sent at once if that conversation is open again, with its worker started). A switch to auto doesn't
-  undo a kept block, but if Mirror attaches the worker in auto mode before it asks again, the worker approves the
-  call. Any other call a worker asks about again, whose answer it never got, is handled as a new call: during a goal
-  a risky one is checked again (one still being checked when you left its conversation is the same check), and
-  outside a goal it comes to you.
+- **Not on a remote workspace.** `/goal` refuses to start or resume in a remote workspace (`--remote-endpoint`,
+  `/remote`), before it sends anything or changes the approval mode. Mirror gives a remote workspace's agent no
+  extension tools (its worker's connection gets no host tools there), so the agent couldn't report with
+  `goal__update`: no check would run, and the goal could never end.
 - **If your approval mode is manual,** the guard only adds denials. A call it allows still comes to you, and so
   does every call it doesn't check.
 - **Risky** is the benchmark harness's pattern (`HARNESS_RISKY` in `extension.py`): network tools and URLs;
@@ -382,9 +368,8 @@ works through that:
   reason on a denial. When a subagent's call is blocked, the subagent sees only that text; per Mirror's source,
   the reason goes to the main conversation.
 - **Saved approvals cost a retry.** A risky call a saved rule covers is denied once before it's checked. If the
-  guard can't tell whether a rule covers a call (a remote workspace, or a Mirror version without the modules it
-  reads), a saved rule can run it unchecked; the guard then records it (`check.guard`, outcome `ran`) and says so
-  on screen.
+  guard can't tell whether a rule covers a call (a Mirror version without the modules it reads), a saved rule can
+  run it unchecked; the guard then records it (`check.guard`, outcome `ran`) and says so on screen.
 - **It judges each call on its own, and it can be wrong.** It sees the goal, the agent's last five tool calls,
   and the call itself: all of it up to 4,000 characters; beyond that, every line where a match of its pattern starts
   or ends (overlapping matches too, so one long match can't hide another), with two lines either side, and as much
@@ -449,16 +434,9 @@ works through that:
     isn't reviewed, so the verifier didn't run.
   - Not yet shown live: the sandboxed verifier reviewing a "complete" with credentials on the machine. The unit
     tests and a container replay of the probe-guard-1 bug cover it.
-- **Remote workspaces are untested live.** What the guard does there (manual mode kept after a goal, verdicts
-  across a reconnect, a block sent again) is tested only against the unit tests' model of Mirror's events, taken
-  from Mirror's source; no remote worker was run. Between goals there, every call asks you until you switch back
-  to auto. A call whose verdict the extension lost (one the guard was checking when you switched to auto while the
-  worker was down, or one whose answer, not a block, never arrived) is asked about again and handled as a new call,
-  if you're back in manual mode when Mirror attaches the worker; otherwise auto mode approves it. A kept block whose
-  confirmation was lost (the worker took the deny, and the connection broke) stays until 50 newer ones replace it:
-  a later call in that conversation reusing its id and command is denied again, unchecked, and the goal line keeps
-  saying a call the guard blocked may still wait. A block sent while a reattached worker was still asking again
-  can reach it twice, so the model reads its reason twice.
+- **Local workspaces only.** Mirror doesn't give extension tools to a remote workspace's agent, so `/goal` refuses to
+  start there. Running there would need Mirror to pass extension tools to remote workers, and the checks to read the
+  remote workspace.
 - **Other limits found in review.** A key pasted into a file already tracked is diffed in full; only new files are
   checked for keys. A git config that includes a FIFO holds the diff for up to 10 seconds per read (20 for each of
   the two settings from your own config, as the fallback read meets it too), and one the repository's config
@@ -678,3 +656,11 @@ check only during a goal, and approves only as a request made then would. Also, 
 are no longer withheld whole (they hold Dockerfiles and the like), only their credentials files. Both platforms pass,
 and the checker's own extended randomized test (90,000 sequences, with a check that every approval was the
 goal's to make) passes too.
+
+A review of the website copy (by Codex) then found that a checked goal can't run on a remote workspace at all:
+Mirror gives a remote workspace's agent no extension tools, so `goal__update` is never offered there, no check runs,
+and the goal never ends. Earlier rounds' tests modelled Mirror's events, not its tool wiring, so they missed it. Now
+`/goal` refuses to start or resume on a remote workspace, before anything is sent or the mode changes, and the
+remote-workspace handling the earlier paragraphs describe (manual mode kept after a goal, blocks kept and sent
+again across reconnects and conversations, checks of a conversation left) is gone, with its tests: it could never
+run. What those rounds fixed for your own machine stays. Both platforms pass.

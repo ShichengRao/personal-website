@@ -459,6 +459,10 @@ RECENT = 5  # Commands the guard sees for context, as in the harness.
 _KEEP_CALLS = 50
 _UNSPECIFIED = agent_pb2.APPROVAL_SOURCE_UNSPECIFIED  # Not MANUAL: the person didn't decide these.
 _GUARD_OFF = 'guard off: auto approval'
+# On screen when /goal is asked to start or resume on a remote workspace.
+REMOTE_REFUSED = ("◎ Goal: checked goals need a local workspace. Mirror doesn't give extension tools to a remote "
+                  "workspace's agent, so the agent couldn't report with goal__update, and the goal could never be "
+                  'checked or end.')
 
 
 BASH_TOOL = {
@@ -2115,9 +2119,6 @@ GUARD_OUTCOMES = {
   'deferred': "nothing sent yet: Mirror's agent worker wasn't running; it goes once the worker has started again, "
               'if the call still waits there',
   'dropped': 'nothing sent: Mirror stopped the worker that asked, and the call went with it',
-  'resent': "sent when the worker asked about the call again: it hadn't got the deny",
-  'kept': 'nothing sent yet: the call waits in the conversation you left; the deny goes if its worker asks again',
-  'elsewhere': 'nothing sent: the call waits at the worker of another conversation, and is asked about again there',
   'recheck': 'not run: a saved approval covers it, but the check failed, so it is checked again if tried again',
   'split': 'not run: a saved approval covers it, but it was too long to show the guard in full',
 }
@@ -2133,14 +2134,11 @@ def guard_line(data: dict) -> tuple[str, str]:
           'deferred': "; Mirror's worker isn't running, so the answer goes once it has started again, if the call "
                       'still waits there',
           'dropped': '; nothing was sent: Mirror stopped the worker that asked, and the call went with it',
-          'kept': '; the call waits in the conversation you left, and the deny goes if its worker asks again',
-          'elsewhere': '; the call waits at the worker of another conversation, and is asked about again there',
           'ask': '; it goes to you'}
   if outcome == 'ran':
     return f'◎ Guard: a saved approval ran {call} before the guard saw it', 'ui.warning'
   sent = outcome in ('approve', 'deny')
-  when = (" (sent when the worker asked again: it hadn't got the deny)" if sent and data.get('resent')
-          else " (sent now that Mirror's worker has started again)" if sent and data.get('deferred') else '')
+  when = " (sent now that Mirror's worker has started again)" if sent and data.get('deferred') else ''
   if verdict == 'block':
     return f'◎ Guard: blocked {call}{late.get(outcome, "")}{when}\n  Reason: {reason}', 'ui.warning'
   if verdict == 'allow':
@@ -2171,7 +2169,6 @@ class Held:
   token: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
   # The guard's verdict and reason, kept while Mirror has no worker started to send the answer to (_decide).
   deferred: tuple[str, str] | None = None
-  conversation: str = ''  # The conversation whose worker waits on the call.
 
 
 @dataclasses.dataclass(frozen=True)
@@ -2194,17 +2191,6 @@ class GoalState:
   # Calls the guard handed back to the person (it couldn't check them, or Esc was rejecting them), which the worker
   # still waits on: auto mode would approve them before the person answered.
   asked: frozenset[str] = frozenset()
-  # The guard's denies for calls a worker waited on, until it says it took one (hitl_resolved): (conversation, call
-  # id, tool, text, reason). A remote worker that never got its deny (lost with a connection that broke without
-  # Mirror noticing, or kept for it while it was down or its conversation was left) asks about the call again once
-  # Mirror reattaches it, and gets the deny then.
-  blocked: tuple[tuple[str, str, str, str, str], ...] = ()
-  # Calls the guard was still checking at the worker of a conversation left on a remote workspace: (conversation,
-  # hold). A block for one is kept for that worker (blocked), or sent at once if that conversation is open again.
-  away: tuple[tuple[str, Held], ...] = ()
-  # On a remote workspace a goal leaves Mirror in manual mode when it ends (_restore): the person's own mode was
-  # auto, for the next goal (which approves what auto mode would) and for the goal line's hint.
-  kept_auto: bool = False
   calls: tuple[tuple[str, str], ...] = ()  # (call id, text) of recent tool calls, the guard's context.
   watch: tuple[tuple[str, str], ...] = ()  # Risky calls to account for if a saved approval runs them.
   always_ask: frozenset[str] = frozenset()  # Calls Mirror says only a person may approve.
@@ -2222,8 +2208,7 @@ class GoalState:
 def _carry(current: GoalState) -> dict:
   """What a goal set or cleared takes over from the one before: what belongs to Mirror's worker, not to a goal."""
   carried = {name: getattr(current, name)
-             for name in ('prior_mode', 'restore', 'asked', 'blocked', 'away', 'kept_auto', 'calls', 'watch',
-                          'always_ask', 'guard_seen')}
+             for name in ('prior_mode', 'restore', 'asked', 'calls', 'watch', 'always_ask', 'guard_seen')}
   # A saved-approval call's check stays with the goal it was made for: the call was denied already, so nothing is
   # left to send for it, and its verdict mustn't clear the call for the goal that comes next, or tell its agent
   # anything (the check finds it gone). The calls the worker still waits on stay, with their checks.
@@ -2261,18 +2246,14 @@ def _replaying(global_state: state.State) -> bool:
 
 
 def _remote(global_state: state.State) -> bool:
-  """A remote workspace (`--remote-endpoint`, `/remote`): Mirror's agent worker runs elsewhere and outlives its
-  connection, which Mirror closes and opens again rather than ending the worker."""
+  """A remote workspace (`--remote-endpoint`, `/remote`). Mirror gives its agent no extension tools (cli.py passes
+  the worker's client no host tools there), so a checked goal can't run on one: /goal refuses to start."""
   return bool(getattr(getattr(global_state, 'session', None), 'remote', False))
 
 
 def _worker_started(global_state: state.State) -> bool:
   """Whether Mirror has its agent worker started (not failed, stopped, or being started again)."""
   return bool(getattr(getattr(global_state, 'lifecycle', None), 'started', True))
-
-
-def _conversation(global_state: state.State) -> str:
-  return str(getattr(getattr(global_state, 'session', None), 'conversation_id', '') or '')
 
 
 def _get(global_state: state.State, *path: str) -> object:
@@ -2364,32 +2345,6 @@ class _Defer(actions.ExtensionAction):
 
 
 @dataclasses.dataclass(frozen=True)
-class _Resend(actions.ExtensionAction):
-  """Deny a call again: the worker asked about it again, so it never got the deny (GoalState.blocked)."""
-
-  call_id: str
-
-
-@dataclasses.dataclass(frozen=True)
-class _Unblock(actions.ExtensionAction):
-  """The worker asked about another call with an id a deny was kept for: that deny isn't for it."""
-
-  call_id: str
-
-
-@dataclasses.dataclass(frozen=True)
-class _Owe(actions.ExtensionAction):
-  """The guard answered a call of a conversation left on a remote workspace (GoalState.away). now: that
-  conversation is the one open again, with its worker started, so a deny goes at once."""
-
-  call_id: str
-  token: str
-  verdict: str
-  reason: str
-  now: bool = False
-
-
-@dataclasses.dataclass(frozen=True)
 class _HoldSaved(actions.ExtensionAction):
   """Deny a risky call a saved approval covers, and check it (unless the same call is being checked)."""
 
@@ -2473,15 +2428,19 @@ class _Redecide:
 
 @dataclasses.dataclass(frozen=True)
 class _Dropped:
-  """A verdict kept for a call while Mirror had no worker started, that won't be sent as it was: the call went with
-  a worker Mirror stopped ('dropped'), or waits in a conversation left ('kept' for a block, 'elsewhere' otherwise)."""
+  """A verdict kept for a call while Mirror had no worker started, for a worker Mirror then stopped: nothing was
+  sent, and the call went with it."""
 
   call_id: str
   tool: str
   text: str
   verdict: str
   reason: str
-  outcome: str = 'dropped'
+
+
+@dataclasses.dataclass(frozen=True)
+class _Notice:
+  text: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -2495,7 +2454,7 @@ class _Progress:
   generation: int = 0
 
 
-type _Effect = _Submit | _Continue | _Mode | _Hide | _Guard | _Progress | _Redecide | _Dropped
+type _Effect = _Submit | _Continue | _Mode | _Hide | _Guard | _Progress | _Redecide | _Dropped | _Notice
 
 
 def _step(current: GoalState, action: object, *, busy: bool, max_turns: int, tool: str
@@ -2677,9 +2636,6 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     if isinstance(action, _SESSION_SWITCH):
       return self._on_session_switch(global_state, current)
     if isinstance(action, _WORKER_STOPPED):
-      if _remote(global_state):
-        # A remote worker outlives its connection: Mirror reconnects to it, and it still waits on these calls.
-        return current, ()
       dropped = tuple(self.effect(_Dropped(held.call_id, held.tool, held.text, *held.deferred))
                       for held in current.held if held.request is not None and held.deferred)
       return self._on_worker_stopped(current), dropped
@@ -2691,6 +2647,8 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       current, mode = self._on_config(global_state, current)
       return current, (self.effect(_Mode(mode)),) if mode else ()
     inner = action.action if isinstance(action, actions.RoutedExtensionAction) else action
+    if isinstance(inner, _SetGoal | _Resume) and _remote(global_state):
+      return current, (self.effect(_Notice(REMOTE_REFUSED)),)  # Before any instruction or mode switch.
     current, out = self._reduce_guard(global_state, current, inner)
     current, counted = self._count_call(global_state, current, inner)
     out = (*out, *counted)
@@ -2723,36 +2681,20 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     if isinstance(action, _WORKER_STARTED) and _replaying(global_state):
       return current, out
     if current.restore and not current.active and not _blocking(current):
-      current, mode = self._restore(global_state, current)
+      current, mode = self._restore(current)
       return current, (*out, self.effect(_Mode(mode))) if mode else out
     return current, out
 
   def _on_session_switch(self, global_state: state.State, current: GoalState) -> tuple[GoalState, tuple]:
-    """Another conversation is opening (/clear's new conversation, /resume, /rewind), with a worker of its own: the goal ends. On this machine the calls held or handed back at the old worker go with
-    it, as Mirror ends that worker, and the mode the goal switched from is put back once the new conversation has
-    loaded (ReplayFinished): switched now, it would reach the old worker. A remote worker isn't ended: it still waits
-    on those calls, and Mirror reattaches it if the person opens that conversation again (or the new one fails to
-    start), with the mode then in force. So manual mode stays (_restore), the guard's blocks for that worker are
-    kept for it (blocked), and so are the checks still running for it (away); a call handed to the person, or one
-    whose verdict was kept while the worker was down and isn't a block, is asked about again there."""
-    generation, kept = current.generation + 1, current.kept_auto
-    waiting = tuple(held for held in current.held if held.request is not None)
-    if _remote(global_state):
-      here = _conversation(global_state)  # Still the old one: Mirror's reducer runs after this.
-      blocks = tuple((here, held.call_id, held.tool, held.text, held.deferred[1]) for held in waiting
-                     if held.deferred and held.deferred[0] == 'block')
-      notes = tuple(self.effect(_Dropped(held.call_id, held.tool, held.text, *held.deferred,
-                                         outcome='kept' if held.deferred[0] == 'block' else 'elsewhere'))
-                    for held in waiting if held.deferred)
-      return GoalState(generation=generation, guard_seen=current.guard_seen,
-                       kept_auto=kept or current.prior_mode == 'auto',
-                       blocked=(*current.blocked, *blocks)[-_KEEP_CALLS:],
-                       away=(*current.away, *((here, held) for held in waiting if not held.deferred))[-_KEEP_CALLS:]
-                       ), notes
+    """Another conversation is opening (/clear's new conversation, /resume, /rewind), with a worker of its own: the
+    goal ends, and the calls held or handed back at the old worker go with it, as Mirror ends that worker. The mode
+    the goal switched from is put back once the new conversation has loaded (ReplayFinished): switched now, it would
+    reach the old worker."""
     notes = tuple(self.effect(_Dropped(held.call_id, held.tool, held.text, *held.deferred))
-                  for held in waiting if held.deferred)
-    return GoalState(generation=generation, prior_mode=current.prior_mode, restore=current.prior_mode is not None,
-                     guard_seen=current.guard_seen, kept_auto=kept), notes
+                  for held in current.held if held.request is not None and held.deferred)
+    return GoalState(generation=current.generation + 1, prior_mode=current.prior_mode,
+                     restore=current.prior_mode is not None, guard_seen=current.guard_seen), notes
+
 
   @staticmethod
   def _on_worker_stopped(current: GoalState) -> GoalState:
@@ -2763,10 +2705,9 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     the goal switched from. That goes back once the new worker has started (WorkerStarted, or ReplayFinished if it
     replays the conversation). The guard's verdict for one finds it gone, even if the new worker reuses its id
     (Held.token). Every call the new worker announces is a new request: the guard checks it while a goal is on, and
-    once the mode has gone back, that mode decides it. (WorkerFailed alone changes nothing: the
-    worker's process may still be there, and Mirror stops it before a retry. A remote worker isn't stopped at all:
-    see reduce.)"""
-    return dataclasses.replace(current, asked=frozenset(), blocked=(),
+    once the mode has gone back, that mode decides it. (WorkerFailed alone changes nothing: the worker's process
+    may still be there, and Mirror stops it before a retry.)"""
+    return dataclasses.replace(current, asked=frozenset(),
                                held=tuple(held for held in current.held if held.request is None))
 
   def _on_config(self, global_state: state.State, current: GoalState) -> tuple[GoalState, str | None]:
@@ -2779,7 +2720,7 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     if guard and not was and current.active:
       return self._guard_mode(global_state, current)
     if was and not guard and current.prior_mode is not None:
-      return self._restore(global_state, current)
+      return self._restore(current)
     return current, None
 
   def max_turns(self, global_state: state.State) -> int:
@@ -2813,7 +2754,7 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       after = dataclasses.replace(after, guard_seen=bool(self.setting(global_state, 'guard')))
       return self._guard_mode(global_state, after)
     if before.active and not after.active and after.prior_mode is not None:
-      return self._restore(global_state, after)
+      return self._restore(after)
     return after, None
 
   def _guard_mode(self, global_state: state.State, current: GoalState) -> tuple[GoalState, str | None]:
@@ -2824,24 +2765,16 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       # with an effect that went stale (a resume's "continue", when the goal was replaced before it ran).
       return dataclasses.replace(current, restore=False), 'approve' if guarded and mode != 'approve' else None
     if guarded and mode == 'auto':
-      return dataclasses.replace(current, prior_mode='auto', restore=False, kept_auto=False), 'approve'
-    if guarded and mode == 'approve' and current.kept_auto:
-      # Manual because an earlier goal on this remote workspace kept it: the person's own mode is still auto.
-      return dataclasses.replace(current, prior_mode='auto', restore=False, kept_auto=False), None
+      return dataclasses.replace(current, prior_mode='auto', restore=False), 'approve'
     return current, None
 
   @staticmethod
-  def _restore(global_state: state.State, current: GoalState) -> tuple[GoalState, str | None]:
+  def _restore(current: GoalState) -> tuple[GoalState, str | None]:
     """The ended goal's state, and the mode to switch back to, if it's time."""
-    if _remote(global_state):
-      # Mirror reconnects to a remote worker rather than ending it, so a call can still wait there that the extension
-      # no longer knows of (an answer lost with a connection that broke unnoticed, another conversation's call), and
-      # auto mode would approve it. Manual mode stays; the goal line says so, and F2 switches back.
-      return dataclasses.replace(current, prior_mode=None, restore=False,
-                                 kept_auto=current.kept_auto or current.prior_mode == 'auto'), None
     if _blocking(current):  # Wait for the guard: auto mode would run the held calls unchecked.
       return dataclasses.replace(current, restore=True), None
     return dataclasses.replace(current, prior_mode=None, restore=False), current.prior_mode
+
 
   def _reduce_guard(self, global_state: state.State, current: GoalState, action: object
                     ) -> tuple[GoalState, tuple[effects.CoreEffect | extension.PrivateEffect[_Effect], ...]]:
@@ -2873,29 +2806,12 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
         return dataclasses.replace(current, held=tuple(
           dataclasses.replace(held, deferred=(verdict, reason)) if held.call_id == call_id and held.token == token
           else held for held in current.held)), ()
-      case _Resend(call_id):
-        return current, (effects.SendApprovalDecision(call_id, False, source=_UNSPECIFIED),)
-      case _Unblock(call_id):
-        here = _conversation(global_state)
-        return dataclasses.replace(current, blocked=tuple(
-          item for item in current.blocked if item[0] != here or item[1] != call_id)), ()
-      case _Owe(call_id, token, verdict, reason, now):
-        pair = next((item for item in current.away if item[1].call_id == call_id and item[1].token == token), None)
-        if pair is None:
-          return current, ()
-        conversation, held = pair
-        updated = dataclasses.replace(current, away=tuple(item for item in current.away if item is not pair))
-        if verdict != 'block':
-          return updated, ()
-        entry = (conversation, call_id, held.tool, held.text, reason)
-        return dataclasses.replace(updated, blocked=(*updated.blocked, entry)[-_KEEP_CALLS:]), (
-          (effects.SendApprovalDecision(call_id, False, source=_UNSPECIFIED),) if now else ())
       case _HoldSaved(call_id, tool, text, check):
         updated = dataclasses.replace(current, watch=tuple(item for item in current.watch if item[0] != call_id),
                                       guard_note='guard: checking a call a saved approval covers')
         out: tuple = (effects.SendApprovalDecision(call_id, False, source=_UNSPECIFIED),)
         if check:
-          held = Held(call_id, tool, text, None, False, conversation=_conversation(global_state))
+          held = Held(call_id, tool, text, None, False)
           updated = dataclasses.replace(updated, held=(*updated.held, held), guard_checks=updated.guard_checks + 1)
           out = (*out, self.effect(_Guard(call_id, tool, text, current.goal, _recent(current, call_id), held.token)))
         return updated, out
@@ -2916,34 +2832,19 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
   def _on_request(self, global_state: state.State, current: GoalState, request: actions.ApprovalRequest
                   ) -> tuple[GoalState, tuple]:
     if any(held.call_id == request.call_id and held.request is not None for held in current.held):
-      # Announced again while the guard checks it (a reattached worker announces what it waits on, ahead of an
-      # interrupt queued for it, so this says nothing of an Esc: only InterruptDeclined does).
-      return current, (self.effect(_Hide(request.call_id)),)
+      return current, (self.effect(_Hide(request.call_id)),)  # Announced again while the guard checks it.
     if request.call_id in current.asked:
-      return current, ()  # Handed to the person (the extension shows its prompt with this), or asked about again.
-    here, text = _conversation(global_state), guard_text(request.name, request.args)
-    pair = next((item for item in current.away if item[0] == here and item[1].call_id == request.call_id
-                 and item[1].text == text), None)
-    if pair is not None and self.guarding(global_state, current):
-      # A call of this conversation the guard was checking when it was left: the same call, and the same check. It
-      # approves only as a request made now would (the person may have chosen their mode since). Outside a goal the
-      # call comes to the person, and a late block still reaches its worker (_decide's away branch).
-      approve = pair[1].approve and current.prior_mode == 'auto' and request.call_id not in current.always_ask
-      held = dataclasses.replace(pair[1], request=request, approve=approve)
-      return dataclasses.replace(current, away=tuple(item for item in current.away if item is not pair),
-                                 held=(*current.held, held)), (self.effect(_Hide(request.call_id)),)
-    if any(item[:4] == (here, request.call_id, request.name, text) for item in current.blocked):
-      return current, (self.effect(_Hide(request.call_id)),)  # Its deny is on its way (_on_hitl_request).
-    # Any other call is a new request: one the worker asks about again, whose answer it never got, is checked again
-    # (and a later call reusing an answered call's id is a call of its own).
+      return current, ()  # Handed to the person: the extension shows its prompt with this.
+    # Any other call is a new request (a later call reusing an answered call's id is a call of its own).
     current = dataclasses.replace(current, watch=tuple(item for item in current.watch if item[0] != request.call_id))
     if not self.guarding(global_state, current):
       return current, ()
     # Approving is only ever standing in for the auto mode the person had. In their own manual mode, the guard
     # only adds denials.
     approve = current.prior_mode == 'auto' and request.call_id not in current.always_ask
+    text = guard_text(request.name, request.args)
     if request.name in self.guard_tools(global_state) and _risky(text):
-      held = Held(request.call_id, request.name, text, request, approve, conversation=here)
+      held = Held(request.call_id, request.name, text, request, approve)
       return dataclasses.replace(current, held=(*current.held, held), guard_checks=current.guard_checks + 1), (
         self.effect(_Hide(request.call_id)),
         self.effect(_Guard(request.call_id, request.name, text, current.goal, _recent(current, request.call_id),
@@ -2953,28 +2854,22 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       return current, (effects.SendApprovalDecision(request.call_id, True, source=_UNSPECIFIED),)
     return current, ()
 
+
   @staticmethod
   def _on_mode(current: GoalState, mode: str, guarded: bool = True) -> GoalState:
-    # A manual mode a remote goal kept is the person's now: a goal moves kept_auto into prior_mode before it switches
-    # to manual itself, and never switches a remote workspace to auto, so any change that gets here is theirs.
-    current = dataclasses.replace(current, kept_auto=False)
     if mode == 'auto':
       if not (current.active or _blocking(current)):
         return current  # The goal putting the person's mode back, or no goal.
       # Auto mode mid-goal: the person turned it on, or the goal put it back when the guard setting went off. The
       # worker approves calls itself now, held and handed-back ones included; don't fight it, and don't switch it
-      # back when the goal ends. A block kept while the worker was down is kept for it (it may not get the switch
-      # either, and asks again once Mirror reattaches it).
-      blocks = tuple((held.conversation, held.call_id, held.tool, held.text, held.deferred[1])
-                     for held in current.held if held.request is not None and held.deferred
-                     and held.deferred[0] == 'block')
+      # back when the goal ends.
       return dataclasses.replace(
         current, prior_mode=None, restore=False, held=tuple(held for held in current.held if held.request is None),
-        asked=frozenset(), blocked=(*current.blocked, *blocks)[-_KEEP_CALLS:],
-        guard_note=_GUARD_OFF if current.active and guarded else current.guard_note)
+        asked=frozenset(), guard_note=_GUARD_OFF if current.active and guarded else current.guard_note)
     if current.guard_note == _GUARD_OFF:
       return dataclasses.replace(current, guard_note='')
     return current
+
 
   def _on_verdict(self, global_state: state.State, current: GoalState, verdict: _Verdict) -> tuple[GoalState, tuple]:
     held = self._held(current, verdict.call_id, verdict.token)
@@ -2990,26 +2885,18 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       changes['cleared'] = current.cleared | {held.text}  # The saved approval runs it next time.
     if verdict.outcome == 'ask' and held.request is not None:
       changes['asked'] = current.asked | {held.call_id}  # The worker waits on the person now: see _blocking.
-    if verdict.outcome == 'deny' and held.request is not None:
-      entry = (held.conversation, held.call_id, held.tool, held.text, verdict.reason)
-      changes['blocked'] = (*current.blocked, entry)[-_KEEP_CALLS:]
     updated = dataclasses.replace(current, **changes)
     out: tuple = ()
     if verdict.outcome in ('approve', 'deny'):
       out = (effects.SendApprovalDecision(verdict.call_id, verdict.outcome == 'approve', source=_UNSPECIFIED),)
     if updated.restore and not _blocking(updated):
-      updated, mode = self._restore(global_state, updated)
+      updated, mode = self._restore(updated)
       out = (*out, self.effect(_Mode(mode))) if mode else out
     return updated, out
 
   def _on_resolved(self, global_state: state.State, current: GoalState, call_id: str, approved: bool
                    ) -> tuple[GoalState, tuple]:
     changes: dict = {}
-    here = _conversation(global_state)
-    if any(item[:2] == (here, call_id) for item in current.blocked):  # The worker took the deny.
-      changes['blocked'] = tuple(item for item in current.blocked if item[:2] != (here, call_id))
-    if any(item[0] == here and item[1].call_id == call_id for item in current.away):  # Answered there, by the person.
-      changes['away'] = tuple(item for item in current.away if item[0] != here or item[1].call_id != call_id)
     watched = dict(current.watch).get(call_id)
     if watched is not None:
       changes['watch'] = tuple(item for item in current.watch if item[0] != call_id)
@@ -3023,7 +2910,7 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       changes['asked'] = current.asked - {call_id}
     updated = dataclasses.replace(current, **changes)
     if updated.restore and not _blocking(updated):
-      updated, mode = self._restore(global_state, updated)
+      updated, mode = self._restore(updated)
       return updated, (self.effect(_Mode(mode)),) if mode else ()
     return updated, ()
 
@@ -3036,11 +2923,8 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       resolved = message.hitl_resolved
       current = self.current_state(context)
       watched = dict(current.watch).get(resolved.call_id)
-      here = _conversation(context.get_state())
       if watched is not None or resolved.call_id in current.asked or any(
-          held.call_id == resolved.call_id and held.request is not None for held in current.held) or any(
-          item[:2] == (here, resolved.call_id) for item in current.blocked) or any(
-          item[0] == here and item[1].call_id == resolved.call_id for item in current.away):
+          held.call_id == resolved.call_id and held.request is not None for held in current.held):
         self.dispatch(context, _Resolved(resolved.call_id, resolved.approved))
       if watched is not None and resolved.approved:  # No prompt came, so a saved approval ran it unchecked.
         self.recorder(context)('guard', {'call_id': resolved.call_id, 'command': clip(watched, 4000),
@@ -3054,25 +2938,11 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     global_state, current = context.get_state(), self.current_state(context)
     name, arguments = call.function.name, call.function.arguments
     text = guard_text(name, arguments)
-    here = _conversation(global_state)
-    blocked = next((item for item in current.blocked if item[:2] == (here, call.id)), None)
-    if blocked is not None:
-      if blocked[2:4] != (name, text):
-        # Another call with that id (some providers number calls per response): the deny kept isn't for it.
-        self.dispatch(context, _Unblock(call.id))
-        current = self.current_state(context)
-      else:
-        # The worker never got the deny: it was lost with a connection that broke without Mirror noticing, or kept
-        # for it while it was down or its conversation was left. It goes now, ahead of Mirror's saved approvals and
-        # the prompt (which _on_request hides). A second deny, if the first did arrive, is harmless.
-        self._resend(context, blocked)
-        return
     if getattr(request, 'always_ask', False):  # Mirror 0.1.1+: only a person may approve it.
       self.dispatch(context, _AlwaysAsk(call.id))
       return
     if (not self.guarding(global_state, current) or call.id in current.asked
-        or any(held.call_id == call.id and held.request is not None for held in current.held)
-        or any(item[0] == here and item[1].call_id == call.id and item[1].text == text for item in current.away)):
+        or any(held.call_id == call.id and held.request is not None for held in current.held)):
       return
     if name not in self.guard_tools(global_state) or not _risky(text) or text in current.cleared:
       return
@@ -3095,15 +2965,6 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     json_format.ParseDict({'tool': tool, 'command': clip(text, 4000), **data}, record.extension.data)
     return record
 
-  def _resend(self, context: extension.Context, blocked: tuple[str, str, str, str, str]) -> None:
-    _, call_id, tool, text, reason = blocked
-    # The reason first, on the same ordered queue: the worker is asking about the call, so it's mid-turn, whatever
-    # Mirror's busy flag says.
-    context.enqueue(self._record(tool, text, BLOCKED.format(reason=reason), verdict='block', reason=reason))
-    self.dispatch(context, _Resend(call_id))
-    self.recorder(context)('guard', {'call_id': call_id, 'tool': tool, 'command': clip(text, 4000),
-                                     'verdict': 'block', 'reason': reason, 'outcome': 'deny',
-                                     'outcome_text': GUARD_OUTCOMES['resent'], 'resent': True})
 
   @staticmethod
   def _held(current: GoalState, call_id: str, token: str) -> Held | None:
@@ -3118,10 +2979,9 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
         # The approval prompt is a numbered selector: keystrokes meant for the composer could answer it, and
         # Enter approves. The worker keeps waiting for the guard's answer. Not if the call has been handed to the
         # person since this was queued: its prompt is theirs.
-        current, here = self.current_state(context), _conversation(context.get_state())
-        if call_id not in current.asked and (
-            any(held.call_id == call_id and held.request is not None for held in current.held)
-            or any(item[:2] == (here, call_id) for item in current.blocked)):
+        current = self.current_state(context)
+        if call_id not in current.asked and any(
+            held.call_id == call_id and held.request is not None for held in current.held):
           context.dispatch(actions.ClearApproval(call_id))
       case _Mode(mode):
         self._switch(context, mode)
@@ -3140,10 +3000,12 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
           self.recorder(context)('guard', {'call_id': call_id, 'tool': held.tool, 'command': clip(held.text, 4000),
                                            'verdict': verdict, 'reason': reason, 'outcome': outcome,
                                            'outcome_text': GUARD_OUTCOMES.get(outcome, outcome), 'deferred': True})
-      case _Dropped(call_id, tool, text, verdict, reason, outcome):
+      case _Dropped(call_id, tool, text, verdict, reason):
         self.recorder(context)('guard', {'call_id': call_id, 'tool': tool, 'command': clip(text, 4000),
-                                         'verdict': verdict, 'reason': reason, 'outcome': outcome,
-                                         'outcome_text': GUARD_OUTCOMES[outcome]})
+                                         'verdict': verdict, 'reason': reason, 'outcome': 'dropped',
+                                         'outcome_text': GUARD_OUTCOMES['dropped']})
+      case _Notice(text):
+        context.dispatch(actions.ShowText(text, style='ui.warning'))
 
   def _switch(self, context: extension.Context, mode: str) -> None:
     global_state = context.get_state()
@@ -3243,11 +3105,6 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       # Crashed or cancelled: give the call back to the person rather than leave it hidden.
       if not decided and self._hand_back(context, effect.call_id, effect.token):
         audit('error', 'the guard stopped', 'ask')
-      elif not decided:  # A check for a conversation left: its call is asked about again there.
-        try:
-          self.dispatch(context, _Owe(effect.call_id, effect.token, 'error', 'the guard stopped'))
-        except Exception:  # noqa: BLE001  Shutting down, or this extension was disabled.
-          pass
 
   def _decide(self, context: extension.Context, call_id: str, token: str, verdict: str, reason: str) -> str:
     """Apply the guard's answer, and say what was done (a GUARD_OUTCOMES key). Synchronous, so nothing can
@@ -3255,19 +3112,7 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     current = self.current_state(context)
     held = self._held(current, call_id, token)
     if held is None:
-      pair = next((item for item in current.away if item[1].call_id == call_id and item[1].token == token), None)
-      if pair is None:
-        return 'gone'  # Already answered (an interrupt, or auto mode), or its worker is gone.
-      # Its worker is the one of a conversation left on a remote workspace: it still waits on the call there. If
-      # that conversation is open again, with its worker started, a deny goes now; otherwise when it asks again.
-      global_state = context.get_state()
-      now = pair[0] == _conversation(global_state) and _worker_started(global_state)
-      if verdict == 'block' and now:
-        context.enqueue(self._record(pair[1].tool, pair[1].text, BLOCKED.format(reason=reason), verdict=verdict,
-                                     reason=reason))
-      self.dispatch(context, _Owe(call_id, token, verdict, reason, now))
-      # Anything but a block is the person's there: the call is asked about again, and goes to them.
-      return ('deny' if now else 'kept') if verdict == 'block' else 'elsewhere'
+      return 'gone'  # Already answered (an interrupt, or auto mode), or its worker is gone.
     global_state = context.get_state()
     if held.request is None:  # Denied already, because a saved approval covered it: say what the guard found.
       stands = verdict == 'error' and self.setting(global_state, 'guard_on_error') == 'allow'
@@ -3282,9 +3127,9 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       self.dispatch(context, _Verdict(call_id, 'none', verdict, reason, token))  # The worker approved it itself.
       return 'auto'
     if not _worker_started(global_state):
-      # The worker failed, or Mirror is starting one: an answer sent now could be lost with a closed connection, and a
-      # remote worker still waits on the call once Mirror reconnects. The verdict waits on the hold, and is applied
-      # at WorkerStarted (_on_loaded); a local worker Mirror stops takes the call with it.
+      # The worker failed, or Mirror is starting one: an answer sent now could be lost with a closed connection. The
+      # verdict waits on the hold, and is applied at WorkerStarted (_on_loaded): to a call the new worker announced
+      # during its replay; a worker Mirror stops takes its calls with it.
       self.dispatch(context, _Defer(call_id, token, verdict, reason))
       return 'deferred'
     if verdict == 'block':
@@ -3342,7 +3187,7 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       return ''
     checking = any(held.request is not None and not held.deferred for held in current.held)
     deferred = any(held.request is not None and held.deferred for held in current.held)
-    if current.restore and current.prior_mode:  # On this machine: the mode comes back by itself.
+    if current.restore and current.prior_mode:
       if deferred:
         return f"{current.prior_mode} mode comes back once Mirror's worker has started again"
       if checking:
@@ -3351,19 +3196,6 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
         return (f'{current.prior_mode} mode comes back once you answer the call you were asked about · F2 now '
                 'would approve it')
       return ''
-    if not (_remote(global_state) or current.kept_auto):
-      return ''
-    waiting = ('the guard is checking a call' if checking
-               else "a call waits for Mirror's worker to start again" if deferred
-               else 'a call you were asked about waits' if current.asked
-               else 'the guard is checking a call of a conversation you left' if current.away
-               else 'a call the guard blocked may still wait at a worker' if current.blocked
-               else '')
-    if waiting:
-      return f'{waiting} · F2 now would approve it'
-    if current.kept_auto:
-      return ('manual mode kept on this remote workspace (Mirror saved it: it stays after a restart) · F2 for auto, '
-              'which also approves any call still waiting at a worker')
     return ''
 
   @override
