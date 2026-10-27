@@ -73,3 +73,13 @@ test('the page links nowhere outside the site', () => {
     assert.ok(!text.includes('://'), 'a URL in the Said & Done package');
   }
 });
+
+test('Checked /goal ships the files its install section links, with no real home folder in them', () => {
+  const page = JSON.parse(read('static/checked-goal/content.json'));
+  for (const f of page.install.files) assert.ok(existsSync(join(root, 'static/checked-goal', f)), `static/checked-goal/${f} is missing`);
+  for (const f of page.install.files) {
+    // The README's generic example (/Users/you/.aws) and the guard's pattern (/Users/[^/\s]+) are the only ones allowed.
+    const homes = read(join('static/checked-goal', f)).match(/\/Users\/(?!you\/|\[\^)[^\s/`'")]*/g);
+    assert.equal(homes, null, `a home folder in static/checked-goal/${f}`);
+  }
+});

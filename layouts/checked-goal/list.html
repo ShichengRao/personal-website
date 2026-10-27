@@ -9,11 +9,18 @@
 .cg-checks{list-style:none;padding:0;margin:4px 0 0;display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:start;font-size:14px;color:var(--ink)}
 .cg-checks li{display:contents}
 .cg-kind{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;padding:2px 7px;background:var(--accent-soft);color:var(--accent);max-width:10em;justify-self:start;margin-top:2px}
-.cg-limits code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 5px;border-radius:5px}
+.cg-steps{counter-reset:s;list-style:none;padding:0;margin:8px 0 0;display:grid;gap:12px;max-width:46rem}
+.cg-steps li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start;color:var(--ink2)}
+.cg-steps li::before{content:counter(s);width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:650;display:flex;align-items:center;justify-content:center;font-size:14px}
+.cg-steps code,.cg-limits code,.pj-note code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 5px;border-radius:5px}
 .cg-limits{padding-left:20px;max-width:46rem;color:var(--ink2)}
 .cg-limits li{margin:6px 0}
 .cg-caveats{padding-left:20px;max-width:46rem;color:var(--ink2);font-size:15px}
 .cg-ev h3{margin-top:28px}
+.pj .cg-files{margin:22px 0 0;color:var(--ink2);max-width:46rem}
+.cg-files+.pj-label{margin-top:22px}
+details.cg-src summary{cursor:pointer;font-weight:600;color:var(--ink2);margin-top:20px}
+details.cg-src pre{max-height:520px;overflow:auto}
 </style>
 {{ end }}
 {{ define "header" }}{{ partial "project/header.html" . }}{{ end }}
@@ -48,7 +55,7 @@
   <section class="pj-sec">
     <p class="pj-eyebrow">Before and after</p>
     <h2>The same task, with and without the checks</h2>
-    <div class="pj-read"><p>Real runs from the benchmark's harness, quoted as they happened. On the left, Beam on its own; on the right, the same task with the checks. The harness also ran the guard, which the published extension doesn't include yet, so where the guard acts below, the extension wouldn't.</p></div>
+    <div class="pj-read"><p>Real runs from the benchmark's harness, quoted as they happened. On the left, Beam on its own; on the right, the same task with the checks. The harness ran its own guard; the extension's guard does the same job through Mirror's approval prompts.</p></div>
     <div id="cg-examples"></div>
   </section>
 
@@ -63,8 +70,15 @@
 
   <section class="pj-sec">
     <p class="pj-eyebrow">Try it</p>
-    <h2>Not yet</h2>
-    <div class="pj-read"><p>The extension's source will be posted once a known bug is fixed: its verifier can change files in the real workspace and reach the network. It's a prototype, with only a few live Mirror runs so far (see the limits below).</p></div>
+    <h2>Install</h2>
+    <p class="pj-note">It's a prototype, with only a few live Mirror runs so far (see the limits below).</p>
+    <ol class="cg-steps" id="cg-steps"></ol>
+    <p class="cg-files"><a href="/checked-goal/extension.py" download>Download extension.py</a> · <a href="/checked-goal/README.md">Its README</a>, on the sandbox, the guard, and the live runs</p>
+    <p class="pj-label" style="margin-top:22px">Settings, with their defaults</p>
+    <div class="pj-mono" id="cg-settings"></div>
+    <p class="pj-note">They go under the extension's entry in <code>~/.mirror/config.json</code>.</p>
+    <p class="pj-note" id="cg-uses"></p>
+    <details class="cg-src"><summary>Read the extension's source</summary><pre class="pj-mono" id="cg-source">Loading…</pre></details>
   </section>
 
   <section class="pj-sec">
@@ -154,11 +168,21 @@ function render(c){
   var cv=e.honest_caveats||[];
   $("cg-caveats-h").textContent="Read these with "+(["no","one","two","three","four","five","six","seven"][cv.length]||cv.length)+" caveat"+(cv.length===1?"":"s");
   cv.forEach(function(t){$("cg-caveats").appendChild(el("li",{text:t}));});
+  var ins=c.install||{};
+  (ins.steps||[]).forEach(function(s){$("cg-steps").appendChild(el("li",null,[el("span",null,rich(s))]));});
+  /* As config.json takes them: the package gives list settings as "20, 40", which the extension reads as a list. */
+  function setting(v){return typeof v==="string"&&v.indexOf(", ")>0?"["+v.split(", ").map(function(x){return /^\d+$/.test(x)?x:JSON.stringify(x);}).join(", ")+"]":JSON.stringify(v);}
+  $("cg-settings").textContent=Object.keys(ins.settings||{}).map(function(k){return JSON.stringify(k)+": "+setting(ins.settings[k]);}).join(",\n");
+  $("cg-uses").textContent=ins.uses||"";
   (c.limits||[]).forEach(function(t){$("cg-limits").appendChild(el("li",null,rich(t)));});
   $("cg-source-note").textContent="Numbers: "+(c.numbers_source||"Said & Done benchmark runs").replace(/\.$/,"")+".";
 }
 fetch("/checked-goal/content.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
   .catch(function(err){$("cg-story").appendChild(el("p",{cls:"pj-pending",text:"The page's content didn't load ("+err.message+")."}));});
+document.querySelector("details.cg-src").addEventListener("toggle",function(){
+  var pre=$("cg-source");if(pre.dataset.loaded)return;pre.dataset.loaded=1;
+  fetch("/checked-goal/extension.py",{cache:"no-cache"}).then(function(r){return r.text();}).then(function(t){pre.textContent=t;});
+});
 })();
 </script>
 {{ end }}

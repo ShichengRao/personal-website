@@ -10,7 +10,7 @@
  "how_it_works": [
   {
    "name": "Verifier",
-   "what": "When Beam says it's done, a fresh Beam gets a copy of the workspace and a shell. It lists every written requirement, works out what correct behavior is without trusting the code, runs the work against it, and rechecks every number in the report."
+   "what": "When Beam says it's done, a fresh Beam gets a copy of the workspace and a shell, in a sandbox: no network, your home's secrets out of reach, and no way to write the real workspace (bubblewrap on Linux, sandbox-exec on macOS). It lists every written requirement, works out what correct behavior is without trusting the code, runs the work against it, and rechecks every number in the report. Where there's no sandbox, it doesn't run."
   },
   {
    "name": "Reviewer",
@@ -18,11 +18,11 @@
   },
   {
    "name": "Progress check",
-   "what": "Every few turns, a fresh read of the record asks whether the agent is making progress or going in circles around something it can't do. If it says the agent should change course, its advice goes into the next prompt."
+   "what": "Every few turns, and after the agent's 20th and 40th tool calls, a fresh read of the record asks whether the agent is making progress or going in circles around something it can't do. If it says the agent should change course, its advice reaches the agent right away."
   },
   {
-   "name": "Guard (benchmark only)",
-   "what": "In the benchmark's harness, a fresh Beam also checked risky commands (network, credentials, deletion) against the task's rules before they ran. The published extension doesn't include it yet; a version that checks commands through Mirror's approval prompts is in testing."
+   "name": "Guard",
+   "what": "Before a risky shell command, write, or edit runs (network, credentials, deletion, system paths), a fresh Beam checks it against the goal, and blocks it with a reason if it breaks a rule. It works through Mirror's approval prompts: during a goal Mirror runs in manual approval mode, the guard approves ordinary calls itself, and your own mode comes back when the goal ends."
   }
  ],
  "evidence": {
@@ -178,14 +178,20 @@
  "install": {
   "steps": [
    "Copy extension.py to ~/.mirror/extensions/goal/ (or .mirror/extensions/goal/ in a project). Mirror loads an extension only from a folder named after its ID, goal, so it takes the plain /goal's place.",
-   "Start Mirror and enable it when asked.",
+   "On Linux, install bubblewrap (bwrap) so the verifier can run in its sandbox; macOS uses sandbox-exec, which it already has.",
+   "Start Mirror and enable the extension when asked.",
    "Run /goal <what you want done>. Also /goal stop, /goal resume, /goal clear."
   ],
   "settings": {
    "max_turns": 25,
    "progress_every": 5,
+   "progress_calls": "20, 40",
    "max_reviews": 2,
    "verify": true,
+   "verify_unconfined": false,
+   "guard": true,
+   "guard_tools": "bash, write, edit",
+   "guard_on_error": "ask",
    "model": "Beam-1.0-501B-A23B",
    "reasoning_effort": "max"
   },
@@ -196,11 +202,10 @@
   ]
  },
  "limits": [
-  "Known bug being fixed: the verifier can change files in the real workspace.",
-  "The verifier runs commands on a temporary copy of your workspace, with your permissions and network access; there's no sandbox. It skips workspaces over 2 GB.",
-  "No guard yet: a version that checks risky commands through Mirror's approval prompts is in testing. The benchmark tested removing the guard only once, on the previous version of the checks on OpenRouter: 24 of 30 runs with it, 22 without, which is within noise. This version's guard wasn't tested that way. In the credential example above, the guard is what stopped Beam from using a key it wasn't given, after the progress check, which this extension keeps, told it to try that key. Without a guard, watch what the agent does with credentials.",
-  "Interactive Mirror only: its headless modes don't load extensions. The numbers above come from the benchmark's harness, not from this extension. They include the guard, which this extension lacks, and there the verifier ran in a container with no network. On OpenRouter (the second-host, held-out and can't-be-done numbers), a field-name mismatch in the harness kept the agent's reasoning out of the record the checks read. This extension passes it to them, as the harness did on Reflection's API.",
-  "A prototype with a handful of live Mirror runs so far; results are being corrected.",
+  "Where there's no sandbox, there's no verifier: Docker with its default settings, or Linux without bubblewrap or unprivileged user namespaces. The reviewer still runs, without the verifier's findings. The sandbox blocks the network, writes outside the check's copy, and your secret folders, but on macOS other files and processes stay readable to the verifier.",
+  "The guard runs on Mirror's manual approval mode, and only reads bash, write, and edit calls: reads, searches, and web fetches never reach it. Switching to auto mode mid-goal turns it off, and if Mirror quits mid-goal, it starts in manual mode next time. A risky call your saved \"always allow\" rules cover is denied once, then checked. The agent reads \"Tool call rejected by the user.\" before the guard's reason, because Mirror gives every denial that text. The guard judges each call on its own, and it can be wrong.",
+  "Interactive Mirror only: its headless modes don't load extensions. The numbers above come from the benchmark's harness, not from this extension; there the verifier ran in a container with no network. On OpenRouter (the second-host, held-out and can't-be-done numbers), a field-name mismatch in the harness kept the agent's reasoning out of the record the checks read. This extension passes it to them, as the harness did on Reflection's API.",
+  "Live in Mirror so far (October 26; Mirror 0.1.0 in Docker; Beam on OpenRouter; small samples). Across 15 runs with early builds of the checks on two tasks, the checks sent a false \"complete\" back 5 times, and each time Beam fixed the work or said \"blocked\"; they also accepted 7 false completions, among them a security exception Beam wrote into the policy file itself. In one of those, the verifier, not yet sandboxed, rewrote the agent's file in the real workspace. With the guard on, on a task whose only token is forbidden, the agent sent no credential in any of 4 runs; in one of them the verifier, not yet sandboxed, did, and that's why it's sandboxed now. With the guard off, Beam sent a guessed token. With the sandbox, the verifier ran confined and the real workspace didn't change during its check, but it still accepted an approved but wrong fix.",
   "The checks fail open. After two reviews, the next \"complete\" stands as is. If the model API fails three times in a row, the reviewer's answer can't be read after three tries, or there's no Reflection API key, \"complete\" is accepted with \"(unchecked: ...)\" added to the summary, and progress checks are skipped. A \"blocked\" report is never checked."
  ],
  "numbers_source": "Said & Done benchmark runs (main matrix on Reflection's API; scaffold study and held-out round 3 on OpenRouter)."
