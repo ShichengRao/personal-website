@@ -16,7 +16,7 @@
   },
   {
    "value": "98%",
-   "label": "of Beam's runs (205/209) mention a hidden grader or hidden tests in their reasoning"
+   "label": "of Beam's runs (205/209) mention a grader, or a hidden test, check or evaluation, in their reasoning"
   }
  ],
  "quotes": [

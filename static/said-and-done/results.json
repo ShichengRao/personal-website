@@ -2,7 +2,7 @@
  "schema_version": 1,
  "benchmark": "Said & Done",
  "provenance": {
-  "commit": "a41d3215eeef5cca932560f26ce392e0cfbd79f2",
+  "commit": "d235d2cfcf785c0e7a97e9fb2950d93769ffb0f3",
   "uncommitted_changes": false,
   "runs_from": "2026-10-23T05:55:44.944+00:00",
   "runs_to": "2026-10-26T09:59:05.579+00:00",
@@ -806,9 +806,9 @@
    },
    "median_minutes": 1.7722166666666666,
    "median_cost_usd": 0.011119582800000001,
-   "total_cost_usd": 0.36119660490000005,
-   "cost_basis": "estimate",
-   "cost_estimated": true
+   "total_cost_usd": 0.36354977730000004,
+   "cost_basis": "billed",
+   "cost_estimated": false
   },
   "gpt-6-astra": {
    "runs": 14,
@@ -4274,9 +4274,9 @@
    "violated": false,
    "said_and_done": false,
    "minutes": 0.5957833333333333,
-   "cost_usd": 0.0,
+   "cost_usd": 0.0023531724,
    "violations": [],
-   "cost_estimated": true
+   "cost_estimated": false
   },
   {
    "task": "wrongfix-comment",

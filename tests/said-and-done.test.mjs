@@ -44,6 +44,50 @@ test('results match the schema the page reads', () => {
   for (const q of excerpts.excerpts) assert.ok(configs.has(q.config) && tasks.has(q.task), `excerpt ${q.task}/${q.config}`);
 });
 
+test('published rates and costs recompute from the scored rows', () => {
+  // Arithmetic checks complement the separate audit against original run evidence.
+  const near = (actual, expected, label) => {
+    if (expected === null) return assert.equal(actual, null, label);
+    assert.ok(Number.isFinite(actual) && Math.abs(actual - expected) < 1e-10, `${label}: ${actual} != ${expected}`);
+  };
+  const rate = (rows, predicate) => rows.length ? rows.filter(predicate).length / rows.length : null;
+  const median = (xs) => {
+    const ys = xs.filter((v) => v !== null).sort((a, b) => a - b), m = Math.floor(ys.length / 2);
+    return ys.length ? ys.length % 2 ? ys[m] : (ys[m - 1] + ys[m]) / 2 : null;
+  };
+  const keys = results.runs.map((r) => `${r.task}/${r.config_id}/${r.seed}`);
+  assert.equal(new Set(keys).size, keys.length, 'duplicate run in published results');
+  for (const c of results.configs) {
+    const rows = results.runs.filter((r) => r.scored && r.config_id === c.id), s = results.summary[c.id];
+    assert.equal(s.runs, rows.length, `${c.id}: denominator`);
+    for (const r of rows) assert.equal(r.said_and_done, r.done && r.truthful === true && !r.violated);
+    for (const key of ['said_and_done', 'done']) near(s[key], rate(rows, (r) => r[key]), `${c.id}: ${key}`);
+    near(s.truthful, rate(rows.filter((r) => r.outcome === 'complete' || r.outcome === 'blocked'), (r) => r.truthful), `${c.id}: truthful`);
+    near(s.false_completion_of_completes, rate(rows.filter((r) => r.outcome === 'complete'), (r) => r.code === 'F'), `${c.id}: false complete`);
+    near(s.false_completion_of_runs, rate(rows, (r) => r.code === 'F'), `${c.id}: false per run`);
+    near(s.violation_rate, rate(rows, (r) => r.violated), `${c.id}: violations`);
+    near(s.median_minutes, median(rows.map((r) => r.minutes)), `${c.id}: median minutes`);
+    near(s.median_cost_usd, median(rows.map((r) => r.cost_usd)), `${c.id}: median cost`);
+    near(s.total_cost_usd, rows.reduce((n, r) => n + (r.cost_usd ?? 0), 0), `${c.id}: total cost`);
+    assert.equal(s.cost_estimated, rows.some((r) => r.cost_estimated), `${c.id}: cost basis`);
+    for (const family of results.families) {
+      const subset = rows.filter((r) => r.family === family.id);
+      if (subset.length) near(results.by_family[family.id][c.id], rate(subset, (r) => r.said_and_done), `${c.id}/${family.id}`);
+    }
+  }
+});
+
+test('quiz runs identify their prompt condition and the tally matches the answers', () => {
+  const quiz = JSON.parse(read('static/spot-the-false-completion/content.json'));
+  const keys = quiz.items.map((item) => {
+    assert.ok(item.config_id && item.setup_label, `quiz item ${item.n}: missing run condition`);
+    return `${item.task}/${item.config_id}/${item.seed}`;
+  });
+  assert.equal(new Set(keys).size, keys.length, 'quiz run identities are ambiguous');
+  assert.equal(quiz.tally.done, quiz.items.filter((item) => item.answer.accept).length);
+  assert.equal(quiz.tally.not_acceptable, quiz.items.filter((item) => !item.answer.accept).length);
+});
+
 test('the headline setups named in the front matter are in the results', () => {
   const line = read('content/said-and-done/_index.md').match(/^highlights:\s*(\[.*\])\s*$/m);
   assert.ok(line, 'content/said-and-done/_index.md has no highlights');

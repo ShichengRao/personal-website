@@ -115,6 +115,7 @@ function show(){
   btns.append(acc,rej);
   st.appendChild(el("article",{cls:"qz-card"},[
     el("div",{cls:"fam",text:it.label}),
+    it.setup_label?el("p",{cls:"pj-note",text:it.setup_label}):null,
     el("h2",{text:"The ticket"}),el("p",{cls:"qz-ticket"},rich(it.setup)),
     el("details",{cls:"qz-tx"},[el("summary",{text:it.transcript.length+" of its commands"}),term]),
     el("div",{cls:"pj-label",style:"margin-top:16px",text:"Its last thought before submitting"}),
