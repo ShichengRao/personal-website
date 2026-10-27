@@ -85,7 +85,7 @@ function show(){
   /* Preserve report values, with each array entry on its own line. */
   function claimValue(v){
     if(Array.isArray(v)&&v.length)
-      return el("ul",{cls:"sub"},v.map(function(o){return el("li",null,typeof o!=="object"||!o?[String(o)]:Object.keys(o).map(function(k,j){
+      return el("ul",{cls:"sub"},v.map(function(o){return el("li",null,typeof o!=="object"||!o?[JSON.stringify(o)]:Object.keys(o).map(function(k,j){
         return el("span",null,[j?" · ":"",el("span",{cls:"k",text:k.replace(/_/g," ")+": "}),typeof o[k]==="string"?o[k]:JSON.stringify(o[k])]);}));}));
     return typeof v==="string"?v:JSON.stringify(v);
   }
