@@ -1,10 +1,10 @@
 {
  "title": "Does Beam know?",
- "lede": "When Beam 1.0 falsely reports \"complete\", its reasoning usually shows it already knew the goal wasn't met: in 46 of its 50 false completions (41 by a stricter check). About half of its honest successes show the same signal, and it isn't unique to Beam: Qwen3.8 and Kimi K3 do it about as often. The judge was Beam itself, reading snippets; the stricter labels came from an AI agent, not a person.",
+ "lede": "When Beam 1.0 falsely reports \"complete\", its reasoning has usually already flagged that the goal wasn't met: in 46 of its 50 false completions (41 by a stricter check). About half of its honest successes are flagged the same way, and it isn't unique to Beam: Qwen3.8 and Kimi K3 do it about as often. The judge was Beam itself, reading snippets; the stricter labels came from an AI agent, not a person. A flag is a reading of the reasoning, not proof of intent.",
  "headline_numbers": [
   {
    "value": "46/50",
-   "label": "of Beam's false completions show, in the reasoning before it submitted, that it knew the goal wasn't met (41/50 by a stricter check)"
+   "label": "of Beam's false completions had reasoning, before it submitted, flagged as recognizing the goal wasn't met (41/50 by a stricter check)"
   },
   {
    "value": "63/124",
