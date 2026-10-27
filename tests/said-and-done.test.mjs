@@ -74,8 +74,13 @@ test('the page links nowhere outside the site', () => {
   }
 });
 
-test('Checked /goal ships the files its install section links, with no real home folder in them', () => {
+test('Checked /goal ships the files its install section links, with no real home folder in them, or none while held', () => {
   const page = JSON.parse(read('static/checked-goal/content.json'));
+  // While the download is held (extension_held in its front matter), the page links none of them and the site ships none.
+  if (/^extension_held:\s*true\s*$/m.test(read('content/checked-goal/_index.md'))) {
+    for (const f of page.install.files) assert.ok(!existsSync(join(root, 'static/checked-goal', f)), `static/checked-goal/${f} ships while the extension is held`);
+    return;
+  }
   for (const f of page.install.files) assert.ok(existsSync(join(root, 'static/checked-goal', f)), `static/checked-goal/${f} is missing`);
   for (const f of page.install.files) {
     // The README's generic example (/Users/you/.aws) and the guard's pattern (/Users/[^/\s]+) are the only ones allowed.
