@@ -70,6 +70,10 @@ details.cg-src pre{max-height:520px;overflow:auto}
 
   <section class="pj-sec">
     <p class="pj-eyebrow">Try it</p>
+    {{- if .Params.extension_held }}
+    <h2>Coming soon</h2>
+    <div class="pj-read"><p>The extension's source and install steps will be posted once an independent security review of its latest build is done and its fixes are tested. It's a prototype, with only a few live Mirror runs so far (see the limits below).</p></div>
+    {{- else }}
     <h2>Install</h2>
     <p class="pj-note">It's a prototype, with only a few live Mirror runs so far (see the limits below).</p>
     <ol class="cg-steps" id="cg-steps"></ol>
@@ -79,6 +83,7 @@ details.cg-src pre{max-height:520px;overflow:auto}
     <p class="pj-note">They go under the extension's entry in <code>~/.mirror/config.json</code>.</p>
     <p class="pj-note" id="cg-uses"></p>
     <details class="cg-src"><summary>Read the extension's source</summary><pre class="pj-mono" id="cg-source">Loading…</pre></details>
+    {{- end }}
   </section>
 
   <section class="pj-sec">
@@ -168,18 +173,21 @@ function render(c){
   var cv=e.honest_caveats||[];
   $("cg-caveats-h").textContent="Read these with "+(["no","one","two","three","four","five","six","seven"][cv.length]||cv.length)+" caveat"+(cv.length===1?"":"s");
   cv.forEach(function(t){$("cg-caveats").appendChild(el("li",{text:t}));});
-  var ins=c.install||{};
+  var ins=$("cg-steps")?c.install||{}:{};
   (ins.steps||[]).forEach(function(s){$("cg-steps").appendChild(el("li",null,[el("span",null,rich(s))]));});
   /* As config.json takes them: the package gives list settings as "20, 40", which the extension reads as a list. */
   function setting(v){return typeof v==="string"&&v.indexOf(", ")>0?"["+v.split(", ").map(function(x){return /^\d+$/.test(x)?x:JSON.stringify(x);}).join(", ")+"]":JSON.stringify(v);}
-  $("cg-settings").textContent=Object.keys(ins.settings||{}).map(function(k){return JSON.stringify(k)+": "+setting(ins.settings[k]);}).join(",\n");
-  $("cg-uses").textContent=ins.uses||"";
+  if($("cg-settings")){
+    $("cg-settings").textContent=Object.keys(ins.settings||{}).map(function(k){return JSON.stringify(k)+": "+setting(ins.settings[k]);}).join(",\n");
+    $("cg-uses").textContent=ins.uses||"";
+  }
   (c.limits||[]).forEach(function(t){$("cg-limits").appendChild(el("li",null,rich(t)));});
   $("cg-source-note").textContent="Numbers: "+(c.numbers_source||"Said & Done benchmark runs").replace(/\.$/,"")+".";
 }
 fetch("/checked-goal/content.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
   .catch(function(err){$("cg-story").appendChild(el("p",{cls:"pj-pending",text:"The page's content didn't load ("+err.message+")."}));});
-document.querySelector("details.cg-src").addEventListener("toggle",function(){
+var src=document.querySelector("details.cg-src");
+if(src)src.addEventListener("toggle",function(){
   var pre=$("cg-source");if(pre.dataset.loaded)return;pre.dataset.loaded=1;
   fetch("/checked-goal/extension.py",{cache:"no-cache"}).then(function(r){return r.text();}).then(function(t){pre.textContent=t;});
 });
