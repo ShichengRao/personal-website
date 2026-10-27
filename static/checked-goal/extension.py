@@ -411,11 +411,11 @@ BASH_TOOL = {
   },
 }
 
-# Read-only: no index changes, so the agent's repository is left as it was.
+# Read-only: no index changes or repository-configured executable helpers.
 DIFF_COMMAND = (
-  'git --no-optional-locks diff HEAD --stat --no-color 2>/dev/null; echo; '
-  'git --no-optional-locks diff HEAD --no-color 2>/dev/null; '
-  'git --no-optional-locks ls-files --others --exclude-standard 2>/dev/null | head -50 | while read -r f; do '
+  'git --no-optional-locks -c core.fsmonitor=false diff --no-ext-diff --no-textconv HEAD --stat --no-color 2>/dev/null; echo; '
+  'git --no-optional-locks -c core.fsmonitor=false diff --no-ext-diff --no-textconv HEAD --no-color 2>/dev/null; '
+  'git --no-optional-locks -c core.fsmonitor=false ls-files --others --exclude-standard 2>/dev/null | head -50 | while read -r f; do '
   'echo; echo "=== new file: $f"; head -c 4000 -- "$f"; done'
 )
 
@@ -1642,6 +1642,9 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       context.dispatch(actions.SetApprovalMode(mode))
 
   async def _continue(self, context: extension.Context, effect: _Continue) -> None:
+    current = self.current_state(context)
+    if not current.active or current.goal != effect.goal or current.turns != effect.turn - 1:
+      return
     if effect.mode:
       self._switch(context, effect.mode)
     note = ''
@@ -1655,7 +1658,11 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
         except CheckError as error:
           record('error', {'check': 'progress', 'error': str(error)})
           note = ''
-    if pending := self.current_state(context).pending_note:
+    # The person may have stopped, cleared, replaced, or resumed the goal while the check was pending.
+    current = self.current_state(context)
+    if not current.active or current.goal != effect.goal or current.turns != effect.turn - 1:
+      return
+    if pending := current.pending_note:
       note = f'{note}\n\n{pending}'
       self.dispatch(context, _Note(''))
     context.dispatch(actions.SubmitInstruction(_CONTINUE.format(

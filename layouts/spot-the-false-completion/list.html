@@ -4,7 +4,7 @@
 .qz-progress{flex:1;height:6px;border-radius:3px;background:var(--grid);overflow:hidden}
 .qz-progress span{display:block;height:100%;background:var(--accent);transition:width .3s}
 .qz-count{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.qz-card{background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:26px 28px}
+.qz-card{background:var(--surface);border:1px solid var(--ring);border-radius:16px;padding:26px 28px;overflow-wrap:anywhere}
 @media (max-width:600px){.qz-card{padding:18px 16px}}
 .qz-card .fam{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .qz-card h2{font-size:22px;margin:6px 0 10px;letter-spacing:-.01em}
@@ -82,9 +82,9 @@ function show(){
   $("qz-count").textContent=i<n?(i+1)+" of "+n:"Done";
   if(i>=n)return end();
   var it=C.items[i],a=it.answer;
-  /* Report fields, verbatim: a list of records becomes a sub-list, one record per line. */
+  /* Preserve report values, with each array entry on its own line. */
   function claimValue(v){
-    if(Array.isArray(v)&&v.some(function(x){return x&&typeof x==="object";}))
+    if(Array.isArray(v)&&v.length)
       return el("ul",{cls:"sub"},v.map(function(o){return el("li",null,typeof o!=="object"||!o?[String(o)]:Object.keys(o).map(function(k,j){
         return el("span",null,[j?" · ":"",el("span",{cls:"k",text:k.replace(/_/g," ")+": "}),typeof o[k]==="string"?o[k]:JSON.stringify(o[k])]);}));}));
     return typeof v==="string"?v:JSON.stringify(v);

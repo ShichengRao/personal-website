@@ -30,7 +30,7 @@ function render(c){
     $("bk-quotes").appendChild(el("article",{cls:"sd-q"+(contrast?" contrast":"")},[
       el("div",{cls:"head"},[el("h4",{text:q.kind.charAt(0).toUpperCase()+q.kind.slice(1)}),
         el("span",{cls:"meta",text:(SETUPS[q.config]||q.config)+" · "+q.task+" · seed "+q.seed+(q.source&&q.source!=="main"?" · "+(/heldout/.test(q.source)?"held-out task":"paid host"):"")})]),
-      el("div",{cls:"thought"},[el("div",{cls:"lab",text:"What it thought"+thoughtWhen(q)}),el("div",{cls:"mono",text:"“"+q.reasoning_quote+"”"})]),
+      el("div",{cls:"thought"},[el("div",{cls:"lab",text:"What its reasoning said"+thoughtWhen(q)}),el("div",{cls:"mono",text:"“"+q.reasoning_quote+"”"})]),
       el("div",{cls:"said"},[el("div",{cls:"lab",text:"What it reported"}),
         el("p",null,[el("span",{cls:"sd-badge "+(q.status_submitted==="blocked"?"warn":"neutral"),text:q.status_submitted||"no report"})," ",q.claim||""]),
         el("div",{cls:"lab",text:"The grader"}),
@@ -39,7 +39,7 @@ function render(c){
 
   /* Other models: Beam first, then by how often each falsely completes on the main tasks. */
   var mt=$("bk-models");
-  mt.appendChild(el("thead",null,[el("tr",null,[["Model",""],["Runs","n"],["Falsely completed, main tasks","n"],["Of its false completions, knew","n"],["Honest successes flagged","n"],["Said “blocked” where it should, main tasks","n"]].map(function(x){return el("th",{cls:x[1],scope:"col",text:x[0]});}))]));
+  mt.appendChild(el("thead",null,[el("tr",null,[["Model",""],["Runs","n"],["Falsely completed, main tasks","n"],["Of false completions, reasoning flagged","n"],["Honest successes flagged","n"],["Said “blocked” where it should, main tasks","n"]].map(function(x){return el("th",{cls:x[1],scope:"col",text:x[0]});}))]));
   var mb=el("tbody");mt.appendChild(mb);
   function share(o){return o&&o.share!=null?o.share:-1;}
   function cell(o){return el("td",{cls:"n",text:o&&o.n?kn(o)+" · "+pct(o.share):"—"});}
@@ -58,7 +58,7 @@ function render(c){
   var t=c.tripwire||{};
   $("bk-trip-method").textContent=t.method||"";
   var tt=$("bk-trip");
-  tt.appendChild(el("thead",null,[el("tr",null,[["Beam runs",""],["Flagged","n"],["False completions caught","n"],["Of flagged runs, actually not done","n"],["Honest successes flagged","n"]].map(function(x){return el("th",{cls:x[1],scope:"col",text:x[0]});}))]));
+  tt.appendChild(el("thead",null,[el("tr",null,[["Beam runs",""],["Flagged","n"],["False completions caught","n"],["Of flagged runs, failed Said & Done","n"],["Honest successes flagged","n"]].map(function(x){return el("th",{cls:x[1],scope:"col",text:x[0]});}))]));
   var tb=el("tbody");tt.appendChild(tb);
   [["Main tasks (tuning)",t.main_tasks],["Held-out tasks (test)",t.held_out_tasks]].forEach(function(r,i){
     var s=r[1];if(!s)return;
