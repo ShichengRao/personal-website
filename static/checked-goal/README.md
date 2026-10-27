@@ -15,7 +15,8 @@ acting conversation does. This extension adds four, each a fresh call to the mod
   [How the verifier is confined](#how-the-verifier-is-confined)).
 - **Reviewer:** it reads the goal, the record (with the agent's reasoning), the diff, and the verifier's findings.
   Then it accepts, or sends concrete problems back: the agent fixes the work, corrects its report, or says
-  "blocked". At most two reviews per goal.
+  "blocked". At most two reviews per goal. Its diff is computed without running any command the repository
+  configures, and without following symlinks (see [The reviewer's diff](#the-reviewers-diff)).
 - **Progress check:** after the agent's 20th and 40th tool calls, and every 5 turns, a fresh read of the record
   says whether the agent is making progress or going in circles around something it can't do. If it says the
   agent should change course, its advice reaches the agent at once, mid-turn, or in the next "continue" prompt
@@ -138,11 +139,50 @@ extension's own included, not counting a replayed history) and runs the check af
 `progress_calls`, as well as every `progress_every` turns. A check after a number of tool calls reads the record
 while the agent keeps working. If it says the agent should change course, its note goes to the agent the way the
 guard's reasons do: as a message the model reads in the same turn, right after a tool's result. If the turn has
-ended by then, the note goes into the next "continue" prompt. Its record (`check.progress`) says what set it off
+ended by then, the note goes into the next "continue" prompt. If you stop, clear, replace, or resume the goal while
+a check runs, its note is dropped, and so is the "continue" it was for: only the goal running now gets one. Its record (`check.progress`) says what set it off
 (`trigger` `tool_calls`, with the count, or `turns`), and the screen shows, for example, "◎ Progress check
 (after 20 tool calls): on track." The prompt is the one the turn-based check uses (scaffold v4's, with the budget
 in turns); after a number of tool calls, it counts the turn under way as used. `/goal resume` starts the count
 again.
+
+## The reviewer's diff
+
+The reviewer reads the agent's changes in the shape `git diff HEAD --stat`, `git diff HEAD`, and a look at each
+untracked file gave: a summary, each changed file's diff against the repository's current HEAD, then each untracked
+file that isn't ignored, with its first 4,000 bytes. But `git diff` and `git status` run commands the repository
+can configure in its own `.git/config`: the clean filter and textconv driver `.gitattributes` names for a changed
+file, an external diff program, and the fsmonitor hook. A planted clean filter ran even under
+`git diff --no-ext-diff --no-textconv -c core.fsmonitor=false` (git 2.39.5). And the untracked files were printed
+with `head`, which follows a symlink, so an untracked link to `~/.ssh/id_rsa` put the key in the reviewer's prompt.
+
+**The reviewer's diff is computed without running any repository-configured command, and symlinks aren't
+followed.** git only lists and reads: `ls-tree -r HEAD` for HEAD's files, `ls-files` for the index and the
+untracked files that aren't ignored, `check-attr` for which files name a filter, and `cat-file` for HEAD's copies,
+without `--filters` or `--textconv`. Each runs with `--no-optional-locks` (nothing in `.git` is rewritten),
+`core.fsmonitor`, hooks, and automatic gc off, no system or global config (a scratch `HOME`), no transports (in a
+planted partial clone, reading a missing object would otherwise fetch it through the remote's `uploadpack` or ssh
+command), and a timeout. The extension hashes the workspace's files itself to find what changed, and builds the
+diffs with Python's `difflib`. It opens every path one folder at a time without following a symlink, so it never
+reads outside the workspace: a symlink shows as `symlink -> <target>`, its target unread, and anything that's
+neither a regular file nor a symlink isn't read. Model API keys' values are cut from the diff, as from the
+verifier's output.
+
+What it shows differently from `git diff`:
+
+- **Files git stores through a filter** are compared as they are on disk, since the filter isn't run, so they can
+  show as changed when git would say they aren't; the summary names them and their filter. Git LFS files are the
+  exception: they're compared with the hash in HEAD's pointer, and a changed one gets a line, not a diff.
+- **A change only to line endings** (most often git's own CRLF conversion, which `git diff` undoes) is listed by
+  name, not diffed.
+- **Submodules** aren't compared; the summary names them. A git repository of its own inside the workspace shows
+  as one untracked entry.
+- **Untracked files** in the folders the verifier's copy leaves out (`node_modules`, `.venv`, build output) aren't
+  listed, nor is anything under your home's secrets if the workspace holds your home; tracked files there are still
+  compared. A file over 1 MB, or with over 20,000 lines, gets a line in the summary but no diff.
+- **With no commit to compare against** (a repository with no commits, or a folder git can't read as a repository,
+  such as one owned by another user), the reviewer gets the list of files, each untracked one with its first
+  4,000 bytes.
 
 ## How the guard works
 
@@ -200,6 +240,8 @@ works through that:
   pyenv, `~/.local/bin`) may not work for the verifier, since its `HOME` is empty and on Linux your home is
   hidden; it then reports what it couldn't run. Apple marks `sandbox-exec` deprecated, though macOS 15 still
   ships it.
+- **The reviewer's diff is against the current HEAD.** Work the agent committed during the goal doesn't show in it
+  (nor did it in `git diff HEAD`); the verifier still checks the workspace as it is.
 - **The before/after check can't tell who changed the workspace.** A process the agent left running that writes
   there (a server's log, a watcher's output outside the folders the copy leaves out) stops every "complete" until
   it's stopped. Files over 1 MB are compared by size and modification time only.
@@ -217,7 +259,9 @@ works through that:
   pattern, because there every read and search was a shell command.
 - **Switching to auto mode turns it off.** If you switch to auto mode during a goal (F2 or `/approvals`),
   Mirror's agent approves calls itself, including any the guard is still checking, and the guard stands down: the
-  status line says `guard off: auto approval`, and the goal doesn't switch the mode again when it ends.
+  status line says `guard off: auto approval`, and the goal doesn't switch the mode again when it ends. That's the
+  only way a goal runs in auto mode: a new goal, or `/goal resume`, switches to manual mode again, even when it
+  replaces a goal before an earlier switch has taken effect.
 - **It runs on Mirror's manual mode.** A goal started in auto mode runs in manual mode, and Mirror saves the mode
   each time it changes. If Mirror quits or crashes mid-goal, it starts in manual mode next time; switch back with
   F2 or `/approvals`. Manual mode also keeps the file tools inside the workspace, which is a change if you
@@ -318,7 +362,17 @@ server). They run under Mirror's own Python, against a scripted stand-in for the
 The sandbox's tests run the verifier's commands for real, through whatever sandbox the system has, against
 harmless local stand-ins: a write through the real workspace's path (it must land in the copy or fail), reads
 of planted files in a fake home (they must fail), and a TCP connection to a port the test opens (it must fail).
-Where there's no sandbox they're skipped, and the rest run the verifier unconfined. They were run:
+Where there's no sandbox they're skipped, and the rest run the verifier unconfined.
+
+The reviewer's diff has tests of its own, with a real git: a planted clean filter (`* filter=x` with
+`filter.x.clean = sh -c 'touch RAN; cat'`), textconv driver, external diff program, fsmonitor hook, and
+partial-clone remote, each first shown to run under plain git, then not under the diff, which still shows the
+change; untracked and tracked symlinks to a key file and a folder outside the workspace, whose contents must not
+reach the reviewer's prompt; and the exact output for modified, added, deleted, binary, symlink, mode-only,
+line-ending-only, Git LFS, untracked, and ignored files. Others stop, clear, replace (with the same text), and
+resume a goal while its progress check runs, and check that no stale "continue" is sent, that the live goal's is,
+and that notes don't cross to another goal; and a randomized test checks that a goal that's on never runs in auto
+mode unless you switched to it. They were run:
 
 - on macOS 15 (Mirror 0.1.0), through `sandbox-exec`;
 - on Linux (Mirror 0.1.1, Docker Desktop's kernel 6.10, bubblewrap 0.8.0, as uid 1000, no network), in a test
@@ -326,3 +380,7 @@ Where there's no sandbox they're skipped, and the rest run the verifier unconfin
   `--security-opt systempaths=unconfined` (`bwrap`, the full sandbox), with only the first (`bwrap-shared-pids`),
   and with Docker's defaults (no sandbox: the sandbox's tests skip, and the no-sandbox ones pass). The two
   security options were used for that test container only.
+
+The diff's, stale effects', and approval mode's tests came later. They were run on macOS 15 (Mirror 0.1.0, git
+2.39.5) and on Linux in the same test container with Docker's defaults (Mirror 0.1.1, git 2.39.5, as uid 1000, no
+network), where they pass and the sandbox's tests skip.

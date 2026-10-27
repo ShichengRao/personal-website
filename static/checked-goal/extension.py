@@ -33,7 +33,9 @@ The verifier's commands run confined, as the harness's ran in a container with n
 real workspace can't be written (on Linux the copy sits at its path), the person's home secrets can't be read
 (HOME is an empty folder), and no model API keys in the environment. Linux uses bubblewrap, macOS
 sandbox-exec; with neither, the verifier doesn't run unless the verify_unconfined setting is on. The real
-workspace is fingerprinted before and after each check, and a change there means "complete" isn't accepted.
+workspace is fingerprinted before and after each check, and a change there means "complete" isn't accepted. The
+reviewer's diff is computed without running anything the repository configures (filters, textconv and external diff
+drivers, the fsmonitor hook, hooks, fetches), and without following a symlink.
 
 Usage: /goal <what you want done>; also /goal stop | resume | clear. Uses your Reflection API key
 (REFLECTION_API_KEY, or the key Mirror saved); the checks call the `model` setting, Beam by default.
@@ -51,7 +53,9 @@ what the guard and the sandbox cover and miss.
 from __future__ import annotations
 
 import asyncio
+import collections
 import dataclasses
+import difflib
 import functools
 import hashlib
 import json
@@ -234,6 +238,11 @@ copy, so its findings don't describe the work as it now stands. What changed:
 Look at these files. If something other than you changed them, put the work back the way you meant it; if a \
 process of yours (a server, a watcher) writes there, stop it. Then call `{tool}` again."""
 
+# When the person replaced, cleared, or resumed the goal while its "complete" was being checked.
+STALE_REPORT = """\
+The goal changed while this report was being checked (it was replaced, cleared, or resumed), so the report \
+doesn't apply to it. Stop here; if a goal is set, you'll be prompted to work on it."""
+
 VERIFY_SYSTEM = """\
 You are checking another engineer's work. You have one tool, `bash`, which runs a shell command in a copy of \
 their workspace made for you, and returns its exit code and output. Change only the copy; don't contact \
@@ -411,13 +420,27 @@ BASH_TOOL = {
   },
 }
 
-# Read-only: no index changes or repository-configured executable helpers.
-DIFF_COMMAND = (
-  'git --no-optional-locks -c core.fsmonitor=false diff --no-ext-diff --no-textconv HEAD --stat --no-color 2>/dev/null; echo; '
-  'git --no-optional-locks -c core.fsmonitor=false diff --no-ext-diff --no-textconv HEAD --no-color 2>/dev/null; '
-  'git --no-optional-locks -c core.fsmonitor=false ls-files --others --exclude-standard 2>/dev/null | head -50 | while read -r f; do '
-  'echo; echo "=== new file: $f"; head -c 4000 -- "$f"; done'
-)
+# The reviewer's diff. `git diff` and `git status` run commands the repository configures: the clean filter and
+# textconv driver .gitattributes picks for a changed file, an external diff program, the fsmonitor hook (a planted
+# clean filter still ran under `git diff --no-ext-diff --no-textconv -c core.fsmonitor=false`, on git 2.39.5). And
+# `head` on an untracked symlink printed its target, such as a key under ~/.ssh. So git here only lists and reads
+# (ls-tree, ls-files, check-attr, and cat-file without --filters or --textconv), and the extension compares the
+# files and builds the diff itself, without following a symlink.
+DIFF_NEW_FILES = 50  # Untracked files shown, with their first DIFF_NEW_FILE_BYTES each.
+DIFF_NEW_FILE_BYTES = 4000
+DIFF_FILE_BYTES = 1024**2  # A changed file larger than this gets a line in the summary, not a diff.
+DIFF_LINES = 20_000  # Nor does one with more lines than this, old and new together (difflib slows down).
+DIFF_BLOB_BYTES = 64 * 1024**2  # HEAD's copies read for one diff, at most.
+DIFF_LISTED = 200  # Files listed where there's no commit to compare against.
+DIFF_GIT_TIMEOUT_S = 60.0
+DIFF_DEADLINE_S = 120.0  # For comparing the files; the rest are named as not compared.
+# Before each git command's own arguments. -c outranks the repository's config: no fsmonitor hook (ls-files would
+# run it), no hooks (an empty folder), no virtual-filesystem hook (Microsoft's git), no transports, and no
+# automatic gc or maintenance. --no-optional-locks: nothing in .git is rewritten.
+GIT_OPTIONS = ('--no-optional-locks', '--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.virtualFilesystem=',
+               '-c', 'protocol.allow=never', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false')
+_LS_TREE = re.compile(rb'(\d{6}) (\w+) ([0-9a-f]{40}|[0-9a-f]{64})\t(.+)', re.S)
+_LFS_POINTER = b'version https://git-lfs.github.com/spec/v1\n'
 
 
 class CheckError(RuntimeError):
@@ -808,6 +831,540 @@ def changed_paths(before: dict[str, tuple], after: dict[str, tuple]) -> list[str
   return sorted(changes)
 
 
+def without_keys(text: str, values: Sequence[str] | None = None) -> str:
+  """`text` with every model API key's value cut out (secret_values(), unless given)."""
+  for value in secret_values() if values is None else values:
+    text = text.replace(value, '[an API key, removed]')
+  return text
+
+
+class _Git:
+  """git, run so that nothing the repository configures runs: GIT_OPTIONS; a scratch HOME and no system config, so
+  global config can't add hooks or filters; no GIT_ variables from Mirror's environment; no transport (a planted
+  partial-clone remote would otherwise make cat-file fetch a missing object, running the remote's upload-pack or
+  ssh command); and no replace refs. Read-only, and each command has a timeout."""
+
+  def __init__(self, workspace: pathlib.Path, scratch: str):
+    # From PATH's absolute folders only, so a relative entry (such as '.') can't pick up a `git` in the workspace.
+    folders = [folder for folder in os.environ.get('PATH', '').split(os.pathsep) if os.path.isabs(folder)]
+    self.program = shutil.which('git', path=os.pathsep.join(folders))
+    self.workspace, self.hooks = workspace, os.path.join(scratch, 'hooks')
+    self.env = {name: value for name, value in command_env().items()
+                if not name.startswith(('GIT_', 'XDG_')) and name not in HOME_VARIABLES}
+    self.env.update(HOME=os.path.join(scratch, 'home'), GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
+                    GIT_ALLOW_PROTOCOL='', GIT_NO_LAZY_FETCH='1', GIT_NO_REPLACE_OBJECTS='1', GIT_OPTIONAL_LOCKS='0',
+                    GIT_TERMINAL_PROMPT='0', GIT_PAGER='cat', PAGER='cat', LC_ALL='C')
+
+  def __call__(self, *args: str, stdin: bytes | None = None) -> tuple[int, bytes, str]:
+    """The exit code, the output, and the last line it wrote to stderr (git's "fatal: ..." line)."""
+    if self.program is None:
+      return 127, b'', 'git is not installed'
+    process = subprocess.Popen(
+      [self.program, *GIT_OPTIONS, '-c', f'core.hooksPath={self.hooks}', *args], cwd=self.workspace, env=self.env,
+      stdin=subprocess.DEVNULL if stdin is None else subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+      start_new_session=True)
+    try:
+      output, errors = process.communicate(stdin, timeout=DIFF_GIT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+      try:
+        os.killpg(process.pid, signal.SIGKILL)
+      except (ProcessLookupError, PermissionError):
+        pass
+      process.communicate()
+      return 124, b'', f'git {args[0]} took over {DIFF_GIT_TIMEOUT_S:g} s'
+    lines = [line for line in errors.decode(errors='replace').splitlines() if line.strip()]
+    return process.returncode, output, one_line(lines[-1] if lines else '', 200)
+
+
+def _relative(raw: bytes) -> str | None:
+  """A path git printed, if it's a plain one inside the workspace (no '..', '.', or empty parts)."""
+  path = os.fsdecode(raw)
+  return path if path and all(part not in ('', '.', '..') for part in path.split('/')) else None
+
+
+def _shown(path: str) -> str:
+  return path.encode('utf-8', 'surrogateescape').decode('utf-8', 'replace')
+
+
+def _open_under(root: int, path: str, *, folder: bool = False) -> int:
+  """A descriptor for `path` under the open folder `root`, following no symlink on the way (OSError if there is
+  one), so nothing outside the workspace is opened. A file is opened without blocking (a FIFO can't hang it)."""
+  fd = os.dup(root)
+  try:
+    parts = path.split('/') if path else []
+    for index, part in enumerate(parts):
+      last = index == len(parts) - 1
+      opened = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | (os.O_NONBLOCK if last and not folder else os.O_DIRECTORY),
+                       dir_fd=fd)
+      os.close(fd)
+      fd = opened
+  except BaseException:
+    os.close(fd)
+    raise
+  return fd
+
+
+def _lstat_under(root: int, path: str) -> tuple[os.stat_result, bytes | None] | None:
+  """What's at `path` (not following it, nor any symlink on the way), with a symlink's target; None if nothing."""
+  parent, _, name = path.rpartition('/')
+  try:
+    fd = _open_under(root, parent, folder=True)
+  except OSError:
+    return None
+  try:
+    info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+    return info, os.readlink(os.fsencode(name), dir_fd=fd) if stat.S_ISLNK(info.st_mode) else None
+  except OSError:
+    return None
+  finally:
+    os.close(fd)
+
+
+def _read_under(root: int, path: str, keep: int, algorithm: str | None = None, blob: bool = True
+                ) -> tuple[bytes | None, int, str, bool] | None:
+  """A regular file at `path`: its content (None if over `keep` bytes), its size, its hash in `algorithm` ('' if
+  none; as a git blob's ID if `blob`), and whether it's executable. None if it isn't a regular file, or a symlink
+  is on the way."""
+  try:
+    fd = _open_under(root, path)
+  except OSError:
+    return None
+  try:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+      return None
+    digest = hashlib.new(algorithm, b'blob %d\0' % info.st_size if blob else b'') if algorithm else None
+    # (A file's size from fstat heads its blob ID; if the file changes while it's read, the ID won't match HEAD's.)
+    kept: list[bytes] | None = [] if info.st_size <= keep else None
+    size = 0
+    while chunk := os.read(fd, 1024**2):
+      size += len(chunk)
+      if digest is not None:
+        digest.update(chunk)
+      if kept is not None and size <= keep:
+        kept.append(chunk)
+      elif kept is not None:
+        kept = None  # It grew past `keep` while being read.
+      if kept is None and digest is None:
+        break
+    return (b''.join(kept) if kept is not None else None), max(size, info.st_size), (
+      digest.hexdigest() if digest is not None else ''), bool(info.st_mode & 0o100)
+  except OSError:
+    return None
+  finally:
+    os.close(fd)
+
+
+def _head_under(root: int, path: str, count: int) -> tuple[bytes, int] | None:
+  """A regular file's first `count` bytes and its size; None if it isn't one, or a symlink is on the way."""
+  try:
+    fd = _open_under(root, path)
+  except OSError:
+    return None
+  try:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+      return None
+    data = b''
+    while len(data) < count and (chunk := os.read(fd, count - len(data))):
+      data += chunk
+    return data, max(info.st_size, len(data))
+  except OSError:
+    return None
+  finally:
+    os.close(fd)
+
+
+def _blob_id(data: bytes, length: int) -> str:
+  """`data`'s git object ID as a blob, in the repository's hash (`length`: 40 for SHA-1, 64 for SHA-256)."""
+  return hashlib.new('sha256' if length == 64 else 'sha1', b'blob %d\0' % len(data) + data).hexdigest()
+
+
+def _lfs_pointer(blob: bytes) -> tuple[str, int] | None:
+  """(sha256, size) if `blob` is a Git LFS pointer: the file's content is stored elsewhere, by that hash."""
+  if len(blob) > 1024 or not blob.startswith(_LFS_POINTER):
+    return None
+  fields = dict(line.split(b' ', 1) for line in blob.splitlines() if b' ' in line)
+  oid, size = fields.get(b'oid', b''), fields.get(b'size', b'')
+  return (oid[7:].decode(), int(size)) if oid.startswith(b'sha256:') and size.isdigit() else None
+
+
+@dataclasses.dataclass(frozen=True)
+class _Side:
+  """One version of a changed path: a 'file' (`data` None if it's too large to show, or couldn't be read: `size`
+  -1), a 'link' (`target` is where it points; never followed), 'lfs' (a Git LFS pointer in HEAD), a 'repo' (a git
+  repository of its own), or 'other' (a folder or a special file: not read)."""
+
+  kind: str
+  mode: str = ''
+  data: bytes | None = None
+  size: int = 0
+  target: bytes = b''
+
+  def describe(self) -> str:
+    match self.kind:
+      case 'link':
+        return f"symlink -> {self.target.decode('utf-8', 'replace')} (not followed)"
+      case 'lfs':
+        return f'a Git LFS file ({self.size} bytes, stored outside the repository)'
+      case 'repo':
+        return 'a git repository of its own (not compared)'
+      case 'other':
+        return 'not a regular file or a symlink (not read)'
+    return f'a file ({self.size} bytes)'
+
+
+def _side(root: int, path: str, algorithm: str | None = None) -> tuple[_Side, str] | None:
+  """The workspace's side of `path`, and a regular file's blob ID in `algorithm`; None if nothing is there."""
+  found = _lstat_under(root, path)
+  if found is None:
+    return None
+  info, target = found
+  if target is not None:
+    return _Side('link', '120000', target=target), ''
+  if stat.S_ISDIR(info.st_mode):
+    return (_Side('repo', '160000') if _lstat_under(root, f'{path}/.git') else _Side('other')), ''
+  if not stat.S_ISREG(info.st_mode):
+    return _Side('other'), ''
+  if (read := _read_under(root, path, DIFF_FILE_BYTES, algorithm)) is None:  # Unreadable.
+    return _Side('file', '100755' if info.st_mode & 0o100 else '100644', None, -1), ''
+  data, size, blob_id, executable = read
+  return _Side('file', '100755' if executable else '100644', data, size), blob_id
+
+
+def _is_binary(data: bytes) -> bool:
+  return b'\0' in data[:8000]  # git's own test
+
+
+def _lines(data: bytes) -> list[str]:
+  parts = data.decode('utf-8', 'replace').split('\n')
+  return [part + '\n' for part in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
+def _unified(path: str, old: bytes | None, new: bytes | None) -> tuple[list[str], int, int]:
+  """A unified diff of two versions of a text file (None: absent), and its insertions and deletions."""
+  shown = _shown(path)
+  lines = list(difflib.unified_diff(_lines(old or b''), _lines(new or b''),
+                                    f'a/{shown}' if old is not None else '/dev/null',
+                                    f'b/{shown}' if new is not None else '/dev/null', n=3))
+  body = [line if line.endswith('\n') else f'{line}\n\\ No newline at end of file\n' for line in lines]
+  plus = sum(1 for line in lines[2:] if line.startswith('+'))
+  minus = sum(1 for line in lines[2:] if line.startswith('-'))
+  return body, plus, minus
+
+
+def _plural(count: int, word: str) -> str:
+  return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _render(path: str, old: _Side | None, new: _Side | None) -> tuple[str, str, int, int]:
+  """One changed path (None: absent on that side): its summary (after the bar), its diff, and its insertions and
+  deletions."""
+  shown = _shown(path)
+  head = [f'diff --git a/{shown} b/{shown}']
+  if old is None and new is not None:
+    head.append(f'new file mode {new.mode}' if new.mode else 'new file')
+  elif new is None and old is not None:
+    head.append(f'deleted file mode {old.mode}')
+  elif old and new and old.mode and new.mode and old.mode != new.mode:
+    head += [f'old mode {old.mode}', f'new mode {new.mode}']
+  header = '\n'.join(head) + '\n'
+  sides = [side for side in (old, new) if side is not None]
+  if any(side.kind != 'file' for side in sides):  # A symlink, a Git LFS file, a repository, or something not read.
+    lines = ''.join(f'{label}: {side.describe()}\n' for label, side in (('was', old), ('now', new)) if side)
+    if old and new and old.kind == new.kind == 'link':
+      summary = (f"symlink, target {old.target.decode('utf-8', 'replace')} -> "
+                 f"{new.target.decode('utf-8', 'replace')} (not followed)")
+    else:
+      summary = ', now '.join(side.describe() for side in sides) if old and new else (
+        f'new: {new.describe()}' if new else f'deleted: {old.describe()}')  # type: ignore[union-attr]
+    return summary, header + lines, 0, 0
+  if any(side.data is None for side in sides):
+    sizes = ' -> '.join('?' if side.size < 0 else str(side.size) for side in sides)
+    why = "couldn't be read" if any(side.size < 0 for side in sides) else 'too large to show'
+    return f'{sizes} bytes, {why}', header, 0, 0
+  before, after = (old.data if old else None), (new.data if new else None)
+  if any(_is_binary(data) for data in (before, after) if data is not None):
+    names = f'{"a/" + shown if old else "/dev/null"} and {"b/" + shown if new else "/dev/null"}'
+    return f'Bin {len(before or b"")} -> {len(after or b"")} bytes', f'{header}Binary files {names} differ\n', 0, 0
+  if before == after and old and new:
+    return f'mode {old.mode} -> {new.mode}', header, 0, 0
+  if len(_lines(before or b'')) + len(_lines(after or b'')) > DIFF_LINES:
+    return f'{len(before or b"")} -> {len(after or b"")} bytes, too many lines to show', header, 0, 0
+  body, plus, minus = _unified(path, before, after)
+  bar = '+' * plus + '-' * minus
+  if len(bar) > 40:
+    pluses = round(40 * plus / (plus + minus))
+    bar = '+' * pluses + '-' * (40 - pluses)
+  return f'{plus + minus} {bar}', header + ''.join(body), plus, minus
+
+
+def _blobs(git: _Git, ids: Sequence[str]) -> dict[str, bytes | int | None]:
+  """HEAD's copies, read raw (no --filters, no --textconv): the content of each blob up to DIFF_FILE_BYTES, while
+  DIFF_BLOB_BYTES lasts; the size of a larger one; None for one git can't read."""
+  ids = list(dict.fromkeys(ids))
+  if not ids:
+    return {}
+  _, output, _ = git('cat-file', '--batch-check', stdin=''.join(f'{oid}\n' for oid in ids).encode())
+  found: dict[str, bytes | int | None] = {oid: None for oid in ids}
+  for line in output.decode(errors='replace').splitlines():
+    fields = line.split()
+    if len(fields) == 3 and fields[1] == 'blob' and fields[2].isdigit() and fields[0] in found:
+      found[fields[0]] = int(fields[2])
+  wanted, budget = [], DIFF_BLOB_BYTES
+  for oid in ids:
+    size = found[oid]
+    if isinstance(size, int) and size <= min(DIFF_FILE_BYTES, budget):
+      wanted.append(oid)
+      budget -= size
+  if wanted:
+    _, output, _ = git('cat-file', '--batch', stdin=''.join(f'{oid}\n' for oid in wanted).encode())
+    position = 0
+    while (end := output.find(b'\n', position)) >= 0:
+      fields = output[position:end].split()
+      position = end + 1
+      if len(fields) == 3 and fields[1] == b'blob' and fields[2].isdigit():
+        size = int(fields[2])
+        found[fields[0].decode()] = output[position:position + size]
+        position += size + 1
+  return found
+
+
+def _filters(git: _Git, paths: Sequence[str]) -> dict[str, str]:
+  """The filter .gitattributes names for each path that has one (check-attr only reads the attributes)."""
+  if not paths:
+    return {}
+  code, output, _ = git('check-attr', '-z', '--stdin', 'filter',
+                        stdin=b''.join(os.fsencode(path) + b'\0' for path in paths))
+  fields = output.split(b'\0') if code == 0 else []
+  return {os.fsdecode(fields[index]): fields[index + 2].decode(errors='replace')
+          for index in range(0, len(fields) - 2, 3)
+          if fields[index + 2] not in (b'unspecified', b'unset', b'set')}
+
+
+def _git_paths(output: bytes, tagged: bool = False) -> dict[str, str]:
+  """ls-files' NUL-separated paths, each with its tag (`-t`), or '/' for a folder it lists on its own (a git
+  repository of its own, untracked)."""
+  paths: dict[str, str] = {}
+  for record in output.split(b'\0'):
+    tag, record = record.split(b' ', 1) if tagged and b' ' in record else (b'', record)
+    folder = record.endswith(b'/')
+    if (path := _relative(record.rstrip(b'/'))) is not None:
+      paths[path] = '/' if folder else tag.decode(errors='replace')
+  return paths
+
+
+def _walk(root: int, secrets: frozenset[str], limit: int) -> tuple[list[str], bool]:
+  """The workspace's regular files and symlinks, found without following a symlink, leaving out .git and what the
+  copy leaves out; at most `limit`, and whether there were more."""
+  found, folders = [], collections.deque([''])
+  while folders:
+    folder = folders.popleft()
+    try:
+      fd = _open_under(root, folder, folder=True)
+    except OSError:
+      continue
+    try:
+      with os.scandir(fd) as entries:
+        names = sorted(entry.name for entry in entries)
+      for name in names:
+        path = f'{folder}/{name}' if folder else name
+        if name == '.git' or name in COPY_IGNORE or path in secrets:
+          continue
+        try:
+          info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        except OSError:
+          continue
+        if stat.S_ISDIR(info.st_mode):
+          folders.append(path)
+        elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+          if len(found) == limit:
+            return sorted(found), True
+          found.append(path)
+    finally:
+      os.close(fd)
+  return sorted(found), False
+
+
+def _new_file(root: int, path: str) -> str | None:
+  """An untracked path, as the reviewer sees it: a file's first DIFF_NEW_FILE_BYTES, a symlink's target (never
+  what it points to), or a note for a git repository of its own."""
+  found = _lstat_under(root, path)
+  if found is None:
+    return None
+  info, target = found
+  title = f'\n=== new file: {_shown(path)}'
+  if target is not None:
+    return f'{title}\n{_Side("link", target=target).describe()}\n'
+  if stat.S_ISDIR(info.st_mode):
+    return f'{title}/\n({_Side("repo").describe()})\n' if _lstat_under(root, f'{path}/.git') else None
+  head = _head_under(root, path, DIFF_NEW_FILE_BYTES) if stat.S_ISREG(info.st_mode) else None
+  if head is None:
+    return None
+  data, size = head
+  if _is_binary(data):
+    return f'{title}\n(binary, {size} bytes)\n'
+  text = data.decode('utf-8', 'replace')
+  if size > len(data):
+    text += ('' if text.endswith('\n') else '\n') + f'[... {size - len(data)} more bytes not shown]'
+  return f'{title}\n{text}' + ('' if text.endswith('\n') else '\n')
+
+
+def workspace_diff(workspace: pathlib.Path) -> str:
+  """The agent's changes, for the reviewer, in the shape `git diff HEAD --stat`, `git diff HEAD`, and the
+  untracked files' first bytes gave: a summary, each changed file's diff against HEAD, then the untracked files.
+  Nothing the repository configures runs (see _Git), and no symlink is followed. API keys' values are cut."""
+  try:
+    with tempfile.TemporaryDirectory(prefix='checked-goal-diff-') as scratch:
+      for name in ('home', 'hooks'):
+        os.mkdir(os.path.join(scratch, name))
+      root = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+      try:
+        base = os.path.realpath(workspace)
+        secrets = frozenset(os.path.relpath(path, base).replace(os.sep, '/') for path in _secrets_under(workspace))
+        text = _diff_text(root, _Git(pathlib.Path(workspace), scratch), secrets)
+      finally:
+        os.close(root)
+  except Exception as error:  # noqa: BLE001  The review goes on without it, and says so.
+    text = f"(the diff couldn't be computed: {type(error).__name__}: {error})"
+  return without_keys(text)
+
+
+def _diff_text(root: int, git: _Git, secrets: frozenset[str]) -> str:
+  deadline = time.monotonic() + DIFF_DEADLINE_S
+
+  def hidden(path: str) -> bool:  # The home's secrets, if the workspace holds the home: never read.
+    return any(path == secret or path.startswith(f'{secret}/') for secret in secrets)
+
+  code, listing, why = git('ls-tree', '-r', '-z', 'HEAD')
+  cached_code, cached, _ = git('ls-files', '-z', '-t')
+  others_code, others, _ = git('ls-files', '-z', '--others', '--exclude-standard')
+  index = {path: tag for path, tag in _git_paths(cached, tagged=True).items() if not hidden(path)}
+  # Untracked files where the copy leaves them out (node_modules, build output, ...) aren't shown, as before.
+  untracked = sorted(path for path in _git_paths(others) if not hidden(path)
+                     and not any(part in COPY_IGNORE for part in path.split('/')))
+  if code != 0:
+    return _listing(root, why, sorted(set(index) | set(untracked)) if cached_code == others_code == 0 else None,
+                    secrets)
+  head, submodules = {}, []
+  for record in listing.split(b'\0'):
+    if (match := _LS_TREE.fullmatch(record)) and (path := _relative(match.group(4))) and not hidden(path):
+      if match.group(2) == b'blob':
+        head[path] = (match.group(1).decode(), match.group(3).decode())
+      elif match.group(2) == b'commit':
+        submodules.append(path)
+
+  changes: dict[str, tuple[_Side | None, _Side | None]] = {}
+  wanted, late = {}, []
+  for path, (mode, oid) in sorted(head.items()):
+    if index.get(path) == 'S':  # Left out of a sparse checkout.
+      continue
+    if time.monotonic() > deadline:
+      late.append(path)
+      continue
+    found = _side(root, path, 'sha256' if len(oid) == 64 else 'sha1')
+    now, blob_id = found if found else (None, '')
+    if mode == '120000':
+      if now and now.kind == 'link' and _blob_id(now.target, len(oid)) == oid:
+        continue
+      changes[path], wanted[path] = (_Side('link', mode), now), oid
+    elif now and now.kind == 'file' and blob_id == oid:
+      mode = '100644' if mode != '100755' else mode
+      if now.mode != mode:  # Only the mode changed.
+        changes[path] = (dataclasses.replace(now, mode=mode), now)
+    else:
+      changes[path], wanted[path] = (_Side('file', '100644' if mode != '100755' else mode), now), oid
+  for path in sorted(set(index) - set(head) - set(submodules)):  # Added to the index, not committed.
+    if (found := _side(root, path)) is not None:
+      changes[path] = (None, found[0])
+  untracked = [path for path in untracked if path not in head and path not in index]
+
+  # HEAD's copies of the changed paths, and what the comparison can't show line by line.
+  blobs = _blobs(git, list(wanted.values()))
+  line_endings = []
+  for path, oid in wanted.items():
+    old, now = changes[path]
+    blob = blobs.get(oid)
+    if old is not None and old.kind == 'link':
+      changes[path] = (dataclasses.replace(old, target=blob if isinstance(blob, bytes) else b'?'), now)
+      continue
+    if not isinstance(blob, bytes):
+      changes[path] = (_Side('file', old.mode if old else '', None, blob if isinstance(blob, int) else -1), now)
+      continue
+    if (pointer := _lfs_pointer(blob)) and now and now.kind == 'file':
+      read = _read_under(root, path, 0, 'sha256', blob=False)
+      if read and read[2] == pointer[0] and read[1] == pointer[1]:
+        del changes[path]  # The file Git LFS stores, as it was.
+      else:
+        changes[path] = (_Side('lfs', old.mode if old else '', size=pointer[1]), now)
+      continue
+    old = _Side('file', old.mode if old else '100644', blob, len(blob))
+    changes[path] = (old, now)
+    if (now and now.kind == 'file' and now.data is not None and old.mode == now.mode
+        and not _is_binary(blob) and not _is_binary(now.data)
+        and blob.replace(b'\r\n', b'\n') == now.data.replace(b'\r\n', b'\n')):
+      line_endings.append(path)  # Most likely git's own CRLF conversion, which `git diff` applies.
+      del changes[path]
+  filters = _filters(git, [path for path, (old, now) in changes.items()
+                           if old and now and old.kind == now.kind == 'file'])
+
+  rendered = {path: _render(path, *changes[path]) for path in sorted(changes)}
+  width = min(50, max((len(_shown(path)) for path in rendered), default=0))
+  summary = [f' {_shown(path).ljust(width)} | {line}' for path, (line, _, _, _) in rendered.items()]
+  if rendered:
+    plus, minus = (sum(item[index] for item in rendered.values()) for index in (2, 3))
+    summary.append(f' {_plural(len(rendered), "file")} changed, {_plural(plus, "insertion")}(+), '
+                   f'{_plural(minus, "deletion")}(-)')
+
+  def named(paths: Sequence[str], limit: int = 20) -> str:
+    more = f', and {len(paths) - limit} more' if len(paths) > limit else ''
+    return ', '.join(_shown(path) for path in paths[:limit]) + more
+
+  if filters:
+    summary.append(' Compared as stored, without running the filter .gitattributes names: '
+                   f"{named([f'{path} ({name})' for path, name in filters.items()])}")
+  if line_endings:
+    summary.append(f' Only line endings differ from HEAD (not shown): {named(line_endings)}')
+  if submodules:
+    summary.append(f' Submodules, not compared: {named(submodules)}')
+  if late:
+    summary.append(f' Not compared (the diff ran out of time): {named(late)}')
+  if untracked:
+    summary.append(f' {_plural(len(untracked), "untracked file")}, listed after the diff')
+  diffs, budget, left = [], 3 * DIFF_CHARS, 0
+  for _, body, _, _ in rendered.values():
+    if budget >= len(body):
+      diffs.append(body)
+      budget -= len(body)
+    else:
+      left += 1
+  if left:
+    diffs.append(f'[... the diffs of {_plural(left, "more file")} not shown]\n')
+  return '\n'.join(summary) + ('\n\n' if summary and diffs else '\n' if summary else '') + ''.join(diffs) + (
+    _new_files(root, untracked))
+
+
+def _new_files(root: int, paths: Sequence[str]) -> str:
+  shown = [text for path in paths[:DIFF_NEW_FILES] if (text := _new_file(root, path)) is not None]
+  more = f'\n[... and {_plural(len(paths) - DIFF_NEW_FILES, "more file")}]\n' if len(paths) > DIFF_NEW_FILES else ''
+  return ''.join(shown) + more
+
+
+def _listing(root: int, why: str, paths: list[str] | None, secrets: frozenset[str]) -> str:
+  """Where there's no commit to compare against: the files git lists (all of them new), or, where git can't read
+  a repository here, the workspace's own; each with its first bytes, as an untracked file's."""
+  if paths is not None:
+    header, more = f"(no commit to compare against: {why}. The files git lists, all new:)", False
+  else:
+    paths, more = _walk(root, secrets, 10_000)
+    header = f"(no git repository to compare against: {why}. The workspace's files:)"
+  listed = [f' {_shown(path)}' for path in paths[:DIFF_LISTED]]
+  if len(paths) > DIFF_LISTED or more:
+    listed.append(f' [... and {len(paths) - DIFF_LISTED if len(paths) > DIFF_LISTED else 0}{"+" if more else ""}'
+                  ' more]')
+  return '\n'.join([header, *listed]) + '\n' + _new_files(root, paths)
+
+
 def _no_record(kind: str, data: dict) -> None:
   del kind, data
 
@@ -912,9 +1469,7 @@ class Checks:
             used += 1
             output, code = await run_command(command, jail.cwd, VERIFY_COMMAND_TIMEOUT_S, argv=jail.argv(command),
                                              env=jail.env())
-            for value in hidden:
-              output = output.replace(value, '[an API key, removed]')
-            result = f'exit code {code}\n{clip(output, 8000)}'
+            result = f'exit code {code}\n{clip(without_keys(output, hidden), 8000)}'
           messages.append({'role': 'tool', 'tool_call_id': call.get('id', ''), 'content': result})
       return ('(the checker gave no findings: it used up its commands without reporting, so nothing was '
               'independently checked)')
@@ -947,9 +1502,9 @@ class Checks:
         listed = '\n'.join(f'- {path}' for path in changed[:20])
         more = f'\n- and {len(changed) - 20} more' if len(changed) > 20 else ''
         return WORKSPACE_CHANGED.format(paths=listed + more, tool=tool)
-    diff, _ = await run_command(DIFF_COMMAND, workspace, 60)
+    diff = await asyncio.to_thread(workspace_diff, workspace)
     answer = await self.beam.ask(REVIEW.format(
-      goal=goal.strip(), transcript=fitted_transcript(messages), diff=clip(diff.strip() or '(no changes)', DIFF_CHARS),
+      goal=goal.strip(), transcript=fitted_transcript(messages), diff=clip(diff.strip('\n') or '(no changes)', DIFF_CHARS),
       verification=verification, claims=json.dumps(claims, indent=2),
     ), 'verdict', ('accept', 'revise'))
     if not answer:
@@ -1076,6 +1631,10 @@ class GoalState:
   reviews: int = 0
   checking: bool = False
   note: str = ''
+  # Bumped each time a goal is set, resumed, or cleared. An effect made for one run of a goal (a "continue", a
+  # progress check, a report) carries it, and does nothing once it's out of date: goal text and turn number can't
+  # tell a replaced or resumed goal with the same text, at the same turn, from the one the effect was made for.
+  generation: int = 0
   # The guard. These outlive one goal (see _carry): the approval mode to put back, and calls in flight.
   prior_mode: str | None = None  # The person's mode, when the goal switched it to manual.
   restore: bool = False  # Put prior_mode back once no call is held at the worker.
@@ -1135,12 +1694,14 @@ class _Clear(actions.ExtensionAction):
 class _Checking(actions.ExtensionAction):
   on: bool
   reviewed: bool = False
+  generation: int | None = None  # The goal being checked; None: whichever is current.
 
 
 @dataclasses.dataclass(frozen=True)
 class _Report(actions.ExtensionAction):
   status: str
   summary: str
+  generation: int | None = None  # The goal reported on; None: whichever is current.
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1202,6 +1763,7 @@ class _Continue:
   goal: str
   turn: int
   max_turns: int
+  generation: int = 0
   mode: str | None = None
 
 
@@ -1232,6 +1794,7 @@ class _Progress:
   used: int  # Turns, counting the one under way.
   limit: int
   calls: int
+  generation: int = 0
 
 
 type _Effect = _Submit | _Continue | _Mode | _Hide | _Guard | _Progress
@@ -1244,7 +1807,8 @@ def _step(current: GoalState, action: object, *, busy: bool, max_turns: int, too
     action = action.action
   match action:
     case _SetGoal(text):
-      started = GoalState(goal=text, active=True, kicked_off=not busy, **_carry(current))
+      started = GoalState(goal=text, active=True, kicked_off=not busy, generation=current.generation + 1,
+                          **_carry(current))
       return started, None if busy else _Submit(_KICKOFF.format(goal=text, tool=tool))
     case _Stop():
       if not current.active:
@@ -1253,16 +1817,20 @@ def _step(current: GoalState, action: object, *, busy: bool, max_turns: int, too
     case _Resume():
       if not current.goal or current.active:
         return current, None
-      resumed = dataclasses.replace(current, active=True, turns=0, tool_calls=0, note='')
+      # A pending note stays: it's owed to the agent (a saved-approval call's result it was told to wait for).
+      resumed = dataclasses.replace(current, active=True, turns=0, tool_calls=0, note='',
+                                    generation=current.generation + 1)
       if busy:
         return resumed, None
-      return dataclasses.replace(resumed, kicked_off=True), _Continue(current.goal, 1, max_turns)
+      return dataclasses.replace(resumed, kicked_off=True), _Continue(current.goal, 1, max_turns, resumed.generation)
     case _Clear():
-      return GoalState(**_carry(current)), None
-    case _Checking(on, reviewed):
+      return GoalState(generation=current.generation + 1, **_carry(current)), None
+    case _Checking(on, reviewed, generation):
+      if generation not in (None, current.generation):  # The goal checked has since been replaced or resumed:
+        return dataclasses.replace(current, checking=current.checking and on), None  # its review doesn't count.
       return dataclasses.replace(current, checking=on, reviews=current.reviews + int(reviewed)), None
-    case _Report(status, summary):
-      if not current.goal:
+    case _Report(status, summary, generation):
+      if not current.goal or generation not in (None, current.generation):  # A goal since replaced or resumed.
         return current, None
       label = 'done' if status == 'complete' else 'blocked'
       return dataclasses.replace(current, active=False, checking=False, note=f'{label}: {summary}'), None
@@ -1279,7 +1847,8 @@ def _step(current: GoalState, action: object, *, busy: bool, max_turns: int, too
       if turns >= max_turns:
         return dataclasses.replace(
           current, active=False, turns=turns, note=f'hit {max_turns}-turn limit · /goal resume to keep going'), None
-      return dataclasses.replace(current, turns=turns), _Continue(current.goal, turns + 1, max_turns)
+      return dataclasses.replace(current, turns=turns), _Continue(current.goal, turns + 1, max_turns,
+                                                                  current.generation)
   return current, None
 
 
@@ -1419,16 +1988,19 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     if current.tool_calls not in self.progress_calls(global_state):
       return current, ()
     return current, (self.effect(_Progress(current.goal, current.turns + 1, self.max_turns(global_state),
-                                           current.tool_calls)),)
+                                           current.tool_calls, current.generation)),)
 
   def _goal_mode(self, global_state: state.State, before: GoalState, after: GoalState
                  ) -> tuple[GoalState, str | None]:
-    """When a goal starts in auto mode, switch to manual so calls wait for the guard; when it ends, switch
-    back. The new state, and the mode to switch to, if any."""
-    if not before.active and after.active:
-      if after.prior_mode is not None:  # Resumed before the mode went back: it stays manual.
-        return dataclasses.replace(after, restore=False), None
-      if self.setting(global_state, 'guard') and global_state.status_bar.approval_mode == 'auto':
+    """When a goal starts (or is resumed, or replaces another) in auto mode, switch to manual so calls wait for
+    the guard; when it ends, switch back. The new state, and the mode to switch to, if any."""
+    if after.active and (not before.active or after.generation != before.generation):
+      guarded, mode = bool(self.setting(global_state, 'guard')), global_state.status_bar.approval_mode
+      if after.prior_mode is not None:  # The goal already holds the person's mode: it stays manual.
+        # And if Mirror isn't in manual mode now, switch again: the switch asked for earlier may have been lost
+        # with an effect that went stale (a resume's "continue", when the goal was replaced before it ran).
+        return dataclasses.replace(after, restore=False), 'approve' if guarded and mode != 'approve' else None
+      if guarded and mode == 'auto':
         return dataclasses.replace(after, prior_mode='auto', restore=False), 'approve'
       return after, None
     if before.active and not after.active and after.prior_mode is not None:
@@ -1641,12 +2213,19 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
     if context.get_state().status_bar.approval_mode != mode:
       context.dispatch(actions.SetApprovalMode(mode))
 
-  async def _continue(self, context: extension.Context, effect: _Continue) -> None:
+  def _live(self, context: extension.Context, effect: _Continue) -> GoalState | None:
+    """The goal's state if `effect` is still the "continue" it needs: the same run of the goal (generation), still
+    on, with no turn finished since (a later turn has its own)."""
     current = self.current_state(context)
-    if not current.active or current.goal != effect.goal or current.turns != effect.turn - 1:
-      return
+    live = current.active and current.generation == effect.generation and current.turns == effect.turn - 1
+    return current if live else None
+
+  async def _continue(self, context: extension.Context, effect: _Continue) -> None:
     if effect.mode:
+      # Before the check below: a stale "continue" still carries a switch the goal that replaced it may need.
       self._switch(context, effect.mode)
+    if self._live(context, effect) is None:
+      return
     note = ''
     every = self.setting(context.get_state(), 'progress_every')
     if isinstance(every, int) and every > 0 and (effect.turn - 1) % every == 0 and effect.turn > 1:
@@ -1659,8 +2238,7 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
           record('error', {'check': 'progress', 'error': str(error)})
           note = ''
     # The person may have stopped, cleared, replaced, or resumed the goal while the check was pending.
-    current = self.current_state(context)
-    if not current.active or current.goal != effect.goal or current.turns != effect.turn - 1:
+    if (current := self._live(context, effect)) is None:
       return
     if pending := current.pending_note:
       note = f'{note}\n\n{pending}'
@@ -1683,8 +2261,8 @@ class CheckedGoal(extension.Extension[GoalState, _Effect, None]):
       record('error', {'check': 'progress', 'error': str(error), 'tool_calls': effect.calls})
       return
     current = self.current_state(context)
-    if not note.strip() or not current.active or current.goal != effect.goal:
-      return
+    if not note.strip() or not current.active or current.generation != effect.generation:
+      return  # Stopped, cleared, replaced, or resumed while the check ran: the note is about a run that's over.
     if context.get_state().activity.busy:
       message = agent_pb2.AgentMessage(id=uuid.uuid4().hex, extension=agent_pb2.ExtensionRecord(
         extension=self.id(), kind='progress', model_message=agent_pb2.UserMessage(content=note.strip())))
@@ -1858,7 +2436,7 @@ class _UpdateTool:
         summary = f'{summary} (unchecked: no Reflection API key)'
         record('unchecked', {'reason': 'no Reflection API key'})
       else:
-        self._plugin.dispatch(self._context, _Checking(True))
+        self._plugin.dispatch(self._context, _Checking(True, generation=current.generation))
         feedback = None
         try:
           feedback = await checks.review(current.goal, summary, pathlib.Path(self._context.workspace.cwd),
@@ -1867,10 +2445,12 @@ class _UpdateTool:
           summary = f'{summary} (unchecked: {error})'
           record('error', {'check': 'review', 'error': str(error)})
         finally:
-          self._plugin.dispatch(self._context, _Checking(False, reviewed=True))
+          self._plugin.dispatch(self._context, _Checking(False, reviewed=True, generation=current.generation))
+        if self._plugin.current_state(self._context).generation != current.generation:
+          return host_tools.ToolResult(STALE_REPORT, True)
         if feedback:
           return host_tools.ToolResult(feedback, False)
     elif status == 'complete':
       record('unchecked', {'reason': f'the review limit ({max_reviews}) was reached'})
-    self._plugin.dispatch(self._context, _Report(status, summary))
+    self._plugin.dispatch(self._context, _Report(status, summary, current.generation))
     return host_tools.ToolResult(f'Goal marked {status}. Stop here and give the user a brief summary.', True)
