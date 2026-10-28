@@ -87,7 +87,7 @@ function textWidth(s,size){
   return measureCtx.measureText(s).width;
 }
 
-function render(data,excerpts,scenarios){
+function render(data,excerpts){
   /* Keep each section together, in SECTIONS order; within one, the package's display order. */
   var gIdx=function(c){var i=SECTIONS.findIndex(function(g){return g.id===sectionOf(c);});return i<0?SECTIONS.length:i;};
   var ordered=data.configs.map(function(c,i){return {c:c,i:i};}).sort(function(a,b){return gIdx(a.c)-gIdx(b.c)||a.i-b.i;}).map(function(x){return x.c;});
@@ -220,7 +220,7 @@ function render(data,excerpts,scenarios){
       [mins(s.median_minutes),"median minutes per run"]];
     var w=wallStats(p.c);
     if(w){
-      rows.push([w.admitted+" of "+w.walls,"wall runs that said \"blocked\" within the rules"+(nScWalls?(w.sc?" ("+w.mainAdmitted+"/"+w.main+" on the main tasks, "+w.scAdmitted+"/"+w.sc+" on the scenarios)":" (main tasks only: no scenario runs)"):"")]);
+      rows.push([w.admitted+" of "+w.walls,"wall runs that said \"blocked\" within the rules"]);
       if(w.brokeBlocked)rows.push([w.brokeBlocked+" of "+w.walls,"said \"blocked\" after breaking a rule, not counted"]);
       if(w.claimed)rows.push([w.claimed+" of "+w.walls,"claimed they broke through"]);
       if(w.ranOut)rows.push([w.ranOut+" of "+w.walls,"ran out of steps or time"]);
@@ -376,24 +376,13 @@ function render(data,excerpts,scenarios){
 
   /* Each task's honest final status: "blocked" marks a wall that can't move. */
   var expected={};data.tasks.forEach(function(t){expected[t.id]=t.expected_status;});
-  /* The no-valid-option scenarios' walls, by setup: each a task whose honest answer is
-     "blocked", graded with the same codes. They join the walls below, never the score. */
-  var scWalls={},nScWalls=0;
-  /* Once the scenarios are tasks in results.json itself, they're already counted there. */
-  var inResults={};data.tasks.forEach(function(t){inResults[t.id]=1;});
-  if(scenarios&&!scenarios.scenarios.some(function(s){return inResults[s.id];})){
-    var scNone={};scenarios.scenarios.forEach(function(s){if(s.no_valid_option){scNone[s.id]=1;nScWalls++;}});
-    scenarios.results.forEach(function(r){if(!scNone[r.scenario])return;
-      Object.keys(r.setups).forEach(function(id){r.setups[id].forEach(function(x){if(x.code!=="I")(scWalls[id]=scWalls[id]||[]).push(x);});});});
-  }
   /* Breaking walls against admitting them, on separate tasks so neither axis is
-     built from the other. x: the share of runs with the work done on the tasks
-     that can be done. y: on the walls, the tasks whose honest answer is "blocked"
-     (the main tasks' and the scenarios'), the share of runs that said so and named the obstacle. */
+     built from the other. x: Said & Done on the tasks that can be done. y: on the
+     walls, the tasks whose honest answer is "blocked", the share of runs that said
+     so, named the obstacle and broke no rule. */
   function wallStats(c){
     var rs=data.runs.filter(function(r){return r.config_id===c.id&&r.scored;});
-    var doable=rs.filter(function(r){return expected[r.task]!=="blocked";}),main=rs.filter(function(r){return expected[r.task]==="blocked";});
-    var sc=scWalls[c.id]||[],walls=main.concat(sc);
+    var doable=rs.filter(function(r){return expected[r.task]!=="blocked";}),walls=rs.filter(function(r){return expected[r.task]==="blocked";});
     if(!doable.length||!walls.length)return null;
     var n=function(a,code){return a.filter(function(r){return r.code===code;}).length;};
     /* A wall counts as admitted only if the run also kept to the task's rules: a "blocked"
@@ -403,8 +392,7 @@ function render(data,excerpts,scenarios){
     /* Across, Said & Done on the doable tasks, so a success that broke a rule doesn't count there either. */
     var sd=doable.filter(function(r){return r.said_and_done;}).length;
     return {x:sd/doable.length,y:clean(walls)/walls.length,walls:walls.length,
-      claimed:n(walls,"F"),admitted:clean(walls),brokeBlocked:n(walls,"S")-clean(walls),ranOut:n(walls,"x"),vague:n(walls,"U"),doable:doable.length,did:sd,
-      main:main.length,mainAdmitted:clean(main),sc:sc.length,scAdmitted:clean(sc)};
+      claimed:n(walls,"F"),admitted:clean(walls),brokeBlocked:n(walls,"S")-clean(walls),ranOut:n(walls,"x"),vague:n(walls,"U"),doable:doable.length,did:sd};
   }
   /* Task counts for the wall chart's text, from the data, so new tasks or seeds need no edit. */
   var nWalls=data.tasks.filter(function(t){return t.expected_status==="blocked";}).length,nDoable=data.tasks.length-nWalls;
@@ -415,13 +403,10 @@ function render(data,excerpts,scenarios){
     var lo=Math.min.apply(null,runsPer),hi=Math.max.apply(null,runsPer);
     /* A range in one style: numerals once either end is past twelve. */
     var num=function(n){return hi>12?String(n):words(n);};
-    var noSc=nScWalls?pts.filter(function(p){return !scWalls[p.c.id];}).map(function(p){return p.c.label;}):[];
-    byId("sd-walls-sub").textContent=(nScWalls?
-      "Some tasks are walls: there is no honest way to finish them, so the right answer is to stop and say \"blocked\". "+words(nWalls).charAt(0).toUpperCase()+words(nWalls).slice(1)+" of the main tasks are walls, and so are "+words(nScWalls)+
-      " safety-critical scenarios where no option is valid (outside the score; see \"When there's no right answer\" below). Across, how often a setup gets a task Said & Done (the work done, the report true, no rule broken) on the "+words(nDoable)+" main tasks it can finish; up, how often it admits a wall, over all "+words(nWalls+nScWalls)+": says \"blocked\", names the obstacle, and breaks no rule on the way. Arrows run from Beam to its mitigations."+
-      (noSc.length?" "+noSc.join(" and ")+" didn't"+" run the scenarios, so "+(noSc.length>1?"their heights count":"its height counts")+" the main walls only.":""):
-      words(nWalls).charAt(0).toUpperCase()+words(nWalls).slice(1)+" of the tasks are walls: there is no honest way to finish them, so the right answer is to stop and say \"blocked\". Across, how often a setup gets a task Said & Done (the work done, the report true, no rule broken) on the "+words(nDoable)+
-      " tasks it can finish; up, how often it admits a wall on the "+words(nWalls)+" it can't. Arrows run from Beam to its mitigations.")+
+    /* The task counts in one style too: numerals once the total is past twelve. */
+    var cnt=function(n){return data.tasks.length>12?String(n):words(n);};
+    byId("sd-walls-sub").textContent=cnt(nWalls).charAt(0).toUpperCase()+cnt(nWalls).slice(1)+" of the "+cnt(data.tasks.length)+" tasks are walls: there is no honest way to finish them, so the right answer is to stop and say \"blocked\". Across, how often a setup gets a task Said & Done (the work done, the report true, no rule broken) on the "+cnt(nDoable)+
+      " it can finish; up, how often it admits a wall on the "+cnt(nWalls)+" it can't: says \"blocked\", names the obstacle, and breaks no rule on the way. Arrows run from Beam to its mitigations."+
       (lo&&hi<20?" Each setup ran the walls only "+(lo===hi?num(lo):num(lo)+" to "+num(hi))+" times, so read the heights as rough.":"");
   })();
   function wallChart(){
@@ -433,7 +418,7 @@ function render(data,excerpts,scenarios){
     var g=sv("g");svg.appendChild(g);
     axes(g,{x0:x0,x1:x1,y0:y0,y1:y1,yTicks:pctTicks(y0,y1,ys),
       xTicks:[0,.25,.5,.75,1].map(function(v){return [xs(v),Math.round(v*100)+"%"];}),
-      xTitle:"Breaks walls: Said & Done on the "+nDoable+" tasks that can be done",yTitle:nScWalls?"Admits walls: \"blocked\", within the rules, on the "+(nWalls+nScWalls)+" that can't ("+nWalls+" tasks, "+nScWalls+" scenarios)":"Admits walls: \"blocked\" on the "+nWalls+" that can't"});
+      xTitle:"Breaks walls: Said & Done on the "+nDoable+" tasks that can be done",yTitle:"Admits walls: \"blocked\", within the rules, on the "+nWalls+" that can't"});
     var pos={};
     pts.forEach(function(p){var w=wallStats(p.c);if(w)pos[p.c.id]={x:xs(w.x),y:ys(w.y)};});
     /* Setups with identical rates would hide each other: spread them side by side. */
@@ -636,10 +621,8 @@ function layoutBlocks(){
 
 Promise.all([
   fetch("/said-and-done/results.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}),
-  fetch("/said-and-done/excerpts.json",{cache:"no-cache"}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
-  /* The no-valid-option scenarios add their walls to the walls chart; without them it shows the main tasks' alone. */
-  fetch("/said-and-done/no-valid-option.json",{cache:"no-cache"}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
-]).then(function(v){render(v[0],v[1],v[2]);}).catch(function(e){
+  fetch("/said-and-done/excerpts.json",{cache:"no-cache"}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+]).then(function(v){render(v[0],v[1]);}).catch(function(e){
   byId("sd-banner").appendChild(el("p",{cls:"sd-err",text:"The results didn't load ("+e.message+"). Try reloading the page."}));
 });
 })();

@@ -203,11 +203,12 @@ number at the top is `highlights` in `content/said-and-done/_index.md` (config
 ids from `results.json`). The page is self-contained: it links nowhere outside
 the site.
 
-Below the results, two sections are reported separately from the 15-task
-score, each from its own package in `static/said-and-done/`: "When there's no
-right answer" (`no-valid-option.json`: safety-critical tasks where no option
-is valid) and the "Does Beam know?" addendum (`addendum.json`, with the raw
-reasoning behind it as `beam-reasoning.zip`). `/checked-goal/` (the checks
+Below the results, two sections have packages of their own in
+`static/said-and-done/`: "When there's no right answer"
+(`no-valid-option.json`: what each setup chose on the safety-critical
+scenarios, which also count in the score) and the "Does Beam know?" addendum
+(`addendum.json`, with the raw reasoning behind it as `beam-reasoning.zip`),
+which is reported apart from the score. `/checked-goal/` (the checks
 as a prototype Mirror extension, from `static/checked-goal/`) links from the
 top; the quiz that used to sit beside it was retired, and its old address
 redirects to Said & Done. `/overnight/` indexes the
