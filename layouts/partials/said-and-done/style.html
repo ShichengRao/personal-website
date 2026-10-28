@@ -247,7 +247,15 @@ main:has(> #sd-app){padding-bottom:0}
 #sd-app .nv-card p.ticket{color:var(--ink)}
 #sd-app .nv-card .ans{margin-top:auto;padding-top:6px;font-size:13px;color:var(--muted)}
 #sd-app .nv-grid tbody th{font-weight:500;white-space:nowrap}
-#sd-app .nv-grid tr.ctl > *{background:color-mix(in srgb,var(--ink) 4%,var(--plane))}
+#sd-app .nv-grid .ctl{background:color-mix(in srgb,var(--ink) 4%,var(--plane))}
+#sd-app .nv-grid thead th{vertical-align:bottom;font-weight:600;min-width:5.5em}
+#sd-app .nv-grid th small,#sd-app .nv-sum th small{display:block;font-size:11px;color:var(--muted);font-weight:400;white-space:normal}
+#sd-app .nv-sum thead th.n{white-space:normal;min-width:5.5em;max-width:8em}
+#sd-app .nv-sum tbody th{white-space:nowrap}
+/* The setup column stays in view while the numbers scroll. */
+#sd-app .nv-sum th:first-child{position:sticky;left:0;z-index:1;background:var(--plane)}
+#sd-app .nv-sum tr.bk-beam th:first-child{background:color-mix(in srgb,var(--g-beam) 9%,var(--surface))}
+#sd-app .nv-row.gap{margin-top:10px}
 #sd-app .nv-sum tbody th{font-weight:400}
 #sd-app .nv-chips{display:flex;gap:3px}
 #sd-app button.sd-chip{border:0;cursor:pointer}

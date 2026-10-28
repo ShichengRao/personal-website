@@ -97,7 +97,8 @@ test('the headline setups named in the front matter are in the results', () => {
 
 test('the no-valid-option section has what it reads', () => {
   const setups = new Set(noValid.setups.map((s) => s.id));
-  for (const id of ['beam', 'beam-checks']) assert.ok(setups.has(id), `no-valid-option.json has no ${id} setup`);
+  // The section's headline numbers compare Beam alone with Beam + scaffold, by these ids.
+  for (const id of ['beam-neutral', 'beam-neutral-scaffold-v4']) assert.ok(setups.has(id), `no-valid-option.json has no ${id} setup`);
   for (const id of setups) assert.ok(noValid.summary[id], `no-valid-option.json: no summary for ${id}`);
   const scenarios = new Set(noValid.scenarios.map((s) => s.id));
   for (const r of noValid.results) {
