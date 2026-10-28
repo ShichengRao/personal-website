@@ -84,7 +84,9 @@ rack-leave heuristic that turns raw scores into equity. The hard bot and the
 review both pick by equity. It loads in Node, which is how the tests check it.
 `app.js` is the page: board and rack (typing, clicking or dragging), the bot,
 pass-and-play, online games, and a move-by-move review with the top plays for
-every position. Stored games are replayed without the word list, so swapping
+every position. Its summary shows each player's average turn rating and rated-turn
+count separately, including passes and exchanges but excluding resignation.
+Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
 
 The game plays the NASPA Word List 2023 (NWL2023, 196,601 words), used under
