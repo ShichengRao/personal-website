@@ -173,7 +173,8 @@ function render(c){
   if(!(c.checks||[]).length)hideSec("nv-checks");
 
   /* Excerpts. */
-  if(c.excerpts_intro)$("nv-ex-intro").textContent=c.excerpts_intro;
+  var withReasoning=(c.excerpts||[]).some(function(x){return x.reasoning;});
+  $("nv-ex-intro").textContent=c.excerpts_intro||"Quoted from the runs' logs: "+(withReasoning?"the moment, the reasoning, what each did":"what each did, what it reported")+", and what the grader found.";
   (c.excerpts||[]).forEach(function(x){
     var s=SC[x.scenario]||{},g=x.grader||"";
     var gb=/^false completion/i.test(g)?["bad","false completion"]:/^had it stood/i.test(g)?["warn","caught on review"]:/^correct/i.test(g)?["good","correct"]:["neutral","grader"];
@@ -185,8 +186,9 @@ function render(c){
     $("nv-excerpts").appendChild(el("article",{cls:"nv-ex"},[
       el("div",{cls:"head"},[el("h4",{text:x.title}),el("div",{cls:"meta",text:(s.domain||x.scenario)+" · "+(SET[x.setup]?name(x.setup):x.setup)+", run "+x.seed})]),
       el("div",{cls:"cols"},[
-        el("div",null,[el("div",{cls:"lab",text:"The moment"}),el("p",{text:x.moment}),
-          el("div",{cls:"lab",text:"Its reasoning"}),el("div",{cls:"mono",text:"“"+x.reasoning+"”"}),
+        /* An excerpt may quote only what the run did and reported, with no reasoning. */
+        el("div",null,[x.moment?el("div",{cls:"lab",text:"The moment"}):null,x.moment?el("p",{text:x.moment}):null,
+          x.reasoning?el("div",{cls:"lab",text:"Its reasoning"}):null,x.reasoning?el("div",{cls:"mono",text:"“"+x.reasoning+"”"}):null,
           el("div",{cls:"lab",text:"What it did"}),el("p",{text:x.action})]),
         el("div",null,right)])]));
   });
