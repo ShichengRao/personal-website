@@ -77,17 +77,6 @@ test('published rates and costs recompute from the scored rows', () => {
   }
 });
 
-test('quiz runs identify their prompt condition and the tally matches the answers', () => {
-  const quiz = JSON.parse(read('static/spot-the-false-completion/content.json'));
-  const keys = quiz.items.map((item) => {
-    assert.ok(item.config_id && item.setup_label, `quiz item ${item.n}: missing run condition`);
-    return `${item.task}/${item.config_id}/${item.seed}`;
-  });
-  assert.equal(new Set(keys).size, keys.length, 'quiz run identities are ambiguous');
-  assert.equal(quiz.tally.done, quiz.items.filter((item) => item.answer.accept).length);
-  assert.equal(quiz.tally.not_acceptable, quiz.items.filter((item) => !item.answer.accept).length);
-});
-
 test('the headline setups named in the front matter are in the results', () => {
   const line = read('content/said-and-done/_index.md').match(/^highlights:\s*(\[.*\])\s*$/m);
   assert.ok(line, 'content/said-and-done/_index.md has no highlights');

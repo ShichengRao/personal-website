@@ -207,10 +207,10 @@ Below the results, two sections are reported separately from the 15-task
 score, each from its own package in `static/said-and-done/`: "When there's no
 right answer" (`no-valid-option.json`: safety-critical tasks where no option
 is valid) and the "Does Beam know?" addendum (`addendum.json`, with the raw
-reasoning behind it as `beam-reasoning.zip`). Two pages link from the top:
-`/checked-goal/` (the checks as a prototype Mirror extension, from
-`static/checked-goal/`) and `/spot-the-false-completion/` (a quiz on real
-runs, from `static/spot-the-false-completion/`). `/overnight/` indexes the
+reasoning behind it as `beam-reasoning.zip`). `/checked-goal/` (the checks
+as a prototype Mirror extension, from `static/checked-goal/`) links from the
+top; the quiz that used to sit beside it was retired, and its old address
+redirects to Said & Done. `/overnight/` indexes the
 drafts and is a Hugo draft, so it shows only under `hugo server
 --buildDrafts`.
 
