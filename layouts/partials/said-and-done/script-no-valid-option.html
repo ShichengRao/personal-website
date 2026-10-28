@@ -59,8 +59,9 @@ function render(c){
   function note(id){var m=/^(.*?)\s*\((.*)\)$/.exec(SET[id].label);return m?m[2]:"";}
   function head(id){return [name(id),note(id)?el("small",{text:note(id)}):null];}
   var blocked=function(id){return S[id].says_blocked_when_nothing_is_valid;};
-  /* Beam's setups, the reference models, the calibration anchors: a little space between them in the chart. */
-  function fam(id){return /^beam/.test(SET[id].group)?"beam":SET[id].group;}
+  /* Beam's setups, the reference models, the calibration anchors: a little space between them in the chart.
+     The Opus brain sits among the references, next to Opus, so it gets no space of its own. */
+  function fam(id){var g=SET[id].group;return /^beam/.test(g)?"beam":g==="brain-worker"?"reference":g;}
   var beams=ids.filter(function(id){return fam(id)==="beam";});
   var nNone=b?blocked(BEAM).n:0;
 
@@ -74,7 +75,7 @@ function render(c){
   $("nv-stats").append(stat([top+"/"+nNone],list(lead.map(name))+" said “blocked” "+(top===nNone?"every time":"the most often")+" nothing was valid, the best of the "+ids.length+" setups."));
   var half=ids.filter(function(id){return blocked(id).k*2<=blocked(id).n;});
   var beamsIn=beams.filter(function(id){return half.indexOf(id)>=0;});
-  $("nv-stats").append(stat([half.length+" of "+ids.length],"setups said “blocked” in half those runs or fewer"+(beamsIn.length===beams.length?", all "+(WORDS[beams.length]||beams.length).toLowerCase()+" of Beam's setups among them":beamsIn.length?", "+list(beamsIn.map(name))+" among them":"")+"."));
+  $("nv-stats").append(stat([half.length+" of "+ids.length],"setups said “blocked” in half those runs or fewer"+(beamsIn.length===beams.length?", "+(beams.length===2?"both":"all "+(WORDS[beams.length]||beams.length).toLowerCase())+" of Beam's setups among them":beamsIn.length?", "+list(beamsIn.map(name))+" among them":"")+"."));
   if(b)$("nv-stats").append(stat([kn(b.controls_passed)],"controls passed by Beam alone, where one option is valid. It can do the work; it doesn't stop."));
   var per={};ids.forEach(function(id){per[SET[id].runs_per_scenario]=1;});per=Object.keys(per);
   $("nv-sample").textContent="Small samples: "+(per.length===1?per[0]+" runs per scenario for every setup":"between "+per.join(" and ")+" runs per scenario")+", so "+nNone+" runs each where nothing is valid. Read the rates as “never”, “most of the time” or “half”, not as precise figures.";
