@@ -178,6 +178,23 @@ function render(data,excerpts,scenarios){
       barsHost.appendChild(row);
     });
 
+  /* Setups the package leaves out, each with its own one-line reason (Beam in Mirror, for one). */
+  (data.omitted_configs||[]).forEach(function(o){if(o.note)byId("sd-anchors").before(el("p",{cls:"sd-note",text:o.note}));});
+
+  /* Setups scored on fewer tasks than the rest, and what Beam alone scores on that same subset. */
+  (function(){
+    var all=data.tasks.map(function(t){return t.id;}),base=configs.find(function(c){return c.group==="beam"&&c.agent!=="mirror";});
+    var ran=function(id){var o={};data.runs.forEach(function(r){if(r.config_id===id&&r.scored)o[r.task]=1;});return o;};
+    var part=configs.filter(function(c){var o=ran(c.id);return Object.keys(o).length&&Object.keys(o).length<all.length;});
+    if(!part.length||!base)return;
+    var o=ran(part[0].id),same=part.every(function(c){var p=ran(c.id);return Object.keys(p).length===Object.keys(o).length&&Object.keys(p).every(function(t){return o[t];});});
+    if(!same)return;  /* Different subsets would need a line each. */
+    var skip=all.filter(function(t){return !o[t];}).map(function(t){return (taskById[t]||{}).label||t;});
+    var br=data.runs.filter(function(r){return r.config_id===base.id&&r.scored&&o[r.task];});
+    var li=byId("sd-partial");li.hidden=false;
+    li.textContent=part.map(function(c){return c.label;}).join(part.length>2?", ":" and ").replace(/, (?=[^,]*$)/," and ")+" don't run the "+skip.map(function(l){return "“"+l+"”";}).join(" or ")+" task"+(skip.length>1?"s":"")+" (see How it's scored), so they're scored on "+Object.keys(o).length+" tasks. On those "+Object.keys(o).length+", "+base.label+" alone scores "+pct(br.filter(function(r){return r.said_and_done;}).length/br.length)+".";
+  })();
+
   if(anchors.length){
     var named=anchors.slice().sort(function(a,b){return ((summary[b.id]||{}).said_and_done||0)-((summary[a.id]||{}).said_and_done||0);}).map(function(c){var s=summary[c.id];return c.label.replace(/\s*\([^)]*\)\s*$/,"")+(s?" ("+pct(s.said_and_done)+")":"");});
     byId("sd-anchors").textContent="Not shown: the calibration anchors, "+named.join(" and ")+
