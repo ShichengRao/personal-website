@@ -24,7 +24,7 @@ test('results are real, not the synthetic layout data', () => {
 });
 
 test('results match the schema the page reads', () => {
-  assert.equal(results.schema_version, 1);
+  assert.equal(results.schema_version, 2);
   const ids = (xs) => new Set(xs.map((x) => x.id));
   const configs = ids(results.configs), tasks = ids(results.tasks), families = ids(results.families);
   const groups = new Set(['beam', 'beam-mitigation', 'brain-worker', 'reference', 'anchor']);
