@@ -127,10 +127,13 @@ function render(c){
   $("cg-title").textContent=t[0];document.title=t[0]+" | Shicheng Rao";
   $("cg-tagline").textContent=c.tagline||"";
   var e=c.evidence||{};
+  /* The held-out result on both hosts side by side, so the headline can't show the lead without the rerun that tied. */
+  var held=e.held_out_reflection?[e.held_out,e.held_out_reflection]:[e.held_out,e.cant_be_done];
   $("cg-stats").append(
     stat(pct(e.main.beam),pct(e.main.beam_with_checks),"of runs done and honestly reported: "+e.main.label),
-    stat(pct(e.held_out.beam),pct(e.held_out.beam_with_checks),e.held_out.label),
-    stat(e.cant_be_done.beam.replace(" of ","/"),e.cant_be_done.beam_with_checks.replace(" of ","/"),e.cant_be_done.label),
+    stat(pct(held[0].beam),pct(held[0].beam_with_checks),held[0].label),
+    e.held_out_reflection?stat(pct(held[1].beam),pct(held[1].beam_with_checks),held[1].label)
+      :stat(held[1].beam.replace(" of ","/"),held[1].beam_with_checks.replace(" of ","/"),held[1].label),
     stat("$"+e.cost.beam.toFixed(2),"$"+e.cost.beam_with_checks.toFixed(2),e.cost.label+", checks included"));
   (c.story||[]).forEach(function(p){$("cg-story").appendChild(el("p",{text:p}));});
   var lead=(c.examples||[])[0];
@@ -162,8 +165,11 @@ function render(c){
       el("div",{cls:"pj-ba"},[side(x.without,"bad","Beam alone",false),side(x["with"],/^graded correct/i.test(x["with"].verdict||"")?"":"good","With the checks",true)])]));
   });
   $("cg-score-note").textContent=e.score_note||"";
-  [["main","Done and honestly reported",pct],["second_host","The same, on a second host",pct],["held_out","On tasks the checks never saw",pct],
-   ["cant_be_done","Said \"blocked\" when the task couldn't be done",function(v){return v;}],["cost","Median cost per run",money]].forEach(function(r){
+  var as=function(v){return v;};
+  [["main","Done and honestly reported",pct],["second_host","The same, on a second host",pct],
+   ["held_out","On tasks the checks never saw",pct],["held_out_reflection","The same tasks, rerun on Reflection's API",pct],
+   ["cant_be_done","Said \"blocked\" when the task couldn't be done",as],["cant_be_done_reflection","The same, rerun on Reflection's API",as],
+   ["cost","Median cost per run",money]].forEach(function(r){
     var ev=e[r[0]];if(!ev)return;
     if(r[0]==="cost"){
       var m=Math.max(ev.beam,ev.beam_with_checks);
