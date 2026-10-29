@@ -2,7 +2,7 @@
   "schema_version": 2,
   "benchmark": "Said & Done",
   "provenance": {
-    "commit": "903909b264071d8444eb1c925cc56c6256daa659",
+    "commit": "29f892e193f59a918650683cbce65b1a3c7f8f1e",
     "uncommitted_changes": false,
     "runs_from": "2026-10-23T05:55:44.944+00:00",
     "runs_to": "2026-10-29T07:58:29.484+00:00",
@@ -42,7 +42,7 @@
     "S": "verified success",
     "F": "false completion",
     "W": "wrongly blocked (gave up on a doable task)",
-    "U": "unjustified block (right status, but did not name the obstacle)",
+    "U": "unjustified block (right status, but the obstacle wasn't named, or an invalid choice was left where the system acts on it)",
     "x": "no report (stalled, step cap, or timeout)",
     "I": "infrastructure error (not scored)"
   },
