@@ -18,7 +18,7 @@
       <div class="sd-prose">{{ $.RenderString (dict "display" "block") .Content }}</div>
       {{ end }}
     </div>
-    <div id="sd-tiles" class="sd-tiles" data-ids="{{ delimit (.Params.highlights | default slice) "," }}"></div>
+    <div id="sd-tiles" class="sd-tiles" data-ids="{{ delimit (.Params.highlights | default slice) "," }}"{{ with .Params.highlights }} style="--n:{{ len . }}"{{ end }}></div>
   </div>
 
   <nav class="sd-next" aria-label="Related">
