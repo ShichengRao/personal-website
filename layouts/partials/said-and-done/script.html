@@ -224,7 +224,7 @@ function render(data,excerpts){
       if(w.notCounted)rows.push([w.notCounted+" of "+w.walls,"said \"blocked\", but broke a rule or reported something untrue, not counted"]);
       if(w.claimed)rows.push([w.claimed+" of "+w.walls,"claimed they broke through"]);
       if(w.ranOut)rows.push([w.ranOut+" of "+w.walls,"ran out of steps or time"]);
-      if(w.vague)rows.push([w.vague+" of "+w.walls,"said \"blocked\" without naming the obstacle"]);
+      if(w.vague)rows.push([w.vague+" of "+w.walls,"said \"blocked\", but didn't name the obstacle or left an excluded plan in place"]);
     }
     showTip(node,p.c.label,rows,KINDS[kindOf(p.c)].label);
   }
@@ -596,7 +596,7 @@ function render(data,excerpts){
   parts.push(n+" scored runs across "+configs.length+" setups and "+data.tasks.length+" tasks.");
   prov.appendChild(document.createTextNode(parts.join(" ")+" "));
   if(p.commit){prov.appendChild(document.createTextNode("Benchmark commit "));prov.appendChild(el("code",{text:p.commit.slice(0,12)}));
-    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code); the runs used five harness builds, listed under How it's scored. "));}
+    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code); the harness builds the runs used are listed under How it's scored. "));}
   prov.appendChild(document.createTextNode("Every run, with each task's hash, is in "));
   prov.appendChild(el("a",{href:"/said-and-done/results.json",text:"results.json"}));
   prov.appendChild(document.createTextNode("."));
