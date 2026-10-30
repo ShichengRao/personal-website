@@ -106,9 +106,12 @@ function pct(v){return typeof v==="number"?Math.round(v*100)+"%":String(v);}
 function money(v){return "$"+(v<1?v.toPrecision(2):v.toFixed(2));}
 function frac(v){if(typeof v==="number")return v;var m=/(\d+)\s*of\s*(\d+)/.exec(v||"");return m?+m[1]/+m[2]:0;}
 /* `code` spans for anything in backticks or that looks like a path or command. */
+/* Code spans and paths as code, and [text](https://…) as a link (the site's tests allow only a few hosts). */
 function rich(text){
-  var out=[],re=/(`[^`]+`|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
-  while((m=re.exec(text))){if(m.index>last)out.push(text.slice(last,m.index));out.push(el("code",{text:m[0].replace(/`/g,"")}));last=re.lastIndex;}
+  var out=[],re=/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|`[^`]+`|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
+  while((m=re.exec(text))){if(m.index>last)out.push(text.slice(last,m.index));
+    var link=/^\[([^\]]+)\]\((https:\/\/[^)\s]+)\)$/.exec(m[0]);
+    out.push(link?el("a",{href:link[2],text:link[1],rel:"noopener"}):el("code",{text:m[0].replace(/`/g,"")}));last=re.lastIndex;}
   if(last<text.length)out.push(text.slice(last));return out;
 }
 function stat(from,to,k){return el("div",{cls:"pj-stat"},[el("div",{cls:"v"},[el("span",{cls:"from",text:from}),el("span",{cls:"arrow",text:"→"}),to]),el("div",{cls:"k",text:k})]);}
@@ -137,7 +140,7 @@ function render(c){
     stat("$"+e.cost.beam.toFixed(2),"$"+e.cost.beam_with_checks.toFixed(2),e.cost.label+", checks included"));
   (c.story||[]).forEach(function(p){$("cg-story").appendChild(el("p",{text:p}));});
   var lead=(c.examples||[])[0];
-  if(lead&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
+  if(lead&&lead.without.noticed&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
     "“"+lead.without.noticed+"”",el("cite",{text:"Beam's reasoning, shortly before it "+lead.without.did.charAt(0).toLowerCase()+lead.without.did.slice(1).replace(/\.$/,"")+", and reported “complete”"})]));
   (c.how_it_works||[]).forEach(function(h,i){
     var m=/^(.*?)\s*\((.*)\)$/.exec(h.name),name=m?m[1]:h.name;
@@ -146,10 +149,11 @@ function render(c){
   (c.examples||[]).forEach(function(x){
     function side(s,cls,head,isWith){
       var kids=[el("div",{cls:"h"},[head])];
+      /* An example may leave out what the reasoning noticed: then it starts at what Beam did. */
       var told=/^\((.*)\)$/.exec(s.noticed||"");
-      kids.push(told?el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"What it did"}),el("div",{cls:"said",text:told[1]})])
+      if(s.noticed)kids.push(told?el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"What it did"}),el("div",{cls:"said",text:told[1]})])
         :el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"Its reasoning noticed"}),el("div",{cls:"pj-mono",text:"“"+s.noticed+"”"})]));
-      if(s.did)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"Then it"}),el("div",{cls:"said",text:s.did})]));
+      if(s.did)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:s.noticed?"Then it":"What it did"}),el("div",{cls:"said",text:s.did})]));
       if(isWith&&s.checks)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"The checks"}),
         el("ul",{cls:"cg-checks"},s.checks.map(function(k){return el("li",null,[el("span",{cls:"cg-kind",text:k.kind}),el("span",{text:k.text})]);}))]));
       var st=/^(\w+):\s*([\s\S]*)$/.exec(s.reported||"");

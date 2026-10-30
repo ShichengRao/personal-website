@@ -108,6 +108,16 @@ test('the page links nowhere outside the site', () => {
   }
 });
 
+test('Checked /goal never names the pen name, and its GitHub or Hugging Face links are the real-name account or Mirror', () => {
+  for (const f of ['static/checked-goal/content.json', 'static/checked-goal/README.md']) {
+    const text = read(f);
+    assert.ok(!/abnew123|shadowghosts/i.test(text), `${f} names the pen name`);
+    for (const url of text.match(/https?:\/\/(?:www\.)?(?:github\.com|huggingface\.co)\/[^\s)"'`\]]*/gi) || []) {
+      assert.ok(/^https:\/\/(?:github\.com|huggingface\.co)\/(?:(?:spaces|datasets)\/)?(?:ShichengRao|reflection-oss\/mirror)(?:\/|$)/.test(url), `${f} links an account other than ShichengRao or Mirror: ${url}`);
+    }
+  }
+});
+
 test('Checked /goal ships the files its install section links, with no real home folder in them, or none while held', () => {
   const page = JSON.parse(read('static/checked-goal/content.json'));
   // While the download is held (extension_held in its front matter), the page links none of them and the site ships none.
