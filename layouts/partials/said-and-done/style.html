@@ -76,6 +76,9 @@ main:has(> #sd-app){padding-bottom:0}
 #sd-app td.n,#sd-app th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 #sd-app .sd-sticky{position:sticky;left:0;background:var(--plane);z-index:1}
 #sd-app tr.sd-hl > *{background:color-mix(in srgb,var(--c) 9%,var(--plane))}
+#sd-app .sd-splits th[scope=row]{font-weight:400;max-width:26rem}
+#sd-app .sd-splits th small,#sd-app .sd-splits td small{color:var(--muted);font-size:12px}
+#sd-app .sd-splits tr.sd-total > *{border-top:1px solid var(--axis);font-weight:600}
 #sd-app tr.sd-grp th{padding-top:14px;font-size:12px;font-weight:600;color:var(--ink2);border-bottom:1px solid var(--axis)}
 
 #sd-app #sd-table th.sd-sticky{min-width:150px}

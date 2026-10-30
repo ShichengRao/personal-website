@@ -30,6 +30,15 @@
     </a>
   </nav>
 
+  <!-- Shown when results.json labels its tasks by split (development, held out, blind). -->
+  <section class="sd-sec" id="sd-splits-sec" hidden>
+    <p class="sd-eyebrow">Development vs. blind</p>
+    <h2 class="sd-h">Where the checks were built, and where they were tested blind</h2>
+    <p class="sd-sub">The scaffold's checks were built on some of these tasks, so a gain there doesn't show that they work on new problems. The blind tasks were written by a separate agent before this version of the checks existed.</p>
+    <div class="sd-scroll"><table id="sd-splits" class="sd-splits"></table></div>
+    <p class="sd-note" id="sd-splits-note"></p>
+  </section>
+
   <section class="sd-sec">
     <p class="sd-eyebrow">Results</p>
     <h2 class="sd-h">Said &amp; Done score</h2>

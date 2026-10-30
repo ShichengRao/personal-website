@@ -44,6 +44,22 @@ test('results match the schema the page reads', () => {
   for (const q of excerpts.excerpts) assert.ok(configs.has(q.config) && tasks.has(q.task), `excerpt ${q.task}/${q.config}`);
 });
 
+test('every task says whether the checks were built on it, when the results are split', () => {
+  if (!results.by_split) return;
+  const splits = new Set(['development', 'held_out', 'blind']);
+  const all = [...results.tasks, ...(results.tasks_outside_score || [])];
+  for (const t of all) assert.ok(splits.has(t.split), `${t.id}: split ${t.split}`);
+  for (const k of Object.keys(results.by_split)) assert.ok(splits.has(k), `by_split has unknown split ${k}`);
+  for (const [k, g] of Object.entries(results.scaffold_gain_by_split || {})) {
+    assert.ok(k === 'all' || splits.has(k), `scaffold_gain_by_split has unknown split ${k}`);
+    for (const f of ['diff', 'low', 'high']) assert.equal(typeof g[f], 'number', `scaffold_gain_by_split.${k}.${f}`);
+    assert.ok(g.low <= g.diff && g.diff <= g.high, `scaffold_gain_by_split.${k}: interval doesn't hold its estimate`);
+  }
+  const ids = new Set(all.map((t) => t.id));
+  for (const t of all) if (t.same_as) assert.ok(ids.has(t.same_as), `${t.id}: same_as ${t.same_as} isn't a task`);
+  for (const r of results.runs_outside_score || []) assert.ok(ids.has(r.task), `outside-score run on unknown task ${r.task}`);
+});
+
 test('published rates and costs recompute from the scored rows', () => {
   // Arithmetic checks complement the separate audit against original run evidence.
   const near = (actual, expected, label) => {

@@ -209,6 +209,38 @@ function render(data,excerpts){
     }
   }
 
+  /* The scaffold's gain by split: tasks its checks were built on (development), held out from
+     tuning, or written blind. Only the blind split shows whether the checks work on new problems. */
+  var SPLIT={development:["Development","the checks were built or tuned on these"],
+    held_out:["Held out","not used to tune the checks, though written knowing they existed"],
+    blind:["Blind","written by a separate agent before this version of the checks existed"]};
+  (function(){
+    var base=configs.find(function(c){return c.group==="beam";}),mit=configs.find(function(c){return c.group==="beam-mitigation";});
+    if(!data.by_split||!base||!mit)return;
+    var all=data.tasks.concat(data.tasks_outside_score||[]),gains=data.scaffold_gain_by_split||{};
+    /* A copy and its original are one task. */
+    var root=function(t){return t.same_as||t.id;};
+    var pts=function(v){v=Math.round(v*100);return (v>0?"+":v<0?"\u2212":"")+Math.abs(v);};
+    var gain=function(g){return g?pts(g.diff)+" ("+pts(g.low)+" to "+pts(g.high)+")":"\u2014";};
+    var cell=function(x){if(!x)return el("td",{cls:"n",text:"\u2014"});
+      return el("td",{cls:"n"},[pct(x.said_and_done),el("small",{text:" "+Math.round(x.said_and_done*x.runs)+" of "+x.runs})]);};
+    var tb=byId("sd-splits");
+    tb.appendChild(el("thead",null,[el("tr",null,[el("th",{text:"Tasks"}),el("th",{cls:"n",text:"How many"}),
+      el("th",{cls:"n",text:base.label}),el("th",{cls:"n",text:mit.label}),el("th",{cls:"n",text:"Gain in points (95%)"})])]));
+    var body=el("tbody");tb.appendChild(body);
+    ["development","held_out","blind"].forEach(function(k){
+      var bs=data.by_split[k];if(!bs)return;
+      var n=all.filter(function(t){return t.split===k;}).map(root).filter(function(v,i,a){return a.indexOf(v)===i;}).length;
+      body.appendChild(el("tr",null,[el("th",{scope:"row"},[el("b",{text:SPLIT[k][0]}),el("small",{text:": "+SPLIT[k][1]})]),
+        el("td",{cls:"n",text:String(n)}),cell(bs[base.id]),cell(bs[mit.id]),el("td",{cls:"n",text:gain(gains[k])})]));
+    });
+    if(gains.all)body.appendChild(el("tr",{cls:"sd-total"},[el("th",{scope:"row",text:"All tasks in the score"}),el("td",{cls:"n",text:String(data.tasks.length)}),
+      cell({said_and_done:summary[base.id].said_and_done,runs:summary[base.id].runs}),cell({said_and_done:summary[mit.id].said_and_done,runs:summary[mit.id].runs}),
+      el("td",{cls:"n",text:gain(gains.all)})]));
+    if(data.split_note)byId("sd-splits-note").textContent=data.split_note;
+    byId("sd-splits-sec").hidden=false;
+  })();
+
   /* Points shared by both charts: references drawn first, Beam's on top. */
   var pts=configs.filter(function(c){return summary[c.id];}).map(function(c){return {c:c,s:summary[c.id]};});
   pts.sort(function(a,b){return (isBeam(a.c)?1:0)-(isBeam(b.c)?1:0);});
@@ -541,7 +573,8 @@ function render(data,excerpts){
     ts.forEach(function(t){
       var short=(t.label||t.id).replace(/^[^:]*:\s*/,"");
       short=short.charAt(0).toUpperCase()+short.slice(1);
-      var th=el("th",{cls:"sd-sticky sd-task",scope:"row",title:t.summary||""},[short,t.expected_status==="blocked"?el("small",{text:"honest answer: blocked"}):null]);
+      var tags=[t.expected_status==="blocked"?"honest answer: blocked":null,t.split&&SPLIT[t.split]?SPLIT[t.split][0].toLowerCase()+" task":null].filter(Boolean);
+      var th=el("th",{cls:"sd-sticky sd-task",scope:"row",title:t.summary||""},[short,tags.length?el("small",{text:tags.join(" \u00b7 ")}):null]);
       var tr=el("tr",null,[th]);
       configs.forEach(function(c){
         var rs=(runsBy[t.id+"|"+c.id]||[]).slice().sort(function(a,b){return a.seed-b.seed;});
@@ -567,7 +600,7 @@ function render(data,excerpts){
   var dl=byId("sd-tasks");
   data.families.forEach(function(f){
     data.tasks.filter(function(t){return t.family===f.id;}).forEach(function(t){
-      dl.appendChild(el("dt",{text:t.label||t.id}));
+      dl.appendChild(el("dt",null,[t.label||t.id,t.split&&SPLIT[t.split]?el("small",{text:" \u00b7 "+SPLIT[t.split][0].toLowerCase()}):null]));
       if(t.summary)dl.appendChild(el("dd",{text:t.summary}));
     });
   });
