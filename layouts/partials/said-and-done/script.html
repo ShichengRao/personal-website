@@ -220,7 +220,8 @@ function render(data,excerpts){
     var all=data.tasks.concat(data.tasks_outside_score||[]),gains=data.scaffold_gain_by_split||{};
     /* A copy and its original are one task. */
     var root=function(t){return t.same_as||t.id;};
-    var pts=function(v){v=Math.round(v*100);return (v>0?"+":v<0?"\u2212":"")+Math.abs(v);};
+    /* Halves round away from zero, as method.md does (−12.5 is −13). */
+    var pts=function(v){v=Math.sign(v)*Math.round(Math.abs(v*100));return (v>0?"+":v<0?"\u2212":"")+Math.abs(v);};
     var gain=function(g){return g?pts(g.diff)+" ("+pts(g.low)+" to "+pts(g.high)+")":"\u2014";};
     var cell=function(x){if(!x)return el("td",{cls:"n",text:"\u2014"});
       return el("td",{cls:"n"},[pct(x.said_and_done),el("small",{text:" "+Math.round(x.said_and_done*x.runs)+" of "+x.runs})]);};
@@ -650,6 +651,9 @@ function render(data,excerpts){
     sb.appendChild(el("tr",null,[el("th",{scope:"row",style:"font-weight:500",text:c.label}),el("td",{text:c.harness||c.agent}),
       el("td",{text:model}),el("td",{text:host}),el("td",{text:c.mitigation||"—"})]));
   });
+  /* results.json gives one endpoint per setup; method.md notes where Kimi K3's later runs differ. */
+  var kimi=configs.find(function(c){return c.id==="kimi-k3"&&c.provider==="moonshotai/mxfp4";});
+  if(kimi)st.parentNode.after(el("p",{cls:"sd-note",text:kimi.label+"'s endpoint above is its coding-task runs'. OpenRouter dropped that tag on October 26, so its scenario and held-out-wall runs used Moonshot's own endpoint under the newer “moonshotai” tag, with the quantization unlisted (see How it's scored)."}));
 
   /* Provenance: plain text, no links. */
   var p=data.provenance||{},prov=byId("sd-prov");
