@@ -48,16 +48,16 @@
       </div>
       <div>
         <h3>What each setup did, and what it said</h3>
-        <p class="sd-sub">Every run of a setup in one bar. Right of the line the work got done; left of it the work didn't, and red marks the runs where the agent said it had.</p>
         <div id="sd-outcomes" class="sd-outcomes" role="list"></div>
       </div>
       <div>
         <h3>Score vs. cost</h3>
-        <p class="sd-sub">Median cost per run, on a log scale. Filled dots are billed costs (OpenRouter's bill or Claude Code's own cost report); hollow dots are estimated from token usage and the pricing assumptions in How it's scored.</p>
+        <p class="sd-sub">Median cost per run, on a log scale. Filled dots are billed costs; hollow dots are estimated.<sup><a href="#sd-cost-fn">1</a></sup></p>
         <div id="sd-cost" class="sd-chart"></div>
       </div>
     </div>
     <p class="sd-note"><span id="sd-nocost"></span>Hover a bar or dot for its counts; every run behind these charts is in "Every run" below.</p>
+    <p class="sd-note" id="sd-cost-fn"></p>
   </section>
 
   <div id="sd-blocks">

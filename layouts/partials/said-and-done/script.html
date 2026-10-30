@@ -214,6 +214,18 @@ function render(data,excerpts){
   pts.sort(function(a,b){return (isBeam(a.c)?1:0)-(isBeam(b.c)?1:0);});
 
   function hasCost(p){return typeof p.s.median_cost_usd==="number";}
+  /* Note 1 under the charts: where each setup's cost comes from, by its host and cost basis. */
+  (function(){
+    var SRC={"openrouter.ai":"OpenRouter's bill","api.anthropic.com":"Claude Code's own cost report"},groups={},order=[];
+    var join=function(a){return a.length<2?a.join(""):a.slice(0,-1).join(", ")+" and "+a[a.length-1];};
+    pts.filter(hasCost).forEach(function(p){
+      var k=p.s.cost_estimated?"":(SRC[p.c.host]||"the provider's bill");
+      if(!groups[k]){groups[k]=[];order.push(k);}groups[k].push(p.c.label);
+    });
+    var parts=order.filter(Boolean).map(function(k){return k.charAt(0).toUpperCase()+k.slice(1)+": "+join(groups[k])+".";});
+    if(groups[""])parts.push("Estimated from token usage at the prices in How it's scored: "+join(groups[""])+".");
+    var fn=byId("sd-cost-fn");fn.textContent="";fn.appendChild(el("sup",{text:"1"}));fn.appendChild(document.createTextNode(" Costs. "+parts.join(" ")));
+  })();
   var nocost=pts.filter(function(p){return !hasCost(p);}).map(function(p){return p.c.label;});
   if(nocost.length)byId("sd-nocost").textContent="No cost on file for "+nocost.join(" or ")+
     ": "+(nocost.length>1?"they're":"it's")+" left out of the cost chart. ";
