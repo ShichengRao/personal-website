@@ -157,7 +157,7 @@ function render(data,excerpts){
   (tiles.getAttribute("data-ids")||"").split(",").filter(Boolean).forEach(function(id){
     var c=cfgById[id],s=summary[id];if(!c||!s||!shown[id])return;
     var t=el("div",{cls:"sd-tile"},[el("div",{cls:"k",text:c.label}),el("div",{cls:"v",text:pct(s.said_and_done)}),
-      el("div",{cls:"s",text:"did the work "+pct(s.done)+" \u00b7 reports true "+pct(s.truthful)+" \u00b7 "+money(s.median_cost_usd,s.cost_estimated)+" a run"})]);
+      el("div",{cls:"s",text:"Said & Done score \u00b7 did the work "+pct(s.done)+" \u00b7 reports true "+pct(s.truthful)+" \u00b7 "+money(s.median_cost_usd,s.cost_estimated)+" a run"})]);
     t.style.setProperty("--c",cvar(c));
     tiles.appendChild(t);
   });
@@ -196,9 +196,17 @@ function render(data,excerpts){
   })();
 
   if(anchors.length){
-    var named=anchors.slice().sort(function(a,b){return ((summary[b.id]||{}).said_and_done||0)-((summary[a.id]||{}).said_and_done||0);}).map(function(c){var s=summary[c.id];return c.label.replace(/\s*\([^)]*\)\s*$/,"")+(s?" ("+pct(s.said_and_done)+")":"");});
+    var byScore=anchors.slice().sort(function(a,b){return ((summary[b.id]||{}).said_and_done||0)-((summary[a.id]||{}).said_and_done||0);});
+    var named=byScore.map(function(c){var s=summary[c.id];return c.label.replace(/\s*\([^)]*\)\s*$/,"")+(s?" ("+pct(s.said_and_done)+")":"");});
     byId("sd-anchors").textContent="Not shown: the calibration anchors, "+named.join(" and ")+
       ". The coding tasks were calibrated so that the first solves every one honestly and the second fails every one except the safety probes, where nothing was required of it, so that part of their scores is set by design; their runs on the scenarios and the held-out walls are measured like everyone else's.";
+    /* Where the strong anchor fell short, when that's only in the measured part. */
+    var top=byScore[0],fam={};data.tasks.forEach(function(t){fam[t.id]=t;});
+    var topRuns=data.runs.filter(function(r){return r.config_id===top.id&&r.scored;}),miss=topRuns.filter(function(r){return !r.said_and_done;});
+    if(miss.length&&miss.every(function(r){return /^(scenario-|heldout-)/.test(r.family);})){
+      var where=miss.map(function(r){return "“"+(fam[r.task].label||r.task).replace(/^[^:]*:\s*/,"")+"”";}).filter(function(v,i,a){return a.indexOf(v)===i;});
+      byId("sd-anchors").textContent+=" "+top.label.replace(/\s*\([^)]*\)\s*$/,"")+"'s "+(miss.length===1?"one miss":miss.length+" misses")+" in "+topRuns.length+" runs "+(miss.length===1?"is":"are")+" there, on "+where.join(" and ")+" (see How it's scored).";
+    }
   }
 
   /* Points shared by both charts: references drawn first, Beam's on top. */
@@ -211,14 +219,24 @@ function render(data,excerpts){
     ": "+(nocost.length>1?"they're":"it's")+" left out of the cost chart. ";
 
   function pointTip(node,p){
-    var s=p.s;
+    var s=p.s,w=wallStats(p.c);
+    /* On the walls chart, lead with the dot's own two numbers. */
+    if(w&&node.closest&&node.closest("#sd-walls")){
+      var wr=[[pct(w.x),"Said & Done on the tasks that can be done ("+w.did+" of "+w.doable+" runs)"],
+        [pct(w.y),"Said & Done on the walls ("+w.admitted+" of "+w.walls+" runs)"]];
+      if(w.notCounted)wr.push([w.notCounted+" of "+w.walls,"wall runs said \"blocked\", but broke a rule or reported something untrue"]);
+      if(w.claimed)wr.push([w.claimed+" of "+w.walls,"wall runs claimed they broke through"]);
+      if(w.ranOut)wr.push([w.ranOut+" of "+w.walls,"wall runs ran out of steps or time"]);
+      if(w.vague)wr.push([w.vague+" of "+w.walls,"wall runs said \"blocked\", but didn't name the obstacle or left an excluded plan in place"]);
+      wr.push([pct(s.said_and_done),"Said & Done overall"]);
+      return showTip(node,p.c.label,wr,KINDS[kindOf(p.c)].label);
+    }
     var rows=[
       [pct(s.said_and_done),"Said & Done"],
       [pct(s.done),"did the work"],
       [pct(s.truthful),"reports true"],
       [money(s.median_cost_usd,s.cost_estimated),"median cost per run"],
       [mins(s.median_minutes),"median minutes per run"]];
-    var w=wallStats(p.c);
     if(w){
       rows.push([w.admitted+" of "+w.walls,"wall runs Said & Done: \"blocked\", truthfully, within the rules"]);
       if(w.notCounted)rows.push([w.notCounted+" of "+w.walls,"said \"blocked\", but broke a rule or reported something untrue, not counted"]);
@@ -321,14 +339,15 @@ function render(data,excerpts){
     return [0,.25,.5,.75,1].map(function(v){return [v,scale(v),Math.round(v*100)+"%"];});
   }
 
-  /* What each setup did, and what it said: one bar per setup, split at a line.
-     Right of it the work got done (report true, or details wrong); left of it
-     the work didn't (no claim made, or a false "done", in red at the far end). */
+  /* What each setup did, and what it said: one bar per setup, split at a line, worst
+     to best from left to right. Left of the line the work didn't get done (a false
+     "done" in red at the far end, then no claim made); right of it the work got done
+     (details wrong in the report, then a true report at the far end). */
   var KINDS_OUT=[
-    {k:"did_true",side:1,label:"Did it, and said so truthfully",cls:"sd-o-good"},
-    {k:"did_wrong",side:1,label:"Did it, but the report got details wrong",cls:"sd-o-warn"},
+    {k:"claimed",side:-1,label:"Didn't, but said it did",cls:"sd-o-crit"},
     {k:"noclaim",side:-1,label:"Didn't, and didn't claim to",cls:"sd-o-none"},
-    {k:"claimed",side:-1,label:"Didn't, but said it did",cls:"sd-o-crit"}
+    {k:"did_wrong",side:1,label:"Did it, but the report got details wrong",cls:"sd-o-warn"},
+    {k:"did_true",side:1,label:"Did it, and said so truthfully",cls:"sd-o-good"}
   ];
   function outcomes(){
     var host=byId("sd-outcomes");host.textContent="";
@@ -356,8 +375,8 @@ function render(data,excerpts){
         if(share>=0.08)sg.textContent=Math.round(share*100)+"%";
         return sg;
       }
-      var left=el("span",{cls:"sd-oleft"},[seg(KINDS_OUT[3],maxL),seg(KINDS_OUT[2],maxL)]);
-      var right=el("span",{cls:"sd-oright"},[seg(KINDS_OUT[0],maxR),seg(KINDS_OUT[1],maxR)]);
+      var left=el("span",{cls:"sd-oleft"},[seg(KINDS_OUT[0],maxL),seg(KINDS_OUT[1],maxL)]);
+      var right=el("span",{cls:"sd-oright"},[seg(KINDS_OUT[2],maxR),seg(KINDS_OUT[3],maxR)]);
       left.style.width=lw+"%";right.style.width=(100-lw)+"%";
       var track=el("span",{cls:"sd-otrack"},[left,right]);
       var row=el("div",{cls:"sd-row"+(isBeam(r.c)?"":" sd-ref"),role:"listitem",tabindex:"0",
