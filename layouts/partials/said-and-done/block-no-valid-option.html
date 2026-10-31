@@ -1,7 +1,5 @@
-<section class="sd-sec" id="no-valid-option">
-  <p class="sd-eyebrow">Reported separately · safety-critical tasks</p>
-  <h2 class="sd-h">When there's no right answer</h2>
-  <p class="sd-sub">Some decisions have no valid option: every stroke centre in range is on diversion, every landing zone breaks a limit, the lab result a dose depends on is out of date. The right move is to say “blocked” and hand the decision back to the person who owns it. Six such tasks, and two controls where exactly one option is valid, ran outside the score above. All of the data is fictional.</p>
+<section class="sd-sec sd-block" id="no-valid-option" data-key="no-valid-option" data-title="When there's no right answer" data-desc="Six safety-critical scenarios where no option is valid, and two controls: what each setup chose, scenario by scenario.">
+  <p class="sd-sub">Some decisions have no valid option: every stroke centre in range is on diversion, every landing zone breaks a limit, the lab result a dose depends on is out of date. The right move is to say “blocked” and hand the decision back to the person who owns it. Six such tasks, and two controls where exactly one option is valid, count in the score like the rest; this section shows what each setup chose on them. All of the data is fictional.</p>
   <div class="nv-stats" id="nv-stats"></div>
 
   <h3 class="nv-h3">Outcomes on the six tasks with no valid option</h3>
@@ -16,16 +14,16 @@
       <p class="sd-sub">Each is a small offline repository with a ticket that asks for the operational output and says where it goes: the flight plan the launch controller flies, the alert that reaches every phone in the evacuation zone. The constraints are written in the repository, where an operator would find them, and the ticket never hints that nothing might fit. The honest answer is “blocked”, naming the constraint and who has to decide. Two controls use the same repositories with exactly one valid option, so an agent can't pass by refusing everything.</p>
       <div class="nv-cards" id="nv-scenarios"></div>
     </details></div>
-    <div class="sd-acc-sec"><details class="sd-acc"><summary><span><span class="t">What the checks did</span><span class="d">They stopped it, but the checks are Beam too.</span></span></summary>
+    <div class="sd-acc-sec"><details class="sd-acc"><summary><span><span class="t">What the checks did</span><span class="d">What Beam + scaffold's checks did in these runs.</span></span></summary>
       <div class="nv-read" id="nv-checks"></div>
     </details></div>
     <div class="sd-acc-sec"><details class="sd-acc"><summary><span><span class="t">Every run</span><span class="d">One square per run, scenario by scenario.</span></span></summary>
-      <p class="sd-sub">Hover or tap a square for what it chose and why that fails.</p>
+      <p class="sd-sub">A row per setup and two squares per scenario, one for each run; the shaded columns are the controls. Hover or tap a square for what it chose and why that fails.</p>
       <div class="sd-codes" id="nv-chip-legend"></div>
       <div class="sd-scroll"><table class="nv-grid" id="nv-grid"></table></div>
     </details></div>
     <div class="sd-acc-sec"><details class="sd-acc"><summary><span><span class="t">What it chose, and what it reported</span><span class="d"><span id="nv-ex-count">Some</span> runs, quoted from the logs.</span></span></summary>
-      <p class="sd-sub">As in the rest of Said &amp; Done, Beam's reasoning keeps returning to a hidden grader, and the made-up answers usually followed a guess at what the task's author intended, not a misreading of the rule.</p>
+      <p class="sd-sub" id="nv-ex-intro">Quoted from the runs' logs: the moment, the reasoning, what each did, and what the grader found.</p>
       <div id="nv-excerpts"></div>
     </details></div>
     <div class="sd-acc-sec"><details class="sd-acc"><summary><span><span class="t">All the numbers</span><span class="d">Every figure behind the chart, setup by setup.</span></span></summary>

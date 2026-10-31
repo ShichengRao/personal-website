@@ -106,9 +106,12 @@ function pct(v){return typeof v==="number"?Math.round(v*100)+"%":String(v);}
 function money(v){return "$"+(v<1?v.toPrecision(2):v.toFixed(2));}
 function frac(v){if(typeof v==="number")return v;var m=/(\d+)\s*of\s*(\d+)/.exec(v||"");return m?+m[1]/+m[2]:0;}
 /* `code` spans for anything in backticks or that looks like a path or command. */
+/* Code spans and paths as code, and [text](https://…) as a link (the site's tests allow only a few hosts). */
 function rich(text){
-  var out=[],re=/(`[^`]+`|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
-  while((m=re.exec(text))){if(m.index>last)out.push(text.slice(last,m.index));out.push(el("code",{text:m[0].replace(/`/g,"")}));last=re.lastIndex;}
+  var out=[],re=/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|`[^`]+`|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
+  while((m=re.exec(text))){if(m.index>last)out.push(text.slice(last,m.index));
+    var link=/^\[([^\]]+)\]\((https:\/\/[^)\s]+)\)$/.exec(m[0]);
+    out.push(link?el("a",{href:link[2],text:link[1],rel:"noopener"}):el("code",{text:m[0].replace(/`/g,"")}));last=re.lastIndex;}
   if(last<text.length)out.push(text.slice(last));return out;
 }
 function stat(from,to,k){return el("div",{cls:"pj-stat"},[el("div",{cls:"v"},[el("span",{cls:"from",text:from}),el("span",{cls:"arrow",text:"→"}),to]),el("div",{cls:"k",text:k})]);}
@@ -127,14 +130,17 @@ function render(c){
   $("cg-title").textContent=t[0];document.title=t[0]+" | Shicheng Rao";
   $("cg-tagline").textContent=c.tagline||"";
   var e=c.evidence||{};
+  /* The held-out result on both hosts side by side, so the headline can't show the lead without the rerun that tied. */
+  var held=e.held_out_reflection?[e.held_out,e.held_out_reflection]:[e.held_out,e.cant_be_done];
   $("cg-stats").append(
     stat(pct(e.main.beam),pct(e.main.beam_with_checks),"of runs done and honestly reported: "+e.main.label),
-    stat(pct(e.held_out.beam),pct(e.held_out.beam_with_checks),e.held_out.label),
-    stat(e.cant_be_done.beam.replace(" of ","/"),e.cant_be_done.beam_with_checks.replace(" of ","/"),e.cant_be_done.label),
+    stat(pct(held[0].beam),pct(held[0].beam_with_checks),held[0].label),
+    e.held_out_reflection?stat(pct(held[1].beam),pct(held[1].beam_with_checks),held[1].label)
+      :stat(held[1].beam.replace(" of ","/"),held[1].beam_with_checks.replace(" of ","/"),held[1].label),
     stat("$"+e.cost.beam.toFixed(2),"$"+e.cost.beam_with_checks.toFixed(2),e.cost.label+", checks included"));
   (c.story||[]).forEach(function(p){$("cg-story").appendChild(el("p",{text:p}));});
   var lead=(c.examples||[])[0];
-  if(lead&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
+  if(lead&&lead.without.noticed&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
     "“"+lead.without.noticed+"”",el("cite",{text:"Beam's reasoning, shortly before it "+lead.without.did.charAt(0).toLowerCase()+lead.without.did.slice(1).replace(/\.$/,"")+", and reported “complete”"})]));
   (c.how_it_works||[]).forEach(function(h,i){
     var m=/^(.*?)\s*\((.*)\)$/.exec(h.name),name=m?m[1]:h.name;
@@ -143,10 +149,11 @@ function render(c){
   (c.examples||[]).forEach(function(x){
     function side(s,cls,head,isWith){
       var kids=[el("div",{cls:"h"},[head])];
+      /* An example may leave out what the reasoning noticed: then it starts at what Beam did. */
       var told=/^\((.*)\)$/.exec(s.noticed||"");
-      kids.push(told?el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"What it did"}),el("div",{cls:"said",text:told[1]})])
+      if(s.noticed)kids.push(told?el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"What it did"}),el("div",{cls:"said",text:told[1]})])
         :el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"Its reasoning noticed"}),el("div",{cls:"pj-mono",text:"“"+s.noticed+"”"})]));
-      if(s.did)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"Then it"}),el("div",{cls:"said",text:s.did})]));
+      if(s.did)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:s.noticed?"Then it":"What it did"}),el("div",{cls:"said",text:s.did})]));
       if(isWith&&s.checks)kids.push(el("div",{cls:"row"},[el("div",{cls:"pj-label",text:"The checks"}),
         el("ul",{cls:"cg-checks"},s.checks.map(function(k){return el("li",null,[el("span",{cls:"cg-kind",text:k.kind}),el("span",{text:k.text})]);}))]));
       var st=/^(\w+):\s*([\s\S]*)$/.exec(s.reported||"");
@@ -162,8 +169,11 @@ function render(c){
       el("div",{cls:"pj-ba"},[side(x.without,"bad","Beam alone",false),side(x["with"],/^graded correct/i.test(x["with"].verdict||"")?"":"good","With the checks",true)])]));
   });
   $("cg-score-note").textContent=e.score_note||"";
-  [["main","Done and honestly reported",pct],["second_host","The same, on a second host",pct],["held_out","On tasks the checks never saw",pct],
-   ["cant_be_done","Said \"blocked\" when the task couldn't be done",function(v){return v;}],["cost","Median cost per run",money]].forEach(function(r){
+  var as=function(v){return v;};
+  [["main","Done and honestly reported",pct],["second_host","The same, on a second host",pct],
+   ["held_out","On tasks the checks never saw",pct],["held_out_reflection","The same tasks, rerun on Reflection's API",pct],
+   ["cant_be_done","Said \"blocked\" when the task couldn't be done",as],["cant_be_done_reflection","The same, rerun on Reflection's API",as],
+   ["cost","Median cost per run",money]].forEach(function(r){
     var ev=e[r[0]];if(!ev)return;
     if(r[0]==="cost"){
       var m=Math.max(ev.beam,ev.beam_with_checks);

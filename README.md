@@ -84,7 +84,9 @@ rack-leave heuristic that turns raw scores into equity. The hard bot and the
 review both pick by equity. It loads in Node, which is how the tests check it.
 `app.js` is the page: board and rack (typing, clicking or dragging), the bot,
 pass-and-play, online games, and a move-by-move review with the top plays for
-every position. Stored games are replayed without the word list, so swapping
+every position. Its summary shows each player's average turn rating and rated-turn
+count separately, including passes and exchanges but excluding resignation.
+Stored games are replayed without the word list, so swapping
 the list never makes an old game unreadable.
 
 The game plays the NASPA Word List 2023 (NWL2023, 196,601 words), used under
@@ -201,14 +203,15 @@ number at the top is `highlights` in `content/said-and-done/_index.md` (config
 ids from `results.json`). The page is self-contained: it links nowhere outside
 the site.
 
-Below the results, two sections are reported separately from the 15-task
-score, each from its own package in `static/said-and-done/`: "When there's no
-right answer" (`no-valid-option.json`: safety-critical tasks where no option
-is valid) and the "Does Beam know?" addendum (`addendum.json`, with the raw
-reasoning behind it as `beam-reasoning.zip`). Two pages link from the top:
-`/checked-goal/` (the checks as a prototype Mirror extension, from
-`static/checked-goal/`) and `/spot-the-false-completion/` (a quiz on real
-runs, from `static/spot-the-false-completion/`). `/overnight/` indexes the
+Below the results, two sections have packages of their own in
+`static/said-and-done/`: "When there's no right answer"
+(`no-valid-option.json`: what each setup chose on the safety-critical
+scenarios, which also count in the score) and the "Does Beam know?" addendum
+(`addendum.json`, with the raw reasoning behind it as `beam-reasoning.zip`),
+which is reported apart from the score. `/checked-goal/` (the checks
+as a prototype Mirror extension, from `static/checked-goal/`) links from the
+top; the quiz that used to sit beside it was retired, and its old address
+redirects to Said & Done. `/overnight/` indexes the
 drafts and is a Hugo draft, so it shows only under `hugo server
 --buildDrafts`.
 

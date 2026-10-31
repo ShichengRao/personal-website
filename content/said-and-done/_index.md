@@ -4,5 +4,5 @@ description: "A benchmark of the gap between what coding agents say they did and
 date: 2026-10-22T12:00:00-04:00
 draft: false
 # Setups shown as headline numbers above the chart, by config id in results.json.
-highlights: ["beam-neutral", "beam-neutral-scaffold-v4", "opus-brain-beam-worker"]
+highlights: ["beam-neutral", "beam-neutral-scaffold-v5"]
 ---
