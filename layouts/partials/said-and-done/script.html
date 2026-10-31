@@ -216,7 +216,7 @@ function render(data,excerpts){
     blind:["Blind","written by a separate agent before this version of the checks existed"]};
   (function(){
     var base=configs.find(function(c){return c.group==="beam";}),mit=configs.find(function(c){return c.group==="beam-mitigation";});
-    if(!data.by_split||!base||!mit)return;
+    if(!data.by_split&&!data.blind_rounds)return;
     var all=data.tasks.concat(data.tasks_outside_score||[]),gains=data.scaffold_gain_by_split||{};
     /* A copy and its original are one task. */
     var root=function(t){return t.same_as||t.id;};
@@ -226,6 +226,7 @@ function render(data,excerpts){
     var cell=function(x){if(!x)return el("td",{cls:"n",text:"\u2014"});
       return el("td",{cls:"n"},[pct(x.said_and_done),el("small",{text:" "+Math.round(x.said_and_done*x.runs)+" of "+x.runs})]);};
     var tb=byId("sd-splits");
+    if(data.by_split&&base&&mit){
     tb.appendChild(el("thead",null,[el("tr",null,[el("th",{text:"Tasks"}),el("th",{cls:"n",text:"How many"}),
       el("th",{cls:"n",text:base.label}),el("th",{cls:"n",text:mit.label}),el("th",{cls:"n",text:"Gain in points (95%)"})])]));
     var body=el("tbody");tb.appendChild(body);
@@ -238,7 +239,27 @@ function render(data,excerpts){
     if(gains.all)body.appendChild(el("tr",{cls:"sd-total"},[el("th",{scope:"row",text:"All tasks in the score"}),el("td",{cls:"n",text:String(data.tasks.length)}),
       cell({said_and_done:summary[base.id].said_and_done,runs:summary[base.id].runs}),cell({said_and_done:summary[mit.id].said_and_done,runs:summary[mit.id].runs}),
       el("td",{cls:"n",text:gain(gains.all)})]));
+    }else tb.parentNode.hidden=true;
     if(data.split_note)byId("sd-splits-note").textContent=data.split_note;
+    /* Each blind round: new tasks written without seeing the scaffold, run after it was frozen,
+       with the rule fixed beforehand and its verdict. */
+    var cnt=function(x){return x&&x.n?cell({said_and_done:x.k/x.n,runs:x.n}):el("td",{cls:"n",text:"\u2014"});};
+    (data.blind_rounds||[]).forEach(function(rd){
+      var box=byId("sd-blind");
+      box.appendChild(el("h3",{text:rd.label+(rd.tasks?": "+rd.tasks+" new tasks"+(rd.runs_per_task?", "+rd.runs_per_task+" runs each":""):"")}));
+      box.appendChild(el("p",{cls:"sd-sub"},[el("b",{text:rd.holds?"The pre-registered claim holds. ":"The pre-registered claim doesn't hold. "}),rd.rule||""]));
+      var t=el("table",{cls:"sd-splits"});
+      t.appendChild(el("thead",null,[el("tr",null,[el("th",{text:"Setup"}),el("th",{cls:"n",text:"Said & Done"}),el("th",{cls:"n",text:"Tasks that can be done"}),
+        el("th",{cls:"n",text:"Impossible tasks"}),el("th",{cls:"n",text:"Gain over Beam alone, points (95%)"})])]));
+      var bd=el("tbody");t.appendChild(bd);
+      (rd.setups||[]).forEach(function(x){
+        bd.appendChild(el("tr",{cls:x.id===rd.primary?"sd-total":""},[el("th",{scope:"row",text:x.label}),cnt(x.said_and_done),cnt(x.possible),cnt(x.impossible),
+          el("td",{cls:"n",text:x.gain_over_beam?gain(x.gain_over_beam):"\u2014"})]));
+      });
+      box.appendChild(el("div",{cls:"sd-scroll"},[t]));
+      var prov=[rd.note,rd.preregistration_commit?"The rule was committed (benchmark commit "+rd.preregistration_commit+")"+(rd.freeze_commit?" and the scaffold frozen ("+rd.freeze_commit+")":"")+" before any run on these tasks.":null].filter(Boolean);
+      if(prov.length)box.appendChild(el("p",{cls:"sd-note",text:prov.join(" ")}));
+    });
     byId("sd-splits-sec").hidden=false;
   })();
 

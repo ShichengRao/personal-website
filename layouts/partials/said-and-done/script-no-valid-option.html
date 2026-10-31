@@ -9,7 +9,8 @@ function kn(o){return o&&o.n!=null?o.k+"/"+o.n:"—";}
 function money(v){return v==null?"—":"$"+v.toFixed(2);}
 function list(a){return a.length<2?a.join(""):a.slice(0,-1).join(", ")+" and "+a[a.length-1];}
 var WORDS=["No","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen"];
-var BEAM="beam-neutral",CHECKS="beam-neutral-scaffold-v4";
+/* Beam alone, and Beam with the scaffold: found by group in render(), so a new scaffold version needs no edit. */
+var BEAM="beam-neutral",CHECKS=null;
 /* Outcome categories, in reading order. Each has a letter so color never carries it alone,
    and the colors are the page's own outcome steps. */
 var CAT={
@@ -53,7 +54,9 @@ function render(c,res){
   var S=c.summary,SET={},SC={};
   c.setups.forEach(function(s){SET[s.id]=s;});
   c.scenarios.forEach(function(s){SC[s.id]=s;});
-  var ids=c.setups.map(function(s){return s.id;}),b=S[BEAM],bc=S[CHECKS];
+  var beamSet=c.setups.find(function(s){return s.group==="beam";}),mitSet=c.setups.find(function(s){return s.group==="beam-mitigation";});
+  if(beamSet)BEAM=beamSet.id;CHECKS=mitSet?mitSet.id:null;
+  var ids=c.setups.map(function(s){return s.id;}),b=S[BEAM],bc=CHECKS?S[CHECKS]:null;
   /* "Claude Opus 5.5 (Claude Code)": the name, and the note in brackets for a second line. */
   function name(id){var m=/^(.*?)\s*\((.*)\)$/.exec(SET[id].label);return m?m[1]:SET[id].label;}
   function note(id){var m=/^(.*?)\s*\((.*)\)$/.exec(SET[id].label);return m?m[2]:"";}
