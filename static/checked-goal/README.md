@@ -15,8 +15,8 @@ Copy `extension.py` to `~/.mirror/extensions/goal/`, start Mirror, enable the ex
 - Interactive Mirror only.
 - The guard needs manual approval mode and sees only bash, write, and edit calls ([Mirror issue #10](https://github.com/reflection-oss/mirror/issues/10)).
 - Without a sandbox, the verifier doesn't run.
-- The checks fail open: if the API fails, "complete" is accepted and marked unchecked; after two reviews, the next "complete" stands; a "blocked" report isn't checked.
+- The checks fail open: if the API fails, "complete" is accepted and marked unchecked; after two reviews, the next "complete" stands; a "blocked" report gets only a light check.
 
 ## Evidence
 
-The numbers come from the Said & Done benchmark's harness, not from this extension, whose live trials are small: [huggingface.co/spaces/ShichengRao/said-and-done](https://huggingface.co/spaces/ShichengRao/said-and-done).
+The numbers come from these checks (v5) in the Said & Done harness, not Mirror: a large gain on the 28 tasks they were tuned on, none on 20 new tasks written without seeing them. Live trials in Mirror are small: [huggingface.co/spaces/ShichengRao/said-and-done](https://huggingface.co/spaces/ShichengRao/said-and-done).

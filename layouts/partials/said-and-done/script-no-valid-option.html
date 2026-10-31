@@ -50,7 +50,7 @@ document.addEventListener("click",hideTip);addEventListener("scroll",hideTip,{pa
 /* An accordion with nothing to show is left out. */
 function hideSec(id){var d=$(id);if(d)d.closest(".sd-acc-sec").hidden=true;}
 
-function render(c,res){
+function render(c){
   var S=c.summary,SET={},SC={};
   c.setups.forEach(function(s){SET[s.id]=s;});
   c.scenarios.forEach(function(s){SC[s.id]=s;});
@@ -67,23 +67,12 @@ function render(c,res){
   function fam(id){var g=SET[id].group;return /^beam/.test(g)?"beam":g==="brain-worker"?"reference":g;}
   var nNone=b?blocked(BEAM).n:0;
 
-  /* The section's headline numbers: how open-weight and closed models did, what the
-     scaffold's checks changed for Beam, and Beam's controls. Open or closed comes from
-     results.json; the anchors are left out, as on the rest of the page. */
+  /* The section's headline numbers: what the scaffold's checks changed for Beam, and Beam's controls. */
   function stat(v,k){return el("div",{cls:"nv-stat"},[el("div",{cls:"v"},v),el("div",{cls:"k",text:k})]);}
-  var open={};((res&&res.configs)||[]).forEach(function(x){open[x.id]=x.open_weights;});
-  var measured=ids.filter(function(id){return SET[id].group!=="anchor";});
-  var ow=measured.filter(function(id){return open[id]===true;}),cl=measured.filter(function(id){return open[id]===false;});
-  if(ow.length&&cl.length){
-    var atMostHalf=ow.filter(function(id){return blocked(id).k*2<=blocked(id).n;});
-    var cs=cl.reduce(function(t,id){t.k+=blocked(id).k;t.n+=blocked(id).n;return t;},{k:0,n:0});
-    $("nv-stats").append(stat([atMostHalf.length+" of "+ow.length],"open-weight setups said “blocked” in at most half the runs where nothing was valid; the "+
-      (cl.length===1?"closed model":(WORDS[cl.length]||String(cl.length)).toLowerCase()+" closed models")+" said it in "+cs.k+" of "+cs.n+"."));
-  }
   if(b&&bc){
     var counted=bc.said_and_done_no_valid_option.k,left=bc.blocked_but_left_an_invalid_choice_in_place.k;
     $("nv-stats").append(stat([el("span",{cls:"from",text:kn(blocked(BEAM))}),el("span",{cls:"arrow",text:"→"}),kn(blocked(CHECKS))],
-      "said “blocked” when nothing was valid: Beam alone, then with the scaffold's checks"+
+      "said “blocked” when nothing was valid: Beam alone, then with the scaffold's checks, which were developed on these scenarios"+
       (left?". "+(WORDS[left]||String(left))+" of the "+(WORDS[blocked(CHECKS).k]||String(blocked(CHECKS).k)).toLowerCase()+" left an excluded plan in place, so "+(WORDS[counted]||String(counted)).toLowerCase()+" count":"")+"."));
   }
   if(b)$("nv-stats").append(stat([kn(b.controls_passed)],"controls passed by Beam alone: when exactly one option is valid, it picks that one."));
@@ -212,9 +201,7 @@ function render(c,res){
   (c.caveats||[]).forEach(function(t){var m=/^(.*?[.:])\s+([\s\S]*)$/.exec(t);$("nv-caveats").appendChild(el("li",null,m?[el("b",{text:m[1]+" "}),m[2]]:[t]));});
   if(!(c.caveats||[]).length)hideSec("nv-caveats");
 }
-/* results.json says which setups are open-weight; the page's main script reads it too. */
-function get(u){return fetch(u,{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});}
-Promise.all([get("/said-and-done/no-valid-option.json"),get("/said-and-done/results.json")]).then(function(a){render(a[0],a[1]);})
+fetch("/said-and-done/no-valid-option.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
   .catch(function(err){$("nv-stats").appendChild(el("p",{cls:"sd-err",text:"This section's results didn't load ("+err.message+")."}));});
 })();
 </script>

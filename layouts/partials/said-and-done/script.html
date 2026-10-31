@@ -213,7 +213,7 @@ function render(data,excerpts){
      tuning, or written blind. Only the blind split shows whether the checks work on new problems. */
   var SPLIT={development:["Development","the checks were built or tuned on these"],
     held_out:["Held out","not used to tune the checks, though written knowing they existed"],
-    blind:["Blind","written by a separate agent before this version of the checks existed"]};
+    blind:["Blind","written by a separate agent that never saw the checks' code or prompts"]};
   (function(){
     var base=configs.find(function(c){return c.group==="beam";}),mit=configs.find(function(c){return c.group==="beam-mitigation";});
     if(!data.by_split&&!data.blind_rounds)return;
@@ -236,7 +236,9 @@ function render(data,excerpts){
       body.appendChild(el("tr",null,[el("th",{scope:"row"},[el("b",{text:SPLIT[k][0]}),el("small",{text:": "+SPLIT[k][1]})]),
         el("td",{cls:"n",text:String(n)}),cell(bs[base.id]),cell(bs[mit.id]),el("td",{cls:"n",text:gain(gains[k])})]));
     });
-    if(gains.all)body.appendChild(el("tr",{cls:"sd-total"},[el("th",{scope:"row",text:"All tasks in the score"}),el("td",{cls:"n",text:String(data.tasks.length)}),
+    /* With every scored task in one split, an all-tasks row would only repeat it. */
+    var splitsShown=["development","held_out","blind"].filter(function(k){return data.by_split[k];});
+    if(gains.all&&!(splitsShown.length===1&&all.filter(function(t){return t.split===splitsShown[0];}).length===data.tasks.length))body.appendChild(el("tr",{cls:"sd-total"},[el("th",{scope:"row",text:"All tasks in the score"}),el("td",{cls:"n",text:String(data.tasks.length)}),
       cell({said_and_done:summary[base.id].said_and_done,runs:summary[base.id].runs}),cell({said_and_done:summary[mit.id].said_and_done,runs:summary[mit.id].runs}),
       el("td",{cls:"n",text:gain(gains.all)})]));
     }else tb.parentNode.hidden=true;
@@ -247,7 +249,9 @@ function render(data,excerpts){
     (data.blind_rounds||[]).forEach(function(rd){
       var box=byId("sd-blind");
       box.appendChild(el("h3",{text:rd.label+(rd.tasks?": "+rd.tasks+" new tasks"+(rd.runs_per_task?", "+rd.runs_per_task+" runs each":""):"")}));
-      box.appendChild(el("p",{cls:"sd-sub"},[el("b",{text:rd.holds?"The pre-registered claim holds. ":"The pre-registered claim doesn't hold. "}),rd.rule||""]));
+      /* A round without a pre-registered rule gets no verdict. */
+      if(rd.holds===true||rd.holds===false)box.appendChild(el("p",{cls:"sd-sub"},[el("b",{text:rd.holds?"The pre-registered claim holds. ":"The pre-registered claim doesn't hold. "}),rd.rule||""]));
+      else if(rd.rule)box.appendChild(el("p",{cls:"sd-sub",text:rd.rule}));
       var t=el("table",{cls:"sd-splits"});
       t.appendChild(el("thead",null,[el("tr",null,[el("th",{text:"Setup"}),el("th",{cls:"n",text:"Said & Done"}),el("th",{cls:"n",text:"Tasks that can be done"}),
         el("th",{cls:"n",text:"Impossible tasks"}),el("th",{cls:"n",text:"Gain over Beam alone, points (95%)"})])]));
@@ -257,7 +261,8 @@ function render(data,excerpts){
           el("td",{cls:"n",text:x.gain_over_beam?gain(x.gain_over_beam):"\u2014"})]));
       });
       box.appendChild(el("div",{cls:"sd-scroll"},[t]));
-      var prov=[rd.note,rd.preregistration_commit?"The rule was committed (benchmark commit "+rd.preregistration_commit+")"+(rd.freeze_commit?" and the scaffold frozen ("+rd.freeze_commit+")":"")+" before any run on these tasks.":null].filter(Boolean);
+      var prov=[rd.note,rd.preregistration_commit?"The rule was committed (benchmark commit "+rd.preregistration_commit+")"+(rd.freeze_commit?" and the scaffold frozen ("+rd.freeze_commit+")":"")+" before any run on these tasks."
+        :rd.freeze_commit?"The scaffold was frozen ("+rd.freeze_commit+") before any run on these tasks; this round had no pre-registered rule.":null].filter(Boolean);
       if(prov.length)box.appendChild(el("p",{cls:"sd-note",text:prov.join(" ")}));
     });
     byId("sd-splits-sec").hidden=false;
