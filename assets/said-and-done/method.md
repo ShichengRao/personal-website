@@ -67,7 +67,7 @@ Mitigations that only told Beam to behave differently didn't move it. An honest-
   - The reworded version scored 38 of 56, against v5's 43 (−9, −23 to +5), and still well above Beam alone (+29, +12 to +45).
   - On the walls it scored 12 of 28 against v5's 18, the same as v4. v5's extra gain over v4 on the walls didn't survive the rewording.
 
-v5 was then frozen (commit d01b306) and tested on a round of tasks written blind to it. **There its gain over Beam alone was zero** (see "Blind rounds").
+v5 was then frozen (commit d01b306) and tested on two rounds of tasks written blind to it. **There its gain over Beam alone was +0 and +3, neither clearly above zero** (see "Blind rounds").
 
 **OpenRouter and reasoning.** The first four versions were developed on OpenRouter. The DeepSeek control below and round 3's first runs also ran there.
 - On OpenRouter, the scaffold's checks didn't see the acting model's reasoning: OpenRouter returns it under a field name the harness didn't read. The checks still had the commands and their output, the diff, the report, and the verifier's own testing.
@@ -106,7 +106,7 @@ The scenarios ran on 65e66c2e, except Mistral's (4333f107) and Beam with the sca
 
 **Uncertainty.** Most configurations have two runs on each task they run: 56 runs, or 54 without the credentials probe. The two calibration anchors have one run per coding task and two per scenario and per held-out wall (40 for Astra, which has no credentials-probe run, and 41 for V3). Intervals are 95% bootstrap intervals that resample tasks, then each task's runs. With about 56 runs per configuration, a configuration scoring near the middle has an interval of roughly ±17–18 points (narrower near 0% or 100%), so compare intervals, not ranks: gaps of 15 points can still be noise. Paired over tasks:
 - **The scaffold's gain over Beam alone on these tasks:** +38 points (95% interval +23 to +54).
-  - All of it is on tasks v5 was tuned on. On the round written blind to it, the gain was zero (see "Blind rounds").
+  - All of it is on tasks v5 was tuned on. On the two rounds written blind to it, the gain was +0 and +3, and neither interval is entirely above zero (see "Blind rounds").
   - Most of it is on the walls, where Beam with the scaffold scored 18 of 28 runs against Beam alone's 2 (+57, +36 to +79).
   - On the tasks that can be done, it scored 25 of 28 against 20 of 28 (+18, +4 to +36).
 - **DeepSeek V4.1 Flash and Mistral Large 4 lead Beam alone:** +30 (+14 to +48) and +32 (+18 to +50). The two are level with each other (Mistral +2, −11 to +14).
@@ -117,7 +117,7 @@ The scenarios ran on 65e66c2e, except Mistral's (4333f107) and Beam with the sca
 
 Every task is tagged relative to the scaffold version shown, v5. results.json gives each task's split.
 - **Development: all 28 tasks in the score.** v5 was built and tuned on every one of them, so its +38 there measures how well it fits them, not how it does on new work.
-- **Blind: round 4.** These are 20 tasks written by a separate agent that never saw the scaffold's code or prompts. They were frozen before any Beam run, and merged after v5 was frozen. They're reported apart from the score, in results.json's blind_rounds and runs_outside_score (see "Blind rounds").
+- **Blind: rounds 4 and 5.** These are 20 tasks each, written by a separate agent that never saw the scaffold's code or prompts. Each round was frozen before any Beam run, and merged after v5 was frozen. They're reported apart from the score, in results.json's blind_rounds and runs_outside_score (see "Blind rounds").
 - **Held out: round 3.** v5 wasn't tuned on these tasks, but its author knew them and v4's results on them. Only Beam alone and v4 ran them.
 
 The reference models weren't tuned on any of these tasks, so the split doesn't bear on comparisons with them.
@@ -129,7 +129,7 @@ A blind round is a set of new tasks with these properties:
 - They were frozen before any Beam run, and checked against the two calibration anchors.
 - Their runs are reported apart from the score.
 
-The commits named below are in the development repository. The documents themselves are in docs/ (blind-round-preregistration.md, blind-round-freeze.md, and blind-round-results.md).
+The commits named below are in the development repository. The documents themselves are in docs/: blind-round-preregistration.md, blind-round-freeze.md, and blind-round-results.md for round 4; blind-round-5-preregistration.md and blind-round-5-results.md for round 5.
 
 **Round 4: v5's test.**
 - **The rule:** I registered it before v5 was frozen (commit c284493). v5's claim holds only if its paired Said & Done gain over Beam alone has a 95% interval entirely above zero. The interval uses the same method as every other interval here.
@@ -158,6 +158,27 @@ The commits named below are in the development repository. The documents themsel
   - Before v5 was frozen, the session that tuned it saw four of the round's task names, and nothing else, in a container listing.
   - On Codex's side, an audit agent ran the harness's command-line help, which printed one-line descriptions of the scaffold's options. The agent stopped and reported it, and Codex recorded it in heldout4/BLINDNESS.md. No scaffold code or prompt was opened, but the round wasn't written with zero exposure to the scaffold.
   - An earlier attempt at round 4, written by an agent of that session, was stopped when only Codex was chosen to write blind rounds. It was never read or merged.
+
+**Round 5: v5's second test, on tasks meant to be harder.** Round 4 left Beam alone little room, so I registered a second round with the same rule, the same setups, and v5 unchanged (99f3472). The hypothesis was that the gain shows on harder tasks.
+- **The tasks:** Codex redesigned each round-4 task, meaning to make it harder, with the same names (`h5-*`). 10 can be done and 10 can't.
+  - Codex was told to make them harder, and given two aggregate figures from Beam alone's runs: round 4's 20 of 30 correct "blocked" reports on its impossible tasks, and 2 of 28 on the walls in the score. It asked for task-level results and was refused.
+  - It froze the round on October 31, and all 20 tasks passed calibration.
+  - It ran DeepSeek V4.1 Flash and MiniMax M2.7 on the tasks before freezing. The registration as first written didn't allow that. When I saw it, the user allowed it in an addendum (733823a), after most of those runs had started, and still barred Beam. Flash solved all 20, and Codex's freeze record says the round isn't shown to be harder than round 4.
+  - The user had also asked that M2.7 solve none of the tasks. It solved 4, so Codex's own handoff marked round 5 not ready, and Codex went on to a round 6 instead.
+  - When Codex's credit ran out, round 6 wasn't frozen, so it isn't used. The user chose to run round 5 as frozen. I merged it at its freeze commit, checked every task and file against its manifest, and recorded all of this before the first run (0dd0818). None of Codex's later commits touched round 5's files.
+  - Before the freeze, the session that tuned the scaffold saw four of the round's task names in a process listing. v5 was already frozen.
+- **The runs:** 180 runs on November 1, all on build 88698032. None was set aside, and none ended in an infrastructure error.
+
+| Setup | Said & Done | Can be done | Can't be done | Gain over Beam alone |
+|---|---|---|---|---|
+| Beam alone | 53 of 60 (88%) | 23 of 30 | 30 of 30 | – |
+| Beam + scaffold v5 | 55 of 60 (92%) | 26 of 30 | 29 of 30 | +3 (−10 to +17) |
+| Beam + scaffold v4 | 51 of 60 (85%) | 24 of 30 | 27 of 30 | −3 (−18 to +12) |
+
+**The claim doesn't hold here either.**
+- **A ceiling, not a test:** the round didn't test its hypothesis. Beam alone stopped correctly in all 30 runs on the tasks that can't be done, and scored higher overall than on round 4. So the round sat at a ceiling, the case the registration said would still run in full.
+- **v5's lead:** all of it was on the tasks that can be done, +10 (−13 to +33). There, Beam alone's misses were "complete" on work that failed the hidden checks.
+- **Across both blind rounds,** v5's gain over Beam alone was +0 and +3, and neither interval is entirely above zero.
 
 **Round 3: v4's test.** A separate agent wrote 8 tasks on a branch made before v4 existed, and they were calibrated after v4 was frozen (9586289). No rule was registered for this round.
 - **On OpenRouter,** v4 scored 19 of 24 runs against Beam alone's 15 of 24. On the two tasks that can't be finished, it stopped and said so in 5 of 6 runs, against 0 of 6.
