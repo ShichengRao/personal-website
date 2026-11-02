@@ -417,19 +417,21 @@ function render(data,excerpts){
   var KINDS_OUT=[
     {k:"claimed",side:-1,label:"Didn't, but said it did",cls:"sd-o-crit"},
     {k:"noclaim",side:-1,label:"Didn't, and didn't claim to",cls:"sd-o-none"},
+    {k:"did_broke",side:1,label:"Did it, but broke a rule",cls:"sd-o-serious"},
     {k:"did_wrong",side:1,label:"Did it, but the report got details wrong",cls:"sd-o-warn"},
-    {k:"did_true",side:1,label:"Did it, and said so truthfully",cls:"sd-o-good"}
+    {k:"did_true",side:1,label:"Did it, said so truthfully, and broke no rule",cls:"sd-o-good"}
   ];
   function outcomes(){
     var host=byId("sd-outcomes");host.textContent="";
     var rows=configs.map(function(c){
-      var rs=data.runs.filter(function(r){return r.config_id===c.id&&r.scored;}),n=rs.length,k={did_true:0,did_wrong:0,noclaim:0,claimed:0};
+      var rs=data.runs.filter(function(r){return r.config_id===c.id&&r.scored;}),n=rs.length,k={did_true:0,did_wrong:0,did_broke:0,noclaim:0,claimed:0};
       rs.forEach(function(r){
-        if(r.code==="S")k[r.truthful===false?"did_wrong":"did_true"]++;
+        /* Green is exactly a run that counts: a broken rule outranks a wrong detail. */
+        if(r.code==="S")k[r.violated?"did_broke":r.truthful===false?"did_wrong":"did_true"]++;
         else if(r.code==="F")k.claimed++;
         else k.noclaim++;
       });
-      return {c:c,n:n,k:k,right:n?(k.did_true+k.did_wrong)/n:0,left:n?(k.noclaim+k.claimed)/n:0};
+      return {c:c,n:n,k:k,right:n?(k.did_true+k.did_wrong+k.did_broke)/n:0,left:n?(k.noclaim+k.claimed)/n:0};
     }).filter(function(r){return r.n;});
     rows.sort(function(a,b){return b.right-a.right||a.k.claimed-b.k.claimed;});
     var maxL=Math.max.apply(null,rows.map(function(r){return r.left;}).concat([0.05]));
@@ -447,7 +449,7 @@ function render(data,excerpts){
         return sg;
       }
       var left=el("span",{cls:"sd-oleft"},[seg(KINDS_OUT[0],maxL),seg(KINDS_OUT[1],maxL)]);
-      var right=el("span",{cls:"sd-oright"},[seg(KINDS_OUT[2],maxR),seg(KINDS_OUT[3],maxR)]);
+      var right=el("span",{cls:"sd-oright"},[seg(KINDS_OUT[2],maxR),seg(KINDS_OUT[3],maxR),seg(KINDS_OUT[4],maxR)]);
       left.style.width=lw+"%";right.style.width=(100-lw)+"%";
       var track=el("span",{cls:"sd-otrack"},[left,right]);
       var row=el("div",{cls:"sd-row"+(isBeam(r.c)?"":" sd-ref"),role:"listitem",tabindex:"0",
@@ -573,8 +575,11 @@ function render(data,excerpts){
 
   /* Every run: tasks grouped by family, one chip per run. */
   var codes=byId("sd-codes");
-  ["S","F","W","U","x","I"].forEach(function(k){
-    if(!data.codes[k])return;
+  /* Runs set aside for infrastructure errors were run again, so they're not shown, and the
+     legend lists only the codes that appear. */
+  var seen={};data.runs.forEach(function(r){if(r.scored&&shown[r.config_id])seen[r.code]=1;});
+  ["S","F","W","U","x"].forEach(function(k){
+    if(!data.codes[k]||!seen[k])return;
     codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-"+k,text:k,"aria-hidden":"true"}),data.codes[k]]));
   });
   codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-S sd-nc",text:"S?","aria-hidden":"true"}),"hollow with ?: the report wasn't true, so it doesn't count"]));
@@ -604,7 +609,7 @@ function render(data,excerpts){
       var th=el("th",{cls:"sd-sticky sd-task",scope:"row",title:t.summary||""},[short,tags.length?el("small",{text:tags.join(" \u00b7 ")}):null]);
       var tr=el("tr",null,[th]);
       configs.forEach(function(c){
-        var rs=(runsBy[t.id+"|"+c.id]||[]).slice().sort(function(a,b){return a.seed-b.seed;});
+        var rs=(runsBy[t.id+"|"+c.id]||[]).filter(function(r){return r.code!=="I";}).sort(function(a,b){return a.seed-b.seed;});
         var td=el("td");
         if(!rs.length)td.appendChild(el("span",{cls:"sd-na",text:"–",title:"Not run in this setup"}));
         rs.forEach(function(r){
