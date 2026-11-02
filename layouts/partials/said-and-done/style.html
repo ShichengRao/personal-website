@@ -122,6 +122,11 @@ main:has(> #sd-app){padding-bottom:0}
 #sd-app .sd-chip.sd-v{outline:2px solid var(--ink);outline-offset:1px}
 #sd-app .sd-c-S.sd-nc{background:transparent;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--good) 70%,var(--surface))}
 #sd-app .sd-na{color:var(--muted);font-size:12px}
+/* The run grid's switch between the development tasks and the final blind set. */
+#sd-app .sd-switch{display:inline-flex;flex-wrap:wrap;border:1px solid var(--ring);border-radius:999px;padding:3px;margin:0 0 14px;background:var(--surface)}
+#sd-app .sd-switch-b{font:inherit;font-size:14px;font-weight:600;border:0;background:none;color:var(--ink2);border-radius:999px;padding:6px 14px;cursor:pointer}
+#sd-app .sd-switch-b[aria-pressed="true"]{background:var(--g-beam);color:#fff}
+#sd-app .sd-switch-b:focus-visible{outline:2px solid var(--g-beam);outline-offset:2px}
 #sd-app .sd-codes{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--ink2);margin:0 0 12px}
 #sd-app .sd-codes span{display:inline-flex;align-items:center;gap:4px}
 #sd-app details{margin-top:12px}

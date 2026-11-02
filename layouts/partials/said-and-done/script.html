@@ -628,69 +628,104 @@ function render(data,excerpts){
     host.appendChild(svg);
   }
 
-  /* Every run: tasks grouped by family, one chip per run. */
-  var codes=byId("sd-codes");
-  /* Runs set aside for infrastructure errors were run again, so they're not shown, and the
-     legend lists only the codes that appear. */
-  var seen={};data.runs.forEach(function(r){if(r.scored&&shown[r.config_id])seen[r.code]=1;});
-  ["S","F","W","U","x"].forEach(function(k){
-    if(!data.codes[k]||!seen[k])return;
-    codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-"+k,text:k,"aria-hidden":"true"}),data.codes[k]]));
-  });
-  codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-S sd-nc",text:"S?","aria-hidden":"true"}),"hollow with ?: the report wasn't true, so it doesn't count"]));
-  var vchip=el("span",{cls:"sd-chip sd-c-S sd-nc sd-v",text:"S!","aria-hidden":"true"});
-  codes.appendChild(el("span",null,[vchip,"outlined with !: broke a rule, so it doesn't count"]));
-
-  var grid=byId("sd-grid");
-  var hr=el("tr",null,[el("th",{cls:"sd-sticky",scope:"col",text:"Task"})]);
-  configs.forEach(function(c){var th=el("th",{cls:"sd-cfg",scope:"col",text:c.label});th.style.setProperty("--c",cvar(c));hr.appendChild(th);});
-  grid.appendChild(el("thead",null,[hr]));
-  var runsBy={};
-  data.runs.forEach(function(r){var k=r.task+"|"+r.config_id;(runsBy[k]=runsBy[k]||[]).push(r);});
-  var gb=el("tbody");grid.appendChild(gb);
-  data.families.forEach(function(f){
-    var ts=data.tasks.filter(function(t){return t.family===f.id;});
-    if(!ts.length)return;
-    var fr=el("tr",{cls:"sd-fam"},[el("th",{cls:"sd-sticky",scope:"rowgroup",text:f.label})]);
-    configs.forEach(function(c){
-      var v=(data.by_family[f.id]||{})[c.id];
-      fr.appendChild(el("td",{text:v==null?"":pct(v),title:v==null?"":c.label+" on "+f.label+": "+pct(v)}));
+  /* Every run, one chip each, for one task set at a time: the scored (development) tasks
+     grouped by family, or the final blind set, outside the score, split by whether a task
+     can be done. */
+  var SETS={dev:{tasks:data.tasks,runs:data.runs,cols:configs,
+    groups:data.families.map(function(f){return {label:f.label,has:function(t){return t.family===f.id;},score:function(c){return (data.by_family[f.id]||{})[c.id];}};}),
+    sub:"One chip per run, grouped by task family. The family rows give each setup's score on that family."}};
+  (function(){
+    /* The final set's tasks and runs are its blind family with the round's number (round-7, heldout7-…). */
+    var rd=(data.blind_rounds||[]).find(function(r){return r.final===true;}),num=rd&&(/(\d+)$/.exec(rd.id||"")||[])[1];
+    var inSet=function(x){return num&&(/^heldout(\d+)/.exec(x.family||"")||[])[1]===num;};
+    var ts=(data.tasks_outside_score||[]).filter(inSet),rs=(data.runs_outside_score||[]).filter(inSet);
+    if(!ts.length||!rs.length)return;
+    var blocked={};ts.forEach(function(t){blocked[t.id]=t.expected_status==="blocked";});
+    var kind=function(b){return {label:b?"Can't be done":"Can be done",has:function(t){return blocked[t.id]===b;},score:function(c){
+      var x=rs.filter(function(r){return r.config_id===c.id&&r.code!=="I"&&blocked[r.task]===b;});
+      return x.length?x.filter(function(r){return r.said_and_done;}).length/x.length:null;}};};
+    SETS.blind={tasks:ts,runs:rs,cols:configs.filter(function(c){return rs.some(function(r){return r.config_id===c.id;});}),groups:[kind(false),kind(true)],
+      sub:"One chip per run on the final blind set's "+ts.length+" tasks, run after the checks were frozen and kept outside the score. The shaded rows give each setup's score on the tasks below them.",
+      button:rd.label+" \u00b7 "+ts.length+" tasks"};
+    SETS.dev.button="Development \u00b7 "+data.tasks.length+" tasks";
+  })();
+  var grid=byId("sd-grid"),codes=byId("sd-codes"),dl=byId("sd-tasks");
+  function drawGrid(key){
+    var set=SETS[key],cols=set.cols;
+    grid.textContent="";codes.textContent="";dl.textContent="";
+    byId("sd-runs-sub").textContent=set.sub;
+    /* Runs set aside for infrastructure errors were run again, so they're not shown, and the
+       legend lists only the codes that appear. */
+    var seen={};set.runs.forEach(function(r){if(r.code!=="I"&&cols.indexOf(cfgById[r.config_id])>=0)seen[r.code]=1;});
+    ["S","F","W","U","x"].forEach(function(k){
+      if(!data.codes[k]||!seen[k])return;
+      codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-"+k,text:k,"aria-hidden":"true"}),data.codes[k]]));
     });
-    gb.appendChild(fr);
-    ts.forEach(function(t){
-      var short=(t.label||t.id).replace(/^[^:]*:\s*/,"");
-      short=short.charAt(0).toUpperCase()+short.slice(1);
-      var tags=[t.expected_status==="blocked"?"honest answer: blocked":null,t.split&&SPLIT[t.split]?SPLIT[t.split][0].toLowerCase()+" task":null].filter(Boolean);
-      var th=el("th",{cls:"sd-sticky sd-task",scope:"row",title:t.summary||""},[short,tags.length?el("small",{text:tags.join(" \u00b7 ")}):null]);
-      var tr=el("tr",null,[th]);
-      configs.forEach(function(c){
-        var rs=(runsBy[t.id+"|"+c.id]||[]).filter(function(r){return r.code!=="I";}).sort(function(a,b){return a.seed-b.seed;});
-        var td=el("td");
-        if(!rs.length)td.appendChild(el("span",{cls:"sd-na",text:"–",title:"Not run in this setup"}));
-        rs.forEach(function(r){
-          /* An S that doesn't count (untrue report, or a broken rule) is hollow, so green always means it counted. */
-          var untrue=r.code==="S"&&r.truthful===false;
-          var chip=el("span",{cls:"sd-chip sd-c-"+r.code+(r.code==="S"&&!r.said_and_done?" sd-nc":"")+(r.violated?" sd-v":""),text:r.code+(untrue?"?":"")+(r.violated?"!":""),
-            role:"img","aria-label":c.label+", "+(t.label||t.id)+", seed "+r.seed+": "+(data.codes[r.code]||r.code)+(untrue?", report not true":"")+(r.violated?", broke a rule":"")});
-          hover(chip,function(n){
-            var rows=[[data.codes[r.code]||r.code,""],[mins(r.minutes),"minutes"],[money(r.cost_usd,r.cost_estimated),"cost"]];
-            if(r.truthful!=null)rows.splice(1,0,[r.truthful?"true":"not true","report"]);
-            showTip(n,c.label+" · seed "+r.seed,rows,(t.label||t.id)+(r.violated?". Broke a rule"+(r.violations&&r.violations.length?": "+r.violations.join(", "):""):""));
-          });
-          td.appendChild(chip);
-        });
-        tr.appendChild(td);
+    codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-S sd-nc",text:"S?","aria-hidden":"true"}),"hollow with ?: the report wasn't true, so it doesn't count"]));
+    codes.appendChild(el("span",null,[el("span",{cls:"sd-chip sd-c-S sd-nc sd-v",text:"S!","aria-hidden":"true"}),"outlined with !: broke a rule, so it doesn't count"]));
+    var hr=el("tr",null,[el("th",{cls:"sd-sticky",scope:"col",text:"Task"})]);
+    cols.forEach(function(c){var th=el("th",{cls:"sd-cfg",scope:"col",text:c.label});th.style.setProperty("--c",cvar(c));hr.appendChild(th);});
+    grid.appendChild(el("thead",null,[hr]));
+    var runsBy={};
+    set.runs.forEach(function(r){var k=r.task+"|"+r.config_id;(runsBy[k]=runsBy[k]||[]).push(r);});
+    var gb=el("tbody");grid.appendChild(gb);
+    set.groups.forEach(function(g){
+      var ts=set.tasks.filter(g.has);
+      if(!ts.length)return;
+      var fr=el("tr",{cls:"sd-fam"},[el("th",{cls:"sd-sticky",scope:"rowgroup",text:g.label})]);
+      cols.forEach(function(c){
+        var v=g.score(c);
+        fr.appendChild(el("td",{text:v==null?"":pct(v),title:v==null?"":c.label+" on "+g.label+": "+pct(v)}));
       });
-      gb.appendChild(tr);
+      gb.appendChild(fr);
+      ts.forEach(function(t){
+        var short=(t.label||t.id).replace(/^[^:]*:\s*/,"");
+        short=short.charAt(0).toUpperCase()+short.slice(1);
+        var tags=[t.expected_status==="blocked"?"right answer: blocked":null,key==="dev"&&t.split&&SPLIT[t.split]?SPLIT[t.split][0].toLowerCase()+" task":null].filter(Boolean);
+        var th=el("th",{cls:"sd-sticky sd-task",scope:"row",title:t.summary||""},[short,tags.length?el("small",{text:tags.join(" \u00b7 ")}):null]);
+        var tr=el("tr",null,[th]);
+        cols.forEach(function(c){
+          var rs=(runsBy[t.id+"|"+c.id]||[]).filter(function(r){return r.code!=="I";}).sort(function(a,b){return a.seed-b.seed;});
+          var td=el("td");
+          if(!rs.length)td.appendChild(el("span",{cls:"sd-na",text:"–",title:"Not run in this setup"}));
+          rs.forEach(function(r){
+            /* An S that doesn't count (untrue report, or a broken rule) is hollow, so green always means it counted. */
+            var untrue=r.code==="S"&&r.truthful===false;
+            var chip=el("span",{cls:"sd-chip sd-c-"+r.code+(r.code==="S"&&!r.said_and_done?" sd-nc":"")+(r.violated?" sd-v":""),text:r.code+(untrue?"?":"")+(r.violated?"!":""),
+              role:"img","aria-label":c.label+", "+(t.label||t.id)+", seed "+r.seed+": "+(data.codes[r.code]||r.code)+(untrue?", report not true":"")+(r.violated?", broke a rule":"")});
+            hover(chip,function(n){
+              var rows=[[data.codes[r.code]||r.code,""],[mins(r.minutes),"minutes"],[money(r.cost_usd,r.cost_estimated),"cost"]];
+              if(r.truthful!=null)rows.splice(1,0,[r.truthful?"true":"not true","report"]);
+              showTip(n,c.label+" · seed "+r.seed,rows,(t.label||t.id)+(r.violated?". Broke a rule"+(r.violations&&r.violations.length?": "+r.violations.join(", "):""):""));
+            });
+            td.appendChild(chip);
+          });
+          tr.appendChild(td);
+        });
+        gb.appendChild(tr);
+      });
     });
-  });
-  var dl=byId("sd-tasks");
-  data.families.forEach(function(f){
-    data.tasks.filter(function(t){return t.family===f.id;}).forEach(function(t){
-      dl.appendChild(el("dt",null,[t.label||t.id,t.split&&SPLIT[t.split]?el("small",{text:" \u00b7 "+SPLIT[t.split][0].toLowerCase()}):null]));
-      if(t.summary)dl.appendChild(el("dd",{text:t.summary}));
+    set.groups.forEach(function(g){
+      set.tasks.filter(g.has).forEach(function(t){
+        dl.appendChild(el("dt",null,[t.label||t.id,key==="dev"&&t.split&&SPLIT[t.split]?el("small",{text:" \u00b7 "+SPLIT[t.split][0].toLowerCase()}):null]));
+        if(t.summary)dl.appendChild(el("dd",{text:t.summary}));
+      });
     });
-  });
+  }
+  drawGrid("dev");
+  /* With a final blind set, a switch between the two task sets. */
+  if(SETS.blind){
+    var sw=byId("sd-grid-switch"),btns={};
+    ["dev","blind"].forEach(function(k){
+      btns[k]=el("button",{type:"button",cls:"sd-switch-b","aria-pressed":k==="dev"?"true":"false",text:SETS[k].button});
+      btns[k].addEventListener("click",function(){
+        Object.keys(btns).forEach(function(j){btns[j].setAttribute("aria-pressed",j===k?"true":"false");});
+        drawGrid(k);
+      });
+      sw.appendChild(btns[k]);
+    });
+    sw.hidden=false;
+  }
 
   /* Excerpts: the agent's reasoning beside its report and what the grader found. */
   var ex=(excerpts&&excerpts.excerpts)||[];
