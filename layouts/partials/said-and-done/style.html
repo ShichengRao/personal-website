@@ -47,12 +47,17 @@ main:has(> #sd-app){padding-bottom:0}
 #sd-app h3{font-size:17px;font-weight:600;margin:0 0 2px}
 #sd-app .sd-sub{color:var(--ink2);font-size:15px;margin:0 0 16px;max-width:42rem}
 #sd-app .sd-note{color:var(--muted);font-size:13px;margin:14px 0 0;max-width:42rem}
-#sd-app .sd-tiles{display:grid;grid-template-columns:repeat(var(--n,3),1fr);gap:24px;max-width:960px;margin:40px auto 0}
-#sd-app .sd-tile{border-top:3px solid var(--c);padding-top:14px}
+/* Headline numbers: one row per task set, before → after, the text beside the number
+   where there's room and under it where there isn't. */
+#sd-app .sd-tiles{display:grid;grid-template-columns:1fr;gap:20px;max-width:960px;margin:40px auto 0}
+#sd-app .sd-tiles-h{margin:0;font-size:14px;font-weight:600;color:var(--ink2)}
+#sd-app .sd-tile{border-top:3px solid var(--c);padding-top:14px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 28px}
+#sd-app .sd-tile .t{flex:1 1 17rem;min-width:0}
 #sd-app .sd-tile .k{font-size:14px;color:var(--ink2);font-weight:500}
-#sd-app .sd-tile .v{font-size:56px;line-height:1.05;font-weight:650;letter-spacing:-.02em;margin:6px 0 4px}
-#sd-app .sd-tile .s{font-size:13px;color:var(--muted)}
-@media (max-width:700px){#sd-app .sd-tiles{grid-template-columns:1fr;gap:20px}#sd-app .sd-tile .v{font-size:44px}}
+#sd-app .sd-tile .v{font-size:56px;line-height:1.05;font-weight:650;letter-spacing:-.02em;margin:0;white-space:nowrap}
+#sd-app .sd-tile .v .from,#sd-app .sd-tile .v .arr{color:var(--muted)}
+#sd-app .sd-tile .s{font-size:13px;color:var(--muted);margin-top:2px}
+@media (max-width:700px){#sd-app .sd-tile .v{font-size:44px}}
 #sd-app .sd-bars{display:grid;gap:6px}
 #sd-app .sd-row{display:grid;grid-template-columns:minmax(150px,min(30%,280px)) 1fr;align-items:center;gap:16px;
  padding:5px 8px;margin:0 -8px;border-radius:6px;outline:none;cursor:default}
@@ -179,12 +184,7 @@ main:has(> #sd-app){padding-bottom:0}
  #sd-app .sd-top{display:grid;grid-template-columns:minmax(0,42rem) minmax(0,1fr);gap:72px;align-items:center}
  #sd-app .sd-top .sd-banner,#sd-app .sd-top .sd-prose{margin-left:0;margin-right:0}
  #sd-app .sd-top .sd-prose{margin-bottom:0}
- #sd-app .sd-top .sd-tiles{grid-template-columns:1fr;gap:20px;max-width:none;margin:0}
- #sd-app .sd-top .sd-tile{display:grid;grid-template-columns:9.5rem minmax(0,1fr);column-gap:20px;align-items:center}
- #sd-app .sd-top .sd-tile .v{grid-column:1;grid-row:1 / span 2;margin:0}
- #sd-app .sd-top .sd-tile .k,#sd-app .sd-top .sd-tile .s{grid-column:2}
- #sd-app .sd-top .sd-tile .k{align-self:end}
- #sd-app .sd-top .sd-tile .s{align-self:start;margin-top:2px}
+ #sd-app .sd-top .sd-tiles{max-width:none;margin:0}
  #sd-app .sd-charts{grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:56px}
  #sd-app .sd-charts > div:first-child{grid-column:1 / -1}
 }

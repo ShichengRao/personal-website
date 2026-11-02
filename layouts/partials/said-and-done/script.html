@@ -152,15 +152,31 @@ function render(data,excerpts){
     tb.appendChild(tr);
   });
 
-  /* Headline numbers: the setups the page's front matter names, in that order. */
+  /* Headline numbers: the two setups the page's front matter names, before \u2192 after, once on
+     the development tasks and once on the final blind set. */
   var tiles=byId("sd-tiles");
-  (tiles.getAttribute("data-ids")||"").split(",").filter(Boolean).forEach(function(id){
-    var c=cfgById[id],s=summary[id];if(!c||!s||!shown[id])return;
-    var t=el("div",{cls:"sd-tile"},[el("div",{cls:"k",text:c.label}),el("div",{cls:"v",text:pct(s.said_and_done)}),
-      el("div",{cls:"s",text:"Said & Done score \u00b7 did the work "+pct(s.done)+" \u00b7 reports true "+pct(s.truthful)+" \u00b7 "+money(s.median_cost_usd,s.cost_estimated)+" a run"})]);
-    t.style.setProperty("--c",cvar(c));
-    tiles.appendChild(t);
-  });
+  (function(){
+    var ids=(tiles.getAttribute("data-ids")||"").split(",").filter(Boolean),a=cfgById[ids[0]],b=cfgById[ids[1]];
+    if(!a||!b||!summary[a.id]||!summary[b.id]||!shown[a.id]||!shown[b.id])return;
+    var sa=summary[a.id],sb=summary[b.id],arrow=" \u2192 ";
+    var fromTo=function(x,y){return el("div",{cls:"v"},[el("span",{cls:"from",text:x}),el("span",{cls:"arr",text:" \u2192 "}),el("span",{text:y})]);};
+    var row=function(v,k,s){var t=el("div",{cls:"sd-tile"},[v,el("div",{cls:"t"},[el("div",{cls:"k",text:k}),el("div",{cls:"s",text:s})])]);
+      t.style.setProperty("--c",cvar(b));tiles.appendChild(t);};
+    tiles.appendChild(el("p",{cls:"sd-tiles-h",text:"Said & Done score: "+a.label+arrow+b.label}));
+    var nDev=data.tasks.filter(function(t){return t.split==="development";}).length;
+    row(fromTo(pct(sa.said_and_done),pct(sb.said_and_done)),
+      nDev===data.tasks.length?"Development: the "+nDev+" tasks the checks were built on":"All "+data.tasks.length+" tasks in the score",
+      "did the work "+pct(sa.done)+arrow+pct(sb.done)+" \u00b7 reports that were true "+pct(sa.truthful)+arrow+pct(sb.truthful)+" \u00b7 "+
+      money(sa.median_cost_usd,sa.cost_estimated)+arrow+money(sb.median_cost_usd,sb.cost_estimated)+" a run");
+    var rd=(data.blind_rounds||[]).find(function(r){return r.final===true;});
+    var xa=rd&&(rd.setups||[]).find(function(x){return x.id===a.id;}),xb=rd&&(rd.setups||[]).find(function(x){return x.id===b.id;});
+    if(xa&&xb){
+      var g=xb.gain_over_beam,p=function(v){v=Math.sign(v)*Math.round(Math.abs(v*100));return (v>0?"+":v<0?"\u2212":"")+Math.abs(v);};
+      row(fromTo(pct(xa.said_and_done.k/xa.said_and_done.n),pct(xb.said_and_done.k/xb.said_and_done.n)),
+        "Blind: "+(rd.tasks?rd.tasks+" new tasks":"new tasks")+", written without seeing the checks",
+        xa.said_and_done.k+arrow+xb.said_and_done.k+" of "+xb.said_and_done.n+" runs"+(g?" \u00b7 "+p(g.diff)+" points over "+a.label+" alone (95% interval "+p(g.low)+" to "+p(g.high)+")":""));
+    }
+  })();
 
   /* The headline chart: every setup's score, highest first. Bars square at the
      baseline with a 4px rounded end, the value at the tip. */
@@ -750,6 +766,18 @@ function layoutBlocks(){
     while(sec.firstChild)d.appendChild(sec.firstChild);
     sec.appendChild(d);sec.classList.add("sd-acc-sec");
   });
+  /* A link into a folded section (the intro's "How it's scored") opens it first. */
+  function openTo(hash){
+    var t=hash&&hash.length>1&&document.getElementById(decodeURIComponent(hash.slice(1)));if(!t)return false;
+    for(var d=t.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
+    t.scrollIntoView();return true;
+  }
+  document.addEventListener("click",function(e){
+    var a=e.target.closest&&e.target.closest('a[href^="#"]');
+    if(a&&openTo(a.getAttribute("href"))){e.preventDefault();history.pushState(null,"",a.getAttribute("href"));}
+  });
+  window.addEventListener("hashchange",function(){openTo(location.hash);});
+  openTo(location.hash);
 }
 
 Promise.all([
