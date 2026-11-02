@@ -19,4 +19,4 @@ Copy `extension.py` to `~/.mirror/extensions/goal/`, start Mirror, enable the ex
 
 ## Evidence
 
-The numbers come from these checks (v5) in the Said & Done harness, not Mirror: a large gain on the 28 tasks they were tuned on, none on 20 new tasks written without seeing them. Live trials in Mirror are small: [huggingface.co/spaces/ShichengRao/said-and-done](https://huggingface.co/spaces/ShichengRao/said-and-done).
+The numbers come from these checks in the Said & Done harness, not Mirror: a large gain on the 28 tasks they were tuned on, and no clear gain on 20 new tasks written without seeing them. Live trials in Mirror are small: [huggingface.co/spaces/ShichengRao/said-and-done](https://huggingface.co/spaces/ShichengRao/said-and-done).

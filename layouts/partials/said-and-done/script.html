@@ -274,7 +274,7 @@ function render(data,excerpts){
       earlier.forEach(function(rd){
         var pr=(rd.setups||[]).find(function(x){return x.id===rd.primary;}),b0=(rd.setups||[]).find(function(x){return !x.gain_over_beam;});
         var verdict=rd.holds===true?"the pre-registered claim held":rd.holds===false?"the pre-registered claim didn't hold":"no rule was registered";
-        ul.appendChild(el("li",{text:rd.label+(rd.tasks?" ("+rd.tasks+" tasks)":"")+": "+(pr&&b0?pr.label+" "+pr.said_and_done.k+" of "+pr.said_and_done.n+" against "+b0.label+" "+b0.said_and_done.k+" of "+b0.said_and_done.n+", ":"")+
+        ul.appendChild(el("li",{text:rd.label+(rd.tasks?", "+rd.tasks+" tasks":"")+": "+(pr&&b0?pr.label+" "+pr.said_and_done.k+" of "+pr.said_and_done.n+" against "+b0.label+" "+b0.said_and_done.k+" of "+b0.said_and_done.n+", ":"")+
           (pr&&pr.gain_over_beam?gain(pr.gain_over_beam)+" points; ":"")+verdict+"."+(rd.note?" "+rd.note:"")}));
       });
       var bx=byId("sd-blind");bx.appendChild(el("p",{cls:"sd-note",text:"Earlier blind sets"+(earlier.every(function(rd){return rd.holds===true||rd.holds===false;})?", each pre-registered and run after the checks were frozen":"")+":"}));bx.appendChild(ul);
