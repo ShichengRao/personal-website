@@ -172,9 +172,16 @@ function render(data,excerpts){
     var xa=rd&&(rd.setups||[]).find(function(x){return x.id===a.id;}),xb=rd&&(rd.setups||[]).find(function(x){return x.id===b.id;});
     if(xa&&xb){
       var g=xb.gain_over_beam,p=function(v){v=Math.sign(v)*Math.round(Math.abs(v*100));return (v>0?"+":v<0?"\u2212":"")+Math.abs(v);};
+      /* The round's runs are the blind family with its number (round-7, heldout7-\u2026); their median cost, as the summary's. */
+      var num=(/(\d+)$/.exec(rd.id||"")||[])[1];
+      var cost=function(c){var rs=(data.runs_outside_score||[]).filter(function(r){return r.config_id===c.id&&typeof r.cost_usd==="number"&&(/^heldout(\d+)/.exec(r.family||"")||[])[1]===num;});
+        if(!num||!rs.length)return null;var v=rs.map(function(r){return r.cost_usd;}).sort(function(x,y){return x-y;}),h=v.length>>1;
+        return money(v.length%2?v[h]:(v[h-1]+v[h])/2,rs.some(function(r){return r.cost_estimated;}));};
+      var ca=cost(a),cb=cost(b);
       row(fromTo(pct(xa.said_and_done.k/xa.said_and_done.n),pct(xb.said_and_done.k/xb.said_and_done.n)),
         "Blind: "+(rd.tasks?rd.tasks+" new tasks":"new tasks")+", written without seeing the checks",
-        xa.said_and_done.k+arrow+xb.said_and_done.k+" of "+xb.said_and_done.n+" runs"+(g?" \u00b7 "+p(g.diff)+" points over "+a.label+" alone (95% interval "+p(g.low)+" to "+p(g.high)+")":""));
+        xa.said_and_done.k+arrow+xb.said_and_done.k+" of "+xb.said_and_done.n+" runs"+(g?" \u00b7 "+p(g.diff)+" points over "+a.label+" alone (95% interval "+p(g.low)+" to "+p(g.high)+")":"")+
+        (ca&&cb?" · "+ca+arrow+cb+" a run":""));
     }
   })();
 
