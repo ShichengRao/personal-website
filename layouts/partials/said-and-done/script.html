@@ -777,7 +777,7 @@ function render(data,excerpts){
   parts.push(n+" scored runs across "+configs.length+" setups and "+data.tasks.length+" tasks.");
   prov.appendChild(document.createTextNode(parts.join(" ")+" "));
   if(p.commit){prov.appendChild(document.createTextNode("Benchmark commit "));prov.appendChild(el("code",{text:p.commit.slice(0,12)}));
-    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code). The harness builds the runs used are listed under How it's scored. "));}
+    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code). "));}
   prov.appendChild(document.createTextNode("Every run, with each task's hash, is in "));
   prov.appendChild(el("a",{href:"/said-and-done/results.json",text:"results.json"}));
   prov.appendChild(document.createTextNode("."));
