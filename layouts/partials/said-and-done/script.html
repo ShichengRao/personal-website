@@ -675,7 +675,7 @@ function render(data,excerpts){
           hover(chip,function(n){
             var rows=[[data.codes[r.code]||r.code,""],[mins(r.minutes),"minutes"],[money(r.cost_usd,r.cost_estimated),"cost"]];
             if(r.truthful!=null)rows.splice(1,0,[r.truthful?"true":"not true","report"]);
-            showTip(n,c.label+" · seed "+r.seed,rows,(t.label||t.id)+(r.violated?". Broke a rule"+(r.violations&&r.violations.length?": "+r.violations.join("; "):""):""));
+            showTip(n,c.label+" · seed "+r.seed,rows,(t.label||t.id)+(r.violated?". Broke a rule"+(r.violations&&r.violations.length?": "+r.violations.join(", "):""):""));
           });
           td.appendChild(chip);
         });

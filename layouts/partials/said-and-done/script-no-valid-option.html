@@ -112,9 +112,9 @@ function render(c){
   fitLabels();new ResizeObserver(fitLabels).observe($("nv-chart"));
   var left=ids.filter(function(id){return S[id].blocked_but_left_an_invalid_choice_in_place.k;}),missed=ids.filter(function(id){return S[id].controls_passed.k<S[id].controls_passed.n;});
   $("nv-chart-note").textContent=left.map(function(id){var U=S[id].blocked_but_left_an_invalid_choice_in_place.k;return name(id)+" said “blocked” "+blocked(id).k+" times, but "+U+" of those left an excluded plan in the file the system acts on, so "+(U===1?"it doesn't":"they don't")+" count as honest. ";}).join("")+
-    (missed.length?"Every other setup passed both controls in both runs; "+missed.map(function(id){return name(id)+" passed "+kn(S[id].controls_passed);}).join(", ")+".":"Every setup passed both controls in both runs.");
+    (missed.length?"Every other setup passed both controls in both runs. "+missed.map(function(id){return name(id)+" passed "+kn(S[id].controls_passed);}).join(", ")+".":"Every setup passed both controls in both runs.");
   var how=(b&&b.how_false_completions_were_made)||{};
-  if(b)$("nv-how").textContent="How Beam alone's "+b.false_completions_that_acted_on_an_invalid_choice.k+" runs that acted on an excluded option got there (a run can do more than one): "+Object.keys(how).map(function(k){return how[k]+" "+(KINDS[k]||k);}).join("; ")+(how.invented_candidate?"":". None invented an option")+".";
+  if(b)$("nv-how").textContent="How Beam alone's "+b.false_completions_that_acted_on_an_invalid_choice.k+" runs that acted on an excluded option got there (a run can do more than one): "+list(Object.keys(how).map(function(k){return how[k]+" "+(KINDS[k]||k);}))+(how.invented_candidate?"":". None invented an option")+".";
 
   /* Every run, as squares: a row per setup, a column per scenario. */
   ["good","warn","serious","crit","none"].forEach(function(k){if(present[k]||k!=="none")$("nv-chip-legend").appendChild(el("span",null,[el("span",{cls:"sd-chip "+CAT[k].chip,text:CAT[k].letter,"aria-hidden":"true"}),CAT[k].label]));});
@@ -133,7 +133,7 @@ function render(c){
         var label=ctl&&k==="good"?"Chose the one valid option":x.code==="W"?"Wrongly blocked":C.label;
         var chip=el("button",{cls:"sd-chip "+C.chip+(v.length?" sd-v":""),type:"button",text:letter+(v.length?"!":""),"aria-label":name(id)+", "+s.domain+", run "+x.seed+": "+label});
         var lines=[label];
-        if(x.choice)lines.push("Chose "+x.choice+((x.choice_fails||[]).length?", which fails: "+x.choice_fails.join("; "):""));
+        if(x.choice)lines.push("Chose "+x.choice+((x.choice_fails||[]).length?", which fails: "+x.choice_fails.join(" \u00b7 "):""));
         else if(x.outcome==="complete"&&!ctl)lines.push("Wrote no choice, then reported “complete”");
         if(x.first_status&&x.first_status!==x.outcome)lines.push("First submitted “"+x.first_status+"”; a check sent it back");
         v.forEach(function(t){lines.push("Broke a rule: "+t);});
@@ -165,7 +165,7 @@ function render(c){
     }))));
   });
   var bases={};est.forEach(function(id){(bases[S[id].cost_basis]=bases[S[id].cost_basis]||[]).push(name(id));});
-  $("nv-cost-note").textContent=(est.length?"* "+Object.keys(bases).map(function(k){return list(bases[k])+": "+k;}).join("; ")+". The other costs are what the API billed.":"Every cost is what the API billed.")+
+  $("nv-cost-note").textContent=(est.length?"* "+Object.keys(bases).map(function(k){return list(bases[k])+": "+k.replace(/\.$/,"")+".";}).join(" ")+" The other costs are what the API billed.":"Every cost is what the API billed.")+
     ids.filter(function(id){return S[id].endpoint_note;}).map(function(id){return " "+name(id)+": "+S[id].endpoint_note;}).join("");
 
   /* What the checks did: the package's own paragraphs, checked against the runs. */
