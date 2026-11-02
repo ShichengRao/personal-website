@@ -221,7 +221,7 @@
  ],
  "install": {
   "steps": [
-   "Copy extension.py to ~/.mirror/extensions/goal/ (or .mirror/extensions/goal/ in a project). Mirror loads an extension only from a folder named after its ID, goal, so it takes the plain /goal's place.",
+   "Clone it into a folder named goal, the extension's ID: git clone --branch said-and-done-2026-11-02 https://github.com/ShichengRao/mirror-goal-extension ~/.mirror/extensions/goal (or .mirror/extensions/goal in a project). Mirror loads an extension only from a folder named after its ID, so it takes the plain /goal's place.",
    "On Linux, install bubblewrap (bwrap) so the verifier can run in its sandbox; macOS uses sandbox-exec, which it already has.",
    "Start Mirror and enable the extension when asked.",
    "Run /goal <what you want done>. Also /goal stop, /goal resume, /goal clear."
@@ -243,7 +243,11 @@
   "files": [
    "extension.py",
    "README.md"
-  ]
+  ],
+  "repo": {
+   "url": "https://github.com/ShichengRao/mirror-goal-extension",
+   "ref": "said-and-done-2026-11-02"
+  }
  },
  "limits": [
   "Where there's no sandbox, there's no verifier: Docker with its default settings, or Linux without bubblewrap or unprivileged user namespaces. The reviewer still runs, without the verifier's findings. The sandbox blocks the network, writes outside the check's copy, and your secret folders, but on macOS other files and processes stay readable to the verifier.",

@@ -18,9 +18,26 @@
 .cg-caveats{padding-left:20px;max-width:46rem;color:var(--ink2);font-size:15px}
 .cg-ev h3{margin-top:28px}
 .pj .cg-files{margin:22px 0 0;color:var(--ink2);max-width:46rem}
-.cg-files+.pj-label{margin-top:22px}
-details.cg-src summary{cursor:pointer;font-weight:600;color:var(--ink2);margin-top:20px}
-details.cg-src pre{max-height:520px;overflow:auto}
+.cg-files+.pj-note{margin-top:12px}
+.cg-steps code{overflow-wrap:anywhere}
+/* How it works: one tab per check. Every panel sits in the same grid cell, so the box
+   keeps the tallest one's height and the page doesn't jump between tabs. */
+.cg-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.cg-tab{font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ring);background:var(--surface);color:var(--ink2);border-radius:999px;padding:7px 16px 7px 8px;cursor:pointer}
+.cg-tab .i{width:22px;height:22px;border-radius:50%;background:var(--grid);color:var(--ink2);font-size:12px;display:flex;align-items:center;justify-content:center}
+.cg-tab[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.cg-tab[aria-selected="true"] .i{background:var(--accent);color:#fff}
+.cg-tab:focus-visible,.cg-panel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cg-panels{display:grid;margin-top:14px;max-width:46rem}
+.cg-panel{grid-area:1/1;background:var(--surface);border:1px solid var(--ring);border-radius:14px;padding:22px 22px 18px}
+.cg-panel[hidden]{display:block;visibility:hidden}
+.cg-panel p{font-size:15px;margin:0}
+/* Limits: each one's first sentence, with the rest a click away. */
+.cg-limits details summary{cursor:pointer;list-style:none;color:var(--ink)}
+.cg-limits details summary::-webkit-details-marker{display:none}
+.cg-limits details summary .more{color:var(--accent);font-size:14px;margin-left:6px;white-space:nowrap}
+.cg-limits details[open] summary .more{display:none}
+.cg-limits details p{margin:4px 0 0}
 </style>
 {{ end }}
 {{ define "header" }}{{ partial "project/header.html" . }}{{ end }}
@@ -49,7 +66,8 @@ details.cg-src pre{max-height:520px;overflow:auto}
     <p class="pj-eyebrow">How it works</p>
     <h2>A second opinion from outside the conversation</h2>
     <div class="pj-read"><p>Every check is a fresh Beam call that didn't do the work, so it hasn't talked itself into the answer. No other model is involved.</p></div>
-    <div class="pj-grid c4" id="cg-how" style="margin-top:20px"></div>
+    <div class="cg-tabs" role="tablist" aria-label="The four checks" id="cg-how-tabs"></div>
+    <div class="cg-panels" id="cg-how"></div>
   </section>
 
   <section class="pj-sec">
@@ -77,12 +95,8 @@ details.cg-src pre{max-height:520px;overflow:auto}
     <h2>Install</h2>
     <p class="pj-note">It's a prototype. This build has been reviewed only by AI agents, with no human review, and hasn't run live yet; earlier builds had a few live Mirror runs (see the limits below).</p>
     <ol class="cg-steps" id="cg-steps"></ol>
-    <p class="cg-files"><a href="/checked-goal/extension.py" download>Download extension.py</a> · <a href="/checked-goal/README.md">Its README</a>, on the sandbox, the guard, and the live runs</p>
-    <p class="pj-label" style="margin-top:22px">Settings, with their defaults</p>
-    <div class="pj-mono" id="cg-settings"></div>
-    <p class="pj-note">They go under the extension's entry in <code>~/.mirror/config.json</code>.</p>
+    <p class="cg-files" id="cg-repo"></p>
     <p class="pj-note" id="cg-uses"></p>
-    <details class="cg-src"><summary>Read the extension's source</summary><pre class="pj-mono" id="cg-source">Loading…</pre></details>
     {{- end }}
   </section>
 
@@ -105,10 +119,9 @@ function $(id){return document.getElementById(id);}
 function pct(v){return typeof v==="number"?Math.round(v*100)+"%":String(v);}
 function money(v){return "$"+(v<1?v.toPrecision(2):v.toFixed(2));}
 function frac(v){if(typeof v==="number")return v;var m=/(\d+)\s*of\s*(\d+)/.exec(v||"");return m?+m[1]/+m[2]:0;}
-/* `code` spans for anything in backticks or that looks like a path or command. */
-/* Code spans and paths as code, and [text](https://…) as a link (the site's tests allow only a few hosts). */
+/* Code spans, paths and a git clone command as code, and [text](https://…) as a link (the site's tests allow only a few hosts). */
 function rich(text){
-  var out=[],re=/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|`[^`]+`|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
+  var out=[],re=/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|`[^`]+`|git clone(?: [^\s()]+)+|\/goal(?: \w+)?(?: <[^>]+>)?|~?\.?\/?[\w.-]*\/[\w./-]+\/?)/g,last=0,m;
   while((m=re.exec(text))){if(m.index>last)out.push(text.slice(last,m.index));
     var link=/^\[([^\]]+)\]\((https:\/\/[^)\s]+)\)$/.exec(m[0]);
     out.push(link?el("a",{href:link[2],text:link[1],rel:"noopener"}):el("code",{text:m[0].replace(/`/g,"")}));last=re.lastIndex;}
@@ -142,10 +155,23 @@ function render(c){
   var lead=(c.examples||[])[0];
   if(lead&&lead.without.noticed&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
     "“"+lead.without.noticed+"”",el("cite",{text:"Beam's reasoning, shortly before it "+lead.without.did.charAt(0).toLowerCase()+lead.without.did.slice(1).replace(/\.$/,"")+", and reported “complete”"})]));
-  (c.how_it_works||[]).forEach(function(h,i){
+  /* How it works as tabs: the first check open, arrow keys move between them. */
+  var how=c.how_it_works||[],tabs=[],panels=[];
+  function pick(i,focus){
+    tabs.forEach(function(b,j){b.setAttribute("aria-selected",j===i?"true":"false");b.tabIndex=j===i?0:-1;panels[j].hidden=j!==i;});
+    if(focus)tabs[i].focus();
+  }
+  how.forEach(function(h,i){
     var m=/^(.*?)\s*\((.*)\)$/.exec(h.name),name=m?m[1]:h.name;
-    $("cg-how").appendChild(el("div",{cls:"pj-card"},[el("div",{cls:"n",text:(i+1)+" · "+name+(m?" · "+m[2]:"")}),el("p",{text:h.what})]));
+    var b=el("button",{type:"button",role:"tab",cls:"cg-tab",id:"cg-tab-"+i,"aria-controls":"cg-panel-"+i},[el("span",{cls:"i","aria-hidden":"true",text:String(i+1)}),name]);
+    b.addEventListener("click",function(){pick(i);});
+    b.addEventListener("keydown",function(ev){var n=how.length,j={ArrowRight:(i+1)%n,ArrowLeft:(i+n-1)%n,Home:0,End:n-1}[ev.key];
+      if(j!==undefined){ev.preventDefault();pick(j,true);}});
+    tabs.push(b);$("cg-how-tabs").appendChild(b);
+    var p=el("div",{cls:"cg-panel",role:"tabpanel",id:"cg-panel-"+i,"aria-labelledby":"cg-tab-"+i,tabindex:"0"},[m?el("p",{cls:"pj-note",style:"margin:0 0 6px",text:m[2]}):null,el("p",{text:h.what})]);
+    panels.push(p);$("cg-how").appendChild(p);
   });
+  if(how.length)pick(0);
   (c.examples||[]).forEach(function(x){
     function side(s,cls,head,isWith){
       var kids=[el("div",{cls:"h"},[head])];
@@ -185,22 +211,24 @@ function render(c){
   cv.forEach(function(t){$("cg-caveats").appendChild(el("li",{text:t}));});
   var ins=$("cg-steps")?c.install||{}:{};
   (ins.steps||[]).forEach(function(s){$("cg-steps").appendChild(el("li",null,[el("span",null,rich(s))]));});
-  /* As config.json takes them: the package gives list settings as "20, 40", which the extension reads as a list. */
-  function setting(v){return typeof v==="string"&&v.indexOf(", ")>0?"["+v.split(", ").map(function(x){return /^\d+$/.test(x)?x:JSON.stringify(x);}).join(", ")+"]":JSON.stringify(v);}
-  if($("cg-settings")){
-    $("cg-settings").textContent=Object.keys(ins.settings||{}).map(function(k){return JSON.stringify(k)+": "+setting(ins.settings[k]);}).join(",\n");
+  /* The source, README and settings live in the extension's repo, at the tag the page describes;
+     without a repo, the files the site ships. */
+  if($("cg-repo")){
+    var repo=ins.repo,name=repo?repo.url.replace(/^https:\/\/github\.com\//,""):"";
+    $("cg-repo").append.apply($("cg-repo"),repo?["The source, README (with the settings and their defaults) and license are on GitHub: ",
+      el("a",{href:repo.url+(repo.ref?"/tree/"+encodeURIComponent(repo.ref):""),text:name,rel:"noopener"}),repo.ref?", at the tag ":"",repo.ref?el("code",{text:repo.ref}):null,"."].filter(Boolean)
+      :[el("a",{href:"/checked-goal/extension.py",download:"",text:"Download extension.py"})," · ",el("a",{href:"/checked-goal/README.md",text:"Its README"})]);
     $("cg-uses").textContent=ins.uses||"";
   }
-  (c.limits||[]).forEach(function(t){$("cg-limits").appendChild(el("li",null,rich(t)));});
+  /* Each limit's first sentence stays in view; the rest opens under it. */
+  (c.limits||[]).forEach(function(t){
+    var m=/^(.+?[.!?])\s+(?=[A-Z"“(\[])([\s\S]+)$/.exec(t);
+    $("cg-limits").appendChild(el("li",null,m?[el("details",null,[el("summary",null,rich(m[1]).concat([el("span",{cls:"more",text:"More"})])),el("p",null,rich(m[2]))])]:rich(t)));
+  });
   $("cg-source-note").textContent="Numbers: "+(c.numbers_source||"Said & Done benchmark runs").replace(/\.$/,"")+".";
 }
 fetch("/checked-goal/content.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
   .catch(function(err){$("cg-story").appendChild(el("p",{cls:"pj-pending",text:"The page's content didn't load ("+err.message+")."}));});
-var src=document.querySelector("details.cg-src");
-if(src)src.addEventListener("toggle",function(){
-  var pre=$("cg-source");if(pre.dataset.loaded)return;pre.dataset.loaded=1;
-  fetch("/checked-goal/extension.py",{cache:"no-cache"}).then(function(r){return r.text();}).then(function(t){pre.textContent=t;});
-});
 })();
 </script>
 {{ end }}
