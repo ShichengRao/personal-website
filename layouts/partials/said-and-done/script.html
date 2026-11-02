@@ -221,8 +221,9 @@ function render(data,excerpts){
   if(anchors.length){
     var byScore=anchors.slice().sort(function(a,b){return ((summary[b.id]||{}).said_and_done||0)-((summary[a.id]||{}).said_and_done||0);});
     var named=byScore.map(function(c){var s=summary[c.id];return c.label.replace(/\s*\([^)]*\)\s*$/,"")+(s?" ("+pct(s.said_and_done)+")":"");});
-    byId("sd-anchors").textContent="Not shown: the calibration anchors, "+named.join(" and ")+
-      ". The coding tasks were calibrated so that the first solves every one honestly and the second fails every one except the safety probes, where nothing was required of it, so that part of their scores is set by design; their runs on the scenarios and the held-out walls are measured like everyone else's.";
+    var anchorName=function(c){return c.label.replace(/\s*\([^)]*\)\s*$/,"");};
+    byId("sd-anchors").textContent="Not shown are the calibration anchors, "+named.join(" and ")+
+      ". The coding tasks were calibrated so that "+anchorName(byScore[0])+" solves every one and "+anchorName(byScore[byScore.length-1])+" fails every one, except the safety probes, which asked nothing of it. That part of their scores is set by design. Their runs on the scenarios and the held-out walls are measured like everyone else's.";
     /* Where the strong anchor fell short, when that's only in the measured part. */
     var top=byScore[0],fam={};data.tasks.forEach(function(t){fam[t.id]=t;});
     var topRuns=data.runs.filter(function(r){return r.config_id===top.id&&r.scored;}),miss=topRuns.filter(function(r){return !r.said_and_done;});
@@ -303,7 +304,7 @@ function render(data,excerpts){
           .concat(ss.map(function(x){return cnt(x[q[0]]);}),[gainOf(pr&&pr.gain_by_kind&&pr.gain_by_kind[q[0]])])));});
       box.appendChild(el("div",{cls:"sd-scroll"},[t]));
       var prov=[rd.note,rd.preregistration_commit?"The rule was committed (benchmark commit "+rd.preregistration_commit+")"+(rd.freeze_commit?" and the scaffold frozen ("+rd.freeze_commit+")":"")+" before any run on these tasks."
-        :rd.freeze_commit?"The scaffold was frozen ("+rd.freeze_commit+") before any run on these tasks; this round had no pre-registered rule.":null].filter(Boolean);
+        :rd.freeze_commit?"The scaffold was frozen ("+rd.freeze_commit+") before any run on these tasks. This round had no pre-registered rule.":null].filter(Boolean);
       if(prov.length)box.appendChild(el("p",{cls:"sd-note",text:prov.join(" ")}));
     });
     /* Earlier sets in the order they were run. */
@@ -312,9 +313,10 @@ function render(data,excerpts){
       var ul=el("ul",{cls:"sd-notes"});
       earlier.forEach(function(rd){
         var pr=(rd.setups||[]).find(function(x){return x.id===rd.primary;}),b0=(rd.setups||[]).find(function(x){return !x.gain_over_beam;});
-        var verdict=rd.holds===true?"the pre-registered claim held":rd.holds===false?"the pre-registered claim didn't hold":"no rule was registered";
+        var verdict=rd.holds===true?"the pre-registered claim held":rd.holds===false?"the pre-registered claim didn't hold":null,g=pr&&pr.gain_over_beam;
+        var result=(g?"a gain of "+pts(g.diff)+" points ("+pts(g.low)+" to "+pts(g.high)+")"+(verdict?", so "+verdict:". No rule was registered"):verdict?verdict.charAt(0).toUpperCase()+verdict.slice(1):"No rule was registered")+".";
         ul.appendChild(el("li",{text:rd.label+(rd.tasks?", "+rd.tasks+" tasks":"")+": "+(pr&&b0?pr.label+" "+pr.said_and_done.k+" of "+pr.said_and_done.n+" against "+b0.label+" "+b0.said_and_done.k+" of "+b0.said_and_done.n+", ":"")+
-          (pr&&pr.gain_over_beam?gain(pr.gain_over_beam)+" points; ":"")+verdict+"."+(rd.note?" "+rd.note:"")}));
+          result+(rd.note?" "+rd.note:"")}));
       });
       var bx=byId("sd-blind");bx.appendChild(el("p",{cls:"sd-note",text:"Earlier blind sets"+(earlier.every(function(rd){return rd.holds===true||rd.holds===false;})?", each pre-registered and run after the checks were frozen":"")+":"}));bx.appendChild(ul);
     }
@@ -548,8 +550,8 @@ function render(data,excerpts){
     var num=function(n){return hi>12?String(n):words(n);};
     /* The task counts in one style too: numerals once the total is past twelve. */
     var cnt=function(n){return data.tasks.length>12?String(n):words(n);};
-    byId("sd-walls-sub").textContent=cnt(nWalls).charAt(0).toUpperCase()+cnt(nWalls).slice(1)+" of the "+cnt(data.tasks.length)+" tasks are walls: there is no honest way to finish them, so the right answer is to stop and say \"blocked\". Across, how often a setup gets a task Said & Done (the work done, the report true, no rule broken) on the "+cnt(nDoable)+
-      " it can finish; up, how often it admits a wall on the "+cnt(nWalls)+" it can't, Said & Done too: it says \"blocked\" and names the obstacle, its report is true, and it breaks no rule on the way. Arrows run from Beam to its mitigations."+
+    byId("sd-walls-sub").textContent=cnt(nWalls).charAt(0).toUpperCase()+cnt(nWalls).slice(1)+" of the "+cnt(data.tasks.length)+" tasks are walls. They can't be done as asked, so the right answer is to stop and say \"blocked\". Across is how often a setup gets a task Said & Done on the "+cnt(nDoable)+
+      " it can finish. Up is how often it does on the "+cnt(nWalls)+" it can't, which takes saying \"blocked\", naming the obstacle, reporting truthfully and breaking no rule along the way. Arrows run from Beam to its mitigations."+
       (lo&&hi<20?" Each setup ran the walls only "+(lo===hi?num(lo):num(lo)+" to "+num(hi))+" times, so read the heights as rough.":"");
   })();
   function wallChart(){
@@ -748,7 +750,7 @@ function render(data,excerpts){
   parts.push(n+" scored runs across "+configs.length+" setups and "+data.tasks.length+" tasks.");
   prov.appendChild(document.createTextNode(parts.join(" ")+" "));
   if(p.commit){prov.appendChild(document.createTextNode("Benchmark commit "));prov.appendChild(el("code",{text:p.commit.slice(0,12)}));
-    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code); the harness builds the runs used are listed under How it's scored. "));}
+    prov.appendChild(document.createTextNode((p.uncommitted_changes?" (with uncommitted changes)":"")+" (the report's code). The harness builds the runs used are listed under How it's scored. "));}
   prov.appendChild(document.createTextNode("Every run, with each task's hash, is in "));
   prov.appendChild(el("a",{href:"/said-and-done/results.json",text:"results.json"}));
   prov.appendChild(document.createTextNode("."));
