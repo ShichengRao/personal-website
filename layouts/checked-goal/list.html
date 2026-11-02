@@ -20,18 +20,30 @@
 .pj .cg-files{margin:22px 0 0;color:var(--ink2);max-width:46rem}
 .cg-files+.pj-note{margin-top:12px}
 .cg-steps code{overflow-wrap:anywhere}
-/* How it works: one tab per check. Every panel sits in the same grid cell, so the box
-   keeps the tallest one's height and the page doesn't jump between tabs. */
-.cg-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
-.cg-tab{font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ring);background:var(--surface);color:var(--ink2);border-radius:999px;padding:7px 16px 7px 8px;cursor:pointer}
-.cg-tab .i{width:22px;height:22px;border-radius:50%;background:var(--grid);color:var(--ink2);font-size:12px;display:flex;align-items:center;justify-content:center}
-.cg-tab[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.cg-tab[aria-selected="true"] .i{background:var(--accent);color:#fff}
-.cg-tab:focus-visible,.cg-panel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.cg-panels{display:grid;margin-top:14px;max-width:46rem}
-.cg-panel{grid-area:1/1;background:var(--surface);border:1px solid var(--ring);border-radius:14px;padding:22px 22px 18px}
+/* How it works: one card, the checks listed down the left and the chosen one on the right.
+   Every panel sits in the same grid cell, so the card keeps the tallest one's height and
+   the page doesn't jump between checks. On phones the list becomes a 2×2 grid on top. */
+.cg-how{display:grid;grid-template-columns:13rem minmax(0,1fr);margin-top:20px;max-width:52rem;background:var(--surface);border:1px solid var(--ring);border-radius:16px;overflow:hidden}
+.cg-tabs{display:flex;flex-direction:column;border-right:1px solid var(--ring)}
+.cg-tab{font:inherit;font-size:15px;font-weight:600;text-align:left;flex:1;min-height:56px;padding:14px 20px;border:0;border-bottom:1px solid var(--ring);background:none;color:var(--ink2);cursor:pointer}
+.cg-tab:last-child{border-bottom:0}
+.cg-tab:hover{color:var(--ink)}
+.cg-tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.cg-tab:focus-visible,.cg-panel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.cg-panels{display:grid}
+.cg-panel{grid-area:1/1;padding:22px 26px 24px}
 .cg-panel[hidden]{display:block;visibility:hidden}
-.cg-panel p{font-size:15px;margin:0}
+.cg-panel h3{font-size:19px;font-weight:650;margin:0 0 10px}
+.cg-panel p{font-size:15px;margin:0;color:var(--ink2)}
+@media (max-width:640px){
+ .cg-how{grid-template-columns:1fr}
+ .cg-tabs{display:grid;grid-template-columns:1fr 1fr;border-right:0;border-bottom:1px solid var(--ring)}
+ .cg-tab{min-height:48px;padding:12px 16px;border-bottom:0}
+ .cg-tab:nth-child(odd){border-right:1px solid var(--ring)}
+ .cg-tab:nth-child(-n+2){border-bottom:1px solid var(--ring)}
+ .cg-tab[aria-selected="true"]{box-shadow:inset 0 -3px 0 var(--accent)}
+ .cg-panel{padding:18px 18px 20px}
+}
 /* Limits: each one's first sentence, with the rest a click away. */
 .cg-limits details summary{cursor:pointer;list-style:none;color:var(--ink)}
 .cg-limits details summary::-webkit-details-marker{display:none}
@@ -66,8 +78,10 @@
     <p class="pj-eyebrow">How it works</p>
     <h2>A second opinion from outside the conversation</h2>
     <div class="pj-read"><p>Every check is a fresh Beam call that didn't do the work, so it hasn't talked itself into the answer. No other model is involved.</p></div>
-    <div class="cg-tabs" role="tablist" aria-label="The four checks" id="cg-how-tabs"></div>
-    <div class="cg-panels" id="cg-how"></div>
+    <div class="cg-how">
+      <div class="cg-tabs" role="tablist" aria-label="The four checks" aria-orientation="vertical" id="cg-how-tabs"></div>
+      <div class="cg-panels" id="cg-how"></div>
+    </div>
   </section>
 
   <section class="pj-sec">
@@ -155,7 +169,7 @@ function render(c){
   var lead=(c.examples||[])[0];
   if(lead&&lead.without.noticed&&/^complete/.test(lead.without.reported||"")&&lead.without.did)$("cg-story").appendChild(el("blockquote",{cls:"pj-quote"},[
     "“"+lead.without.noticed+"”",el("cite",{text:"Beam's reasoning, shortly before it "+lead.without.did.charAt(0).toLowerCase()+lead.without.did.slice(1).replace(/\.$/,"")+", and reported “complete”"})]));
-  /* How it works as tabs: the first check open, arrow keys move between them. */
+  /* How it works as tabs: the first check open, arrow keys (either direction) move between them. */
   var how=c.how_it_works||[],tabs=[],panels=[];
   function pick(i,focus){
     tabs.forEach(function(b,j){b.setAttribute("aria-selected",j===i?"true":"false");b.tabIndex=j===i?0:-1;panels[j].hidden=j!==i;});
@@ -163,12 +177,12 @@ function render(c){
   }
   how.forEach(function(h,i){
     var m=/^(.*?)\s*\((.*)\)$/.exec(h.name),name=m?m[1]:h.name;
-    var b=el("button",{type:"button",role:"tab",cls:"cg-tab",id:"cg-tab-"+i,"aria-controls":"cg-panel-"+i},[el("span",{cls:"i","aria-hidden":"true",text:String(i+1)}),name]);
+    var b=el("button",{type:"button",role:"tab",cls:"cg-tab",id:"cg-tab-"+i,"aria-controls":"cg-panel-"+i,text:name});
     b.addEventListener("click",function(){pick(i);});
-    b.addEventListener("keydown",function(ev){var n=how.length,j={ArrowRight:(i+1)%n,ArrowLeft:(i+n-1)%n,Home:0,End:n-1}[ev.key];
+    b.addEventListener("keydown",function(ev){var n=how.length,j={ArrowDown:(i+1)%n,ArrowRight:(i+1)%n,ArrowUp:(i+n-1)%n,ArrowLeft:(i+n-1)%n,Home:0,End:n-1}[ev.key];
       if(j!==undefined){ev.preventDefault();pick(j,true);}});
     tabs.push(b);$("cg-how-tabs").appendChild(b);
-    var p=el("div",{cls:"cg-panel",role:"tabpanel",id:"cg-panel-"+i,"aria-labelledby":"cg-tab-"+i,tabindex:"0"},[m?el("p",{cls:"pj-note",style:"margin:0 0 6px",text:m[2]}):null,el("p",{text:h.what})]);
+    var p=el("div",{cls:"cg-panel",role:"tabpanel",id:"cg-panel-"+i,"aria-labelledby":"cg-tab-"+i,tabindex:"0"},[el("h3",{text:name}),m?el("p",{cls:"pj-note",style:"margin:-4px 0 10px",text:m[2]}):null,el("p",{text:h.what})]);
     panels.push(p);$("cg-how").appendChild(p);
   });
   if(how.length)pick(0);
