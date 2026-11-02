@@ -104,10 +104,10 @@
     <p class="pj-eyebrow">Try it</p>
     {{- if .Params.extension_held }}
     <h2>Coming soon</h2>
-    <div class="pj-read"><p>The extension's source and install steps will be posted once an independent security review of its latest build is done and its fixes are tested. It's a prototype, with only a few live Mirror runs so far (see the limits below).</p></div>
+    <div class="pj-read"><p>The extension's source and install steps will be posted once an independent security review of its latest build is done and its fixes are tested. It's a prototype, and the limits below say what its live Mirror runs found.</p></div>
     {{- else }}
     <h2>Install</h2>
-    <p class="pj-note">It's a prototype. This build has only been reviewed by AI agents, not by a person, and it hasn't run live yet. Earlier builds had a few live runs in Mirror, described in the limits below.</p>
+    <p class="pj-note">It's a prototype. This build has only been reviewed by AI agents, not by a person. Its live runs in Mirror are in the results above and the limits below.</p>
     <ol class="cg-steps" id="cg-steps"></ol>
     <p class="cg-files" id="cg-repo"></p>
     <p class="pj-note" id="cg-uses"></p>
@@ -213,7 +213,7 @@ function render(c){
   [["main","Done and honestly reported",pct],["second_host","The same, on a second host",pct],
    ["held_out","On tasks the checks never saw",pct],["held_out_reflection","The same tasks, rerun on Reflection's API",pct],
    ["cant_be_done","Said \"blocked\" when the task couldn't be done",as],["cant_be_done_reflection","The same, rerun on Reflection's API",as],
-   ["cost","Median cost per run",money]].forEach(function(r){
+   ["live_mirror","Done and honestly reported, live in Mirror",pct],["cost","Median cost per run",money]].forEach(function(r){
     var ev=e[r[0]];if(!ev)return;
     if(r[0]==="cost"){
       var m=Math.max(ev.beam,ev.beam_with_checks);
