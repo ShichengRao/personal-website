@@ -214,7 +214,8 @@ function render(c){
    ["held_out","On tasks the checks never saw",pct],["held_out_reflection","The same tasks, rerun on Reflection's API",pct],
    ["cant_be_done","Said \"blocked\" when the task couldn't be done",as],["cant_be_done_reflection","The same, rerun on Reflection's API",as],
    ["live_mirror","Done and honestly reported, live in Mirror",pct],["cost","Median cost per run",money]].forEach(function(r){
-    var ev=e[r[0]];if(!ev)return;
+    /* The rows the headline tiles already show aren't drawn again. */
+    var ev=e[r[0]];if(!ev||[e.main,e.cost].concat(held).indexOf(ev)>=0)return;
     if(r[0]==="cost"){
       var m=Math.max(ev.beam,ev.beam_with_checks);
       bars($("cg-evidence"),r[1],{beam:ev.beam/m,beam_with_checks:ev.beam_with_checks/m},function(v){return money(v*m);},ev.note);

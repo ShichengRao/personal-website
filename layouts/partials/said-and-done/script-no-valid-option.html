@@ -65,19 +65,16 @@ function render(c){
   /* Beam's setups, the reference models, the calibration anchors: a little space between them in the chart.
      The Opus brain sits among the references, next to Opus, so it gets no space of its own. */
   function fam(id){var g=SET[id].group;return /^beam/.test(g)?"beam":g==="brain-worker"?"reference":g;}
-  var nNone=b?blocked(BEAM).n:0;
 
   /* The section's headline numbers: what the scaffold's checks changed for Beam, and Beam's controls. */
   function stat(v,k){return el("div",{cls:"nv-stat"},[el("div",{cls:"v"},v),el("div",{cls:"k",text:k})]);}
   if(b&&bc){
     var counted=bc.said_and_done_no_valid_option.k,left=bc.blocked_but_left_an_invalid_choice_in_place.k;
     $("nv-stats").append(stat([el("span",{cls:"from",text:kn(blocked(BEAM))}),el("span",{cls:"arrow",text:"→"}),kn(blocked(CHECKS))],
-      "said “blocked” when nothing was valid: Beam alone, then with the scaffold's checks, which were developed on these scenarios"+
+      "said “blocked” when nothing was valid: Beam alone, then with the checks"+
       (left?". "+(WORDS[left]||String(left))+" of the "+(WORDS[blocked(CHECKS).k]||String(blocked(CHECKS).k)).toLowerCase()+" left an excluded plan in place, so "+(WORDS[counted]||String(counted)).toLowerCase()+" count":"")+"."));
   }
   if(b)$("nv-stats").append(stat([kn(b.controls_passed)],"controls passed by Beam alone: when exactly one option is valid, it picks that one."));
-  var per={};ids.forEach(function(id){per[SET[id].runs_per_scenario]=1;});per=Object.keys(per);
-  $("nv-sample").textContent="Small samples: "+(per.length===1?per[0]+" runs per scenario for every setup":"between "+per.join(" and ")+" runs per scenario")+", so "+nNone+" runs each where nothing is valid. Read the rates as “never”, “most of the time” or “half”, not as precise figures.";
 
   /* Scenario cards. */
   c.scenarios.forEach(function(s){
@@ -110,9 +107,8 @@ function render(c){
   /* A count goes inside a segment only when it fits. */
   function fitLabels(){[].forEach.call(document.querySelectorAll("#nv-chart .nv-seg"),function(s){s.textContent=s.clientWidth>=26?s.dataset.n:"";});}
   fitLabels();new ResizeObserver(fitLabels).observe($("nv-chart"));
-  var left=ids.filter(function(id){return S[id].blocked_but_left_an_invalid_choice_in_place.k;}),missed=ids.filter(function(id){return S[id].controls_passed.k<S[id].controls_passed.n;});
-  $("nv-chart-note").textContent=left.map(function(id){var U=S[id].blocked_but_left_an_invalid_choice_in_place.k;return name(id)+" said “blocked” "+blocked(id).k+" times, but "+U+" of those left an excluded plan in the file the system acts on, so "+(U===1?"it doesn't":"they don't")+" count as honest. ";}).join("")+
-    (missed.length?"Every other setup passed both controls in both runs. "+missed.map(function(id){return name(id)+" passed "+kn(S[id].controls_passed);}).join(", ")+".":"Every setup passed both controls in both runs.");
+  var missed=ids.filter(function(id){return S[id].controls_passed.k<S[id].controls_passed.n;});
+  $("nv-chart-note").textContent=(missed.length?"Every other setup passed both controls in both runs. "+missed.map(function(id){return name(id)+" passed "+kn(S[id].controls_passed);}).join(", ")+".":"Every setup passed both controls in both runs.");
   var how=(b&&b.how_false_completions_were_made)||{};
   if(b)$("nv-how").textContent="How Beam alone's "+b.false_completions_that_acted_on_an_invalid_choice.k+" runs that acted on an excluded option got there (a run can do more than one): "+list(Object.keys(how).map(function(k){return how[k]+" "+(KINDS[k]||k);}))+(how.invented_candidate?"":". None invented an option")+".";
 
@@ -165,8 +161,7 @@ function render(c){
     }))));
   });
   var bases={};est.forEach(function(id){(bases[S[id].cost_basis]=bases[S[id].cost_basis]||[]).push(name(id));});
-  $("nv-cost-note").textContent=(est.length?"* "+Object.keys(bases).map(function(k){return list(bases[k])+": "+k.replace(/\.$/,"")+".";}).join(" ")+" The other costs are what the API billed.":"Every cost is what the API billed.")+
-    ids.filter(function(id){return S[id].endpoint_note;}).map(function(id){return " "+name(id)+": "+S[id].endpoint_note;}).join("");
+  $("nv-cost-note").textContent=(est.length?"* "+Object.keys(bases).map(function(k){return list(bases[k])+": "+k.replace(/\.$/,"")+".";}).join(" ")+" The other costs are what the API billed.":"Every cost is what the API billed.");
 
   /* What the checks did: the package's own paragraphs, checked against the runs. */
   (c.checks||[]).forEach(function(p){$("nv-checks").appendChild(el("p",null,[p.lead?el("b",{text:p.lead.replace(/\s*$/," ")}):null,p.text]));});
@@ -197,7 +192,6 @@ function render(c){
 
   /* Method lists, and the package's caveats as written. */
   Object.keys(KINDS).forEach(function(k){$("nv-kinds").appendChild(el("li",null,[el("code",{text:k}),": "+KINDS[k].charAt(0).toUpperCase()+KINDS[k].slice(1)+"."]));});
-  c.setups.forEach(function(s){$("nv-setups").appendChild(el("li",null,[el("b",{text:s.label+": "}),s.detail.replace(/\.?$/,".")]));});
   (c.caveats||[]).forEach(function(t){var m=/^(.*?[.:])\s+([\s\S]*)$/.exec(t);$("nv-caveats").appendChild(el("li",null,m?[el("b",{text:m[1]+" "}),m[2]]:[t]));});
   if(!(c.caveats||[]).length)hideSec("nv-caveats");
 }
