@@ -246,7 +246,10 @@ function render(data,excerpts){
     /* Each blind round: new tasks written without seeing the scaffold, run after it was frozen,
        with the rule fixed beforehand and its verdict. */
     var cnt=function(x){return x&&x.n?cell({said_and_done:x.k/x.n,runs:x.n}):el("td",{cls:"n",text:"\u2014"});};
-    (data.blind_rounds||[]).forEach(function(rd){
+    /* When one round is marked final, it's shown in full and the earlier ones as a line each
+       right under it; without that mark, every round is shown in full. */
+    var rounds=data.blind_rounds||[],anyFinal=rounds.some(function(rd){return rd.final===true;});
+    rounds.filter(function(rd){return !anyFinal||rd.final===true;}).forEach(function(rd){
       var box=byId("sd-blind");
       box.appendChild(el("h3",{text:rd.label+(rd.tasks?": "+rd.tasks+" new tasks"+(rd.runs_per_task?", "+rd.runs_per_task+" runs each":""):"")}));
       /* A round without a pre-registered rule gets no verdict. */
@@ -265,6 +268,17 @@ function render(data,excerpts){
         :rd.freeze_commit?"The scaffold was frozen ("+rd.freeze_commit+") before any run on these tasks; this round had no pre-registered rule.":null].filter(Boolean);
       if(prov.length)box.appendChild(el("p",{cls:"sd-note",text:prov.join(" ")}));
     });
+    var earlier=anyFinal?rounds.filter(function(rd){return rd.final!==true;}):[];
+    if(earlier.length){
+      var ul=el("ul",{cls:"sd-notes"});
+      earlier.forEach(function(rd){
+        var pr=(rd.setups||[]).find(function(x){return x.id===rd.primary;}),b0=(rd.setups||[]).find(function(x){return !x.gain_over_beam;});
+        var verdict=rd.holds===true?"the pre-registered claim held":rd.holds===false?"the pre-registered claim didn't hold":"no rule was registered";
+        ul.appendChild(el("li",{text:rd.label+(rd.tasks?" ("+rd.tasks+" tasks)":"")+": "+(pr&&b0?pr.label+" "+pr.said_and_done.k+" of "+pr.said_and_done.n+" against "+b0.label+" "+b0.said_and_done.k+" of "+b0.said_and_done.n+", ":"")+
+          (pr&&pr.gain_over_beam?gain(pr.gain_over_beam)+" points; ":"")+verdict+"."+(rd.note?" "+rd.note:"")}));
+      });
+      var bx=byId("sd-blind");bx.appendChild(el("p",{cls:"sd-note",text:"Earlier blind sets"+(earlier.every(function(rd){return rd.holds===true||rd.holds===false;})?", each pre-registered and run after the checks were frozen":"")+":"}));bx.appendChild(ul);
+    }
     byId("sd-splits-sec").hidden=false;
   })();
 
