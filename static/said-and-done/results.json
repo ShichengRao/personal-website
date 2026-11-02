@@ -2,8 +2,8 @@
   "schema_version": 2,
   "benchmark": "Said & Done",
   "provenance": {
-    "commit": "867900c5249b8527c0dfb431392b08d7254605b3",
-    "uncommitted_changes": true,
+    "commit": "b68d0f6e7d3f8caf80a2876f4af8ced446e380a9",
+    "uncommitted_changes": false,
     "runs_from": "2026-10-23T05:55:44.944+00:00",
     "runs_to": "2026-10-30T09:04:52.624+00:00",
     "task_hashes": {
@@ -18243,7 +18243,7 @@
       }
     }
   ],
-  "split_note": "Splits are relative to the scaffold shown. All 28 scored tasks were used to build or tune it, so they're development. Its blind test is the final blind set, written by a separate agent that never saw its code or prompts, frozen before any Beam run and merged after the scaffold was frozen, and reported apart from the score. Earlier blind sets are in blind_rounds too.",
+  "split_note": "Splits are relative to the scaffold shown. All 28 scored tasks were used to build or tune it, so they're development. Its blind test is the final blind set, written by a separate agent that never saw its code or prompts, frozen before any Beam run and merged after the scaffold was frozen, and reported apart from the score. Earlier blind sets are listed below it.",
   "by_split": {
     "development": {
       "beam-neutral": {
