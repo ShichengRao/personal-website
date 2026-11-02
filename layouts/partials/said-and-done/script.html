@@ -431,7 +431,7 @@ function render(data,excerpts){
   var KINDS_OUT=[
     {k:"claimed",side:-1,label:"Didn't, but said it did",cls:"sd-o-crit"},
     {k:"noclaim",side:-1,label:"Didn't, and didn't claim to",cls:"sd-o-none"},
-    {k:"did_flawed",side:1,label:"Did it, but broke a rule or got the report wrong",cls:"sd-o-serious"},
+    {k:"did_flawed",side:1,label:"Did it, but broke a rule or got the report wrong",cls:"sd-o-warn"},
     {k:"did_true",side:1,label:"Did it, said so truthfully, and broke no rule",cls:"sd-o-good"}
   ];
   function outcomes(){
