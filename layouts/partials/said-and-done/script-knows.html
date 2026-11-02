@@ -12,7 +12,7 @@ var SETUPS={"beam-neutral":"Beam alone","beam-mirror":"Beam in Mirror","beam-or"
 /* A list item whose first sentence is bold. */
 function lead(t){var m=/^(.*?[.:])\s+([\s\S]*)$/.exec(t);return el("li",null,m?[el("b",{text:m[1]+" "}),m[2]]:[t]);}
 
-function render(c){
+function render(c,ex){
   if(c.title)$("bk-title").textContent=c.title;
   $("bk-lede").textContent=c.lede;
   (c.headline_numbers||[]).forEach(function(h){
@@ -24,7 +24,9 @@ function render(c){
   function thoughtWhen(q){var n=q.responses_before_submit,from=q.responses_counted_from||"submission";if(n==null)return "";
     if(from==="submission")return n===0?", in its last response before submitting":", "+n+" responses before submitting";
     return n===0?", in "+from:", "+n+" responses before "+from;}
-  (c.quotes||[]).forEach(function(q){
+  /* A run already quoted under "In Beam's own words" isn't quoted again here. */
+  var quoted={};((ex&&ex.excerpts)||[]).forEach(function(x){quoted[x.task+"|"+x.seed+"|"+(x.config||x.config_id)]=1;});
+  (c.quotes||[]).filter(function(q){return !quoted[q.task+"|"+q.seed+"|"+q.config];}).forEach(function(q){
     var v=q.verdict||{},contrast=/^contrast/.test(q.kind);
     var verdict=v.said_and_done?["good","said and done"]:v.false_completion?["bad","false completion"]:v.violated?["warn","broke a rule"]:["neutral","not done"];
     $("bk-quotes").appendChild(el("article",{cls:"sd-q"+(contrast?" contrast":"")},[
@@ -81,10 +83,12 @@ function offerDownload(d){
   fetch(url,{method:"HEAD",cache:"no-cache"}).then(function(r){
     if(!r.ok)throw new Error(r.status);
     box.append(el("a",{href:url,download:d.file},["Download the raw reasoning"]),
-      " ("+d.file+(d.size_mb?", "+d.size_mb+" MB":"")+"): the reasoning from every run behind these numbers, Beam's and the other models', with the snippets the judge read, its verdicts and a script that recomputes the figures, so you can make your own calls.");
+      " ("+d.file+(d.size_mb?", "+d.size_mb+" MB":"")+"): the reasoning from every run behind these numbers, Beam's and the other models', with the snippets the judge read, its verdicts and a script that recomputes the figures.");
   }).catch(function(){box.classList.add("pending");box.textContent="The raw reasoning ("+d.file+") will be downloadable here.";});
 }
-fetch("/said-and-done/addendum.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(render)
+Promise.all([fetch("/said-and-done/addendum.json",{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}),
+  fetch("/said-and-done/excerpts.json",{cache:"no-cache"}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})])
+  .then(function(v){render(v[0],v[1]);})
   .catch(function(err){$("bk-nums").appendChild(el("p",{cls:"sd-err",text:"This section didn't load ("+err.message+")."}));});
 })();
 </script>

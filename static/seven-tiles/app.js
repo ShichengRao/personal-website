@@ -999,10 +999,17 @@
       const misses = R.summary.rows.filter((r) => r.grade === 'miss').sort((x, y) => x.rating - y.rating);
       const brilliant = R.summary.rows.filter((r) => r.grade === 'brilliant').sort((x, y) => y.rating - x.rating);
       const bests = R.summary.rows.filter((r) => r.grade === 'best');
-      const rated = R.summary.rows.length;
-      a += '<div class="sm-k">Summary' + (R.summary.done ? '' : ' (working…)') + '</div><div class="sm-summary">';
-      const avg = rated ? Math.round(R.summary.rows.reduce((t, r) => t + r.rating, 0) / rated) : 0;
-      a += '<div class="sm-note" style="margin:0 0 4px">' + rated + ' turn' + (rated === 1 ? '' : 's') + ' rated · average <b>' + avg + '</b> · ' + (brilliant.length ? brilliant.length + ' brilliant · ' : '') + bests.length + ' best · ' + misses.length + ' to improve</div>';
+      a += '<div class="sm-k">Summary' + (R.summary.done ? '' : ' (working…)') + '</div><div class="sm-performance">';
+      // A finished game rates both players; an ongoing bot game only reveals
+      // the viewer's turns. Keep empty seats visible without inventing a rating.
+      for (const p of s.over ? [0, 1] : [G.me]) {
+        const rows = R.summary.rows.filter((r) => r.p === p), rated = rows.length;
+        const avg = rated ? (rows.reduce((t, r) => t + r.rating, 0) / rated).toFixed(1) : '—';
+        const counts = rows.reduce((t, r) => { t[r.grade] = (t[r.grade] || 0) + 1; return t; }, {});
+        a += '<div class="sm-performance-player"><div class="sm-performance-head"><b>' + esc(nameOf(p)) + '</b><span class="sm-performance-rating"><b>' + avg + '</b><small>average rating</small></span></div>' +
+          '<div class="sm-note">' + plural(rated, 'turn') + ' rated' + (rated ? ' · ' + (counts.brilliant ? counts.brilliant + ' brilliant · ' : '') + (counts.best || 0) + ' best · ' + (counts.miss || 0) + ' to improve' : '') + '</div></div>';
+      }
+      a += '</div><div class="sm-note" style="margin:0 0 10px">Average of each player’s rated turns, including passes and swaps. The best common play rates 100; rare-word plays can rate higher.</div><div class="sm-summary">';
       if (brilliant.length) { a += '<div class="sm-k" style="margin-top:6px">Brilliancies</div>'; brilliant.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--good)">' + r.rating + '</b></div>'; }); }
       if (misses.length) { a += '<div class="sm-k" style="margin-top:6px">Could do better</div>'; misses.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--bad)">' + r.rating + '</b> <small>(best ' + esc(r.best.word) + (r.best.t === 'swap' ? '' : ' ' + r.best.score) + ')</small></div>'; }); }
       if (bests.length) { a += '<div class="sm-k" style="margin-top:6px">Best plays</div>'; bests.forEach((r) => { a += '<div data-k="' + r.k + '">' + r.k + '. ' + (G.kind === 'hotseat' || G.me === null ? esc(nameOf(r.p)) + ': ' : '') + esc(r.label) + ' <b style="color:var(--good)">★</b></div>'; }); }

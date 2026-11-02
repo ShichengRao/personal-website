@@ -29,6 +29,12 @@ from = "/seven-tiles/*"
 to = "/seven-tiles/"
 status = 200
 
+# The Beam quiz was retired; its links go to the benchmark page it came from.
+[[redirects]]
+from = "/spot-the-false-completion/*"
+to = "/said-and-done/"
+status = 301
+
 # The resume PDF used to carry a year in its filename.
 [[redirects]]
 from = "/files/ShichengRaoResume2025.pdf"

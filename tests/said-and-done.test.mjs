@@ -24,7 +24,7 @@ test('results are real, not the synthetic layout data', () => {
 });
 
 test('results match the schema the page reads', () => {
-  assert.equal(results.schema_version, 1);
+  assert.equal(results.schema_version, 2);
   const ids = (xs) => new Set(xs.map((x) => x.id));
   const configs = ids(results.configs), tasks = ids(results.tasks), families = ids(results.families);
   const groups = new Set(['beam', 'beam-mitigation', 'brain-worker', 'reference', 'anchor']);
@@ -42,6 +42,22 @@ test('results match the schema the page reads', () => {
     assert.ok(r.code in results.codes, `run ${r.task}/${r.config_id}: unknown code ${r.code}`);
   }
   for (const q of excerpts.excerpts) assert.ok(configs.has(q.config) && tasks.has(q.task), `excerpt ${q.task}/${q.config}`);
+});
+
+test('every task says whether the checks were built on it, when the results are split', () => {
+  if (!results.by_split) return;
+  const splits = new Set(['development', 'held_out', 'blind']);
+  const all = [...results.tasks, ...(results.tasks_outside_score || [])];
+  for (const t of all) assert.ok(splits.has(t.split), `${t.id}: split ${t.split}`);
+  for (const k of Object.keys(results.by_split)) assert.ok(splits.has(k), `by_split has unknown split ${k}`);
+  for (const [k, g] of Object.entries(results.scaffold_gain_by_split || {})) {
+    assert.ok(k === 'all' || splits.has(k), `scaffold_gain_by_split has unknown split ${k}`);
+    for (const f of ['diff', 'low', 'high']) assert.equal(typeof g[f], 'number', `scaffold_gain_by_split.${k}.${f}`);
+    assert.ok(g.low <= g.diff && g.diff <= g.high, `scaffold_gain_by_split.${k}: interval doesn't hold its estimate`);
+  }
+  const ids = new Set(all.map((t) => t.id));
+  for (const t of all) if (t.same_as) assert.ok(ids.has(t.same_as), `${t.id}: same_as ${t.same_as} isn't a task`);
+  for (const r of results.runs_outside_score || []) assert.ok(ids.has(r.task), `outside-score run on unknown task ${r.task}`);
 });
 
 test('published rates and costs recompute from the scored rows', () => {
@@ -77,17 +93,6 @@ test('published rates and costs recompute from the scored rows', () => {
   }
 });
 
-test('quiz runs identify their prompt condition and the tally matches the answers', () => {
-  const quiz = JSON.parse(read('static/spot-the-false-completion/content.json'));
-  const keys = quiz.items.map((item) => {
-    assert.ok(item.config_id && item.setup_label, `quiz item ${item.n}: missing run condition`);
-    return `${item.task}/${item.config_id}/${item.seed}`;
-  });
-  assert.equal(new Set(keys).size, keys.length, 'quiz run identities are ambiguous');
-  assert.equal(quiz.tally.done, quiz.items.filter((item) => item.answer.accept).length);
-  assert.equal(quiz.tally.not_acceptable, quiz.items.filter((item) => !item.answer.accept).length);
-});
-
 test('the headline setups named in the front matter are in the results', () => {
   const line = read('content/said-and-done/_index.md').match(/^highlights:\s*(\[.*\])\s*$/m);
   assert.ok(line, 'content/said-and-done/_index.md has no highlights');
@@ -97,7 +102,8 @@ test('the headline setups named in the front matter are in the results', () => {
 
 test('the no-valid-option section has what it reads', () => {
   const setups = new Set(noValid.setups.map((s) => s.id));
-  for (const id of ['beam', 'beam-checks']) assert.ok(setups.has(id), `no-valid-option.json has no ${id} setup`);
+  // The section's headline numbers compare Beam alone with Beam + scaffold, by these ids.
+  for (const g of ['beam', 'beam-mitigation']) assert.ok(noValid.setups.some((x) => x.group === g), `no-valid-option.json has no ${g} setup`);
   for (const id of setups) assert.ok(noValid.summary[id], `no-valid-option.json: no summary for ${id}`);
   const scenarios = new Set(noValid.scenarios.map((s) => s.id));
   for (const r of noValid.results) {
@@ -115,6 +121,16 @@ test('the addendum has what it reads, and its download is here', () => {
 test('the page links nowhere outside the site', () => {
   for (const text of [...prose, JSON.stringify(results), JSON.stringify(excerpts), JSON.stringify(noValid), JSON.stringify(addendum)]) {
     assert.ok(!text.includes('://'), 'a URL in the Said & Done package');
+  }
+});
+
+test('Checked /goal never names the pen name, and its GitHub or Hugging Face links are the real-name account or Mirror', () => {
+  for (const f of ['static/checked-goal/content.json', 'static/checked-goal/README.md']) {
+    const text = read(f);
+    assert.ok(!/abnew123|shadowghosts/i.test(text), `${f} names the pen name`);
+    for (const url of text.match(/https?:\/\/(?:www\.)?(?:github\.com|huggingface\.co)\/[^\s)"'`\]]*/gi) || []) {
+      assert.ok(/^https:\/\/(?:github\.com|huggingface\.co)\/(?:(?:spaces|datasets)\/)?(?:ShichengRao|reflection-oss\/mirror)(?:\/|$)/.test(url), `${f} links an account other than ShichengRao or Mirror: ${url}`);
+    }
   }
 });
 

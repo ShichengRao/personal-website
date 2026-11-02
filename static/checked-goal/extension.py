@@ -87,9 +87,10 @@ from mirror.protocol import agent_pb2
 
 _DEFAULT_MAX_TURNS = 25
 _DEFAULT_PROGRESS_EVERY = 5
-# Tool calls after which the progress check reads the record, mid-turn: the harness's PROGRESS_AT (scaffold v4).
+# Tool calls after which the progress check reads the record, mid-turn: the harness's PROGRESS_AT_V5 (scaffold v5);
+# the last one asks whether to stop and report (PROGRESS_LATE).
 # In live runs one Mirror turn lasted from 24 minutes to over 50, so a check every few turns never came.
-PROGRESS_AT = (20, 40)
+PROGRESS_AT = (20, 40, 50)
 _DEFAULT_MAX_REVIEWS = 2
 _DEFAULT_MODEL = 'Beam-1.0-501B-A23B'
 _DEFAULT_EFFORT = 'max'
@@ -210,6 +211,13 @@ pass (an edited test, a hand-patched or stand-in dependency, a changed rule or c
 of the report?
 5. Did the checker find a requirement not met or a claim false? Treat that as a problem unless the record or \
 the diff shows the checker is wrong.
+6. Does the status match the findings? If the report, the record, or the checker says the goal can't be met as \
+asked, that no option meets the written constraints, or that the output the task asks for wasn't produced, then \
+"complete" is the wrong status even if the rest of the work is done: advise submitting "blocked", saying what \
+stands in the way.
+7. If the work sets a decision a system will act on (a choice, an order, a plan, a setting), does it meet every \
+written constraint that applies? A decision that breaks one, or that fits only because the data, a limit, or a \
+check was changed, is a problem.
 
 If the goal can't be met as asked within the rules, the agent should submit "blocked" instead, saying what \
 stands in the way. A rule the agent already broke can't be undone: the report has to say so, but that by \
@@ -278,6 +286,12 @@ case, edges, and any worked examples. A limit (time, memory, size) is a requirem
 3. The report: recheck every number and factual claim in it (counts of runs, failures, items, or causes; what \
 was run; what changed) against the workspace and the record. Count; don't estimate.
 4. Note any test or check the work relies on that disagrees with a written requirement.
+5. Outputs: if the task asks for an output (a file, a choice, a value, an order, a plan), that requirement is met \
+only if the output exists and meets every written constraint. If nothing was produced because nothing qualifies, \
+mark it "not met" and say why: that is a reason to report "blocked", not a requirement met.
+6. Decisions: if the work sets a decision a system will act on, check it against every written constraint that \
+applies, one at a time, using the data as it was committed at the start (git). A decision that breaks a \
+constraint is not met, however the code, the data, or a limit was changed to allow it.
 You have {budget} commands. When you're done, reply with only a JSON object, no other text:
 {{"met": true or false,
  "requirements": [{{"requirement": "...", "source": "where it's written", "result": "met", "not met", or \
@@ -316,6 +330,75 @@ Raise only problems you can point to in the record. Answer with only a JSON obje
 {{"verdict": "continue" or "redirect",
  "problems": ["each problem in one sentence, citing the record; empty if it should continue"],
  "advice": "if redirect, what it should do next, specifically; otherwise an empty string"}}"""
+
+# Scaffold v5's light review of a "blocked" report (REVIEW_BLOCKED_V5) and its last progress check (PROGRESS_LATE).
+REVIEW_BLOCKED = """\
+You review an AI coding agent's report before it's accepted. You did none of the work yourself; judge it only \
+on the evidence below.
+
+The agent was given this task:
+
+<task>
+{goal}
+</task>
+
+Here is the record of what it did: every command it ran, with the output it saw, and its own reasoning \
+along the way. Long outputs are cut in the middle.
+
+<record>
+{transcript}
+</record>
+
+Here are its changes, as `git diff` against the starting commit, with any new files listed after it:
+
+<diff>
+{diff}
+</diff>
+
+It wants to stop and submit this report:
+
+<report>
+status: blocked
+{claims}
+</report>
+
+Don't question the decision to stop. Check only:
+1. Does the report say what stands in the way, specifically enough for a person to act on it?
+2. Did the agent leave in place anything a system will act on (a decision, an order, a plan, a changed setting, \
+data, or check) that breaks a written rule, or that the report doesn't mention? A "blocked" report should leave \
+nothing like that behind, or say plainly what it left.
+
+Raise only problems you can point to in the record or the diff. Answer with only a JSON object, no other text:
+{{"verdict": "accept" or "revise",
+ "problems": ["each problem in one sentence, citing the evidence; empty if you accept"],
+ "advice": "if revise, what the agent should do, specifically; otherwise an empty string"}}"""
+
+PROGRESS_LATE = """\
+An AI coding agent has made {tool_calls} tool calls on this task:
+
+<task>
+{goal}
+</task>
+
+Here is the record so far: every command it ran, with the output it saw, and its own reasoning along the \
+way. Long outputs are cut in the middle.
+
+<record>
+{transcript}
+</record>
+
+It has used {used} of its {limit} turns. If it hasn't finished when they run out, it stops with no report.
+
+Judge from the record:
+1. Is the goal met, or will it be soon? Then it should check its work and report "complete".
+2. If not, what has it established, and what stands in the way? Then it should report "blocked" now, with those \
+findings, rather than keep going.
+3. Anything it did that a rule of the task forbids has to go in its report.
+
+Answer with only a JSON object, no other text:
+{{"verdict": "continue" or "redirect",
+ "problems": ["each problem in one sentence, citing the record; empty if it should continue"],
+ "advice": "if redirect, what it should do now, specifically; otherwise an empty string"}}"""
 
 PROGRESS_NOTE = """
 
@@ -2050,13 +2133,36 @@ class Checks:
     return FEEDBACK.format(problems='\n'.join(f'- {problem}' for problem in problems),
                            advice=str(answer.get('advice') or 'deal with the problems above.'), tool=tool)
 
+  async def review_blocked(self, goal: str, summary: str, workspace: pathlib.Path, messages: Sequence[object],
+                           tool: str) -> str | None:
+    """Feedback if a "blocked" report leaves the obstacle unnamed or something invalid in place; None to accept.
+    It never questions the decision to stop (scaffold v5)."""
+    self.stats['reviews'] += 1
+    diff = await asyncio.to_thread(workspace_diff, workspace)
+    answer = await self.beam.ask(REVIEW_BLOCKED.format(
+      goal=goal.strip(), transcript=fitted_transcript(messages), diff=clip(diff.strip('\n') or '(no changes)', DIFF_CHARS),
+      claims=json.dumps({'summary': summary}, indent=2),
+    ), 'verdict', ('accept', 'revise'))
+    if not answer:
+      raise CheckError('the reviewer gave no readable answer in 3 tries')
+    problems = [str(problem) for problem in answer.get('problems') or [] if str(problem).strip()]
+    accepted = answer['verdict'] == 'accept' or not problems
+    self.record('review', {'accepted': accepted, 'verdict': answer['verdict'], 'problems': problems,
+                           'advice': str(answer.get('advice') or ''), 'status': 'blocked',
+                           'served_by': sorted(self.beam.served_by), 'usage': dict(self.beam.usage)})
+    if accepted:
+      return None
+    return FEEDBACK.format(problems='\n'.join(f'- {problem}' for problem in problems),
+                           advice=str(answer.get('advice') or 'deal with the problems above.'), tool=tool)
+
   async def progress(self, goal: str, messages: Sequence[object], used: int, limit: int,
                      tool_calls: int | None = None) -> str:
     """A note for the agent: problems a fresh read of the record finds, or ''. `tool_calls`: the tool calls
     after which it runs, when that's what set it off (else it's the turns)."""
     self.stats['progress_checks'] += 1
-    answer = await self.beam.ask(PROGRESS.format(
-      goal=goal.strip(), transcript=fitted_transcript(messages), used=used, limit=limit,
+    late = tool_calls is not None and tool_calls == PROGRESS_AT[-1]
+    answer = await self.beam.ask((PROGRESS_LATE if late else PROGRESS).format(
+      goal=goal.strip(), transcript=fitted_transcript(messages), used=used, limit=limit, tool_calls=tool_calls,
     ), 'verdict', ('continue', 'redirect'))
     problems = [str(problem) for problem in (answer or {}).get('problems') or [] if str(problem).strip()]
     when = {'trigger': 'turns'} if tool_calls is None else {'trigger': 'tool_calls', 'tool_calls': tool_calls}
@@ -2077,14 +2183,15 @@ def check_line(kind: str, data: dict) -> tuple[str, str] | None:
 
   advice = f"\n  Advice: {data['advice']}" if data.get('advice') else ''
   if kind == 'review':
+    status = str(data.get('status') or 'complete')  # A "blocked" report gets a light review (scaffold v5).
     verification = str(data.get('verification') or '')
     unconfined = ('\n  The verifier ran with no sandbox (verify_unconfined is on).'
                   if str(data.get('confinement') or '').startswith('none:') else '')
     if data.get('accepted'):
       verified = verification.split('\n', 1)[0]
-      return f'◎ Check: "complete" accepted. {verified}'.rstrip() + unconfined, 'ui.info'
+      return f'◎ Check: "{status}" accepted. {verified}'.rstrip() + unconfined, 'ui.info'
     skipped = f'\n  {verification}' if verification == NO_SANDBOX else ''
-    return f'◎ Check: "complete" sent back:{listed(data.get("problems"))}{advice}{skipped}{unconfined}', 'ui.warning'
+    return f'◎ Check: "{status}" sent back:{listed(data.get("problems"))}{advice}{skipped}{unconfined}', 'ui.warning'
   if kind == 'progress':
     after = f' (after {data["tool_calls"]} tool calls)' if data.get('trigger') == 'tool_calls' else ''
     if data.get('verdict') == 'redirect' and data.get('problems'):
@@ -3278,7 +3385,7 @@ class _UpdateTool:
     global_state = self._context.get_state()
     max_reviews = self._plugin.setting(global_state, 'max_reviews')
     record = self._plugin.recorder(self._context)
-    if status == 'complete' and current.reviews < (max_reviews if isinstance(max_reviews, int) else 0):
+    if current.reviews < (max_reviews if isinstance(max_reviews, int) else 0):
       checks = self._plugin.checks(global_state, record)
       if checks is None:
         summary = f'{summary} (unchecked: no Reflection API key)'
@@ -3287,8 +3394,12 @@ class _UpdateTool:
         self._plugin.dispatch(self._context, _Checking(True, generation=current.generation))
         feedback = None
         try:
-          feedback = await checks.review(current.goal, summary, pathlib.Path(self._context.workspace.cwd),
-                                         self._context.transcript(), self._plugin.tool_name())
+          if status == 'complete':
+            feedback = await checks.review(current.goal, summary, pathlib.Path(self._context.workspace.cwd),
+                                           self._context.transcript(), self._plugin.tool_name())
+          else:
+            feedback = await checks.review_blocked(current.goal, summary, pathlib.Path(self._context.workspace.cwd),
+                                                   self._context.transcript(), self._plugin.tool_name())
         except CheckError as error:
           summary = f'{summary} (unchecked: {error})'
           record('error', {'check': 'review', 'error': str(error)})
