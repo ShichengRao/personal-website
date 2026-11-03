@@ -35,6 +35,18 @@ from = "/spot-the-false-completion/*"
 to = "/said-and-done/"
 status = 301
 
+# Blunder Drill was renamed Don't Blunder Again, so it no longer shares a
+# name with blunderdrill.com.
+[[redirects]]
+from = "/blunder-drill/*"
+to = "/dont-blunder-again/"
+status = 301
+
+[[redirects]]
+from = "/demos/blunder-drill.html"
+to = "/demos/dont-blunder-again.html"
+status = 301
+
 # The resume PDF used to carry a year in its filename.
 [[redirects]]
 from = "/files/ShichengRaoResume2025.pdf"

@@ -21,9 +21,9 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Blunder Drill page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, favicon partial |
+| `layouts/` | Custom templates: homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Don't Blunder Again page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, favicon partial |
 | `assets/` | The Said & Done page's prose (`assets/said-and-done/`) |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Blunder Drill data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`), the Said & Done results (`static/said-and-done/`) |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Don't Blunder Again data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`), the Said & Done results (`static/said-and-done/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `netlify/functions/` | `push.mjs`: Seven Tiles turn notifications; `evalbar.mts`: the Eval Bar's data in Netlify Blobs |
@@ -69,8 +69,8 @@ stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
   `main`, using the same Hugo version Netlify pins.
 - The Hugo version is pinned in two places — `netlify.toml` and `ci.yml` — keep them
   in sync when upgrading.
-- Old URLs (`/church/`, `/vine/`, `/deskbooks/`, `/livestream/`, the dated resume
-  filename) are 301-redirected in `netlify.toml`; add a redirect there before
+- Old URLs (`/church/`, `/vine/`, `/deskbooks/`, `/livestream/`, `/blunder-drill/`,
+  the dated resume filename) are 301-redirected in `netlify.toml`; add a redirect there before
   removing or renaming any public path.
 
 ## Seven Tiles
