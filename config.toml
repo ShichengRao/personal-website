@@ -48,8 +48,8 @@ url = "https://deskbooks-demo.vercel.app"
 weight = 7
 
 [[menu.main]]
-name = "Blunder Drill"
-url = "/blunder-drill/"
+name = "Don't Blunder Again"
+url = "/dont-blunder-again/"
 weight = 8
 
 [[menu.main]]
