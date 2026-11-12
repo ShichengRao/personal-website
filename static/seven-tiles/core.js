@@ -184,18 +184,23 @@
       if (!hasTiles(rack, move.tiles)) return bad('Those tiles are not on your rack.');
       return { ok: true };
     }
-    if (move.t === 'play') {
-      if (!Array.isArray(move.tiles) || move.tiles.some((t) => !t || typeof t !== 'object')) return bad('Not a move.');
-      if (!hasTiles(rack, move.tiles.map((t) => (t.b ? '?' : t.l)))) return bad('Those tiles are not on your rack.');
-      const res = analyze(state.board, move.tiles);
-      if (!res.ok) return res;
-      if (dict) {
-        const missing = res.words.map((w) => w.word).filter((w) => !dict.has(w));
-        if (missing.length) return bad(missing.join(', ') + (missing.length > 1 ? ' are not in the word list.' : ' is not in the word list.'));
-      }
-      return res;
-    }
+    if (move.t === 'play') return checkPlay(state.board, rack, move, dict);
     return bad('Unknown move.');
+  }
+  // Is this play legal on this board from this rack? Returns analyze()'s
+  // result. Shared by check() and group play, where the rack is everyone's.
+  function checkPlay(board, rack, move, dict) {
+    const bad = (reason) => ({ ok: false, reason });
+    if (!move || typeof move !== 'object' || move.t !== 'play') return bad('Not a play.');
+    if (!Array.isArray(move.tiles) || move.tiles.some((t) => !t || typeof t !== 'object')) return bad('Not a move.');
+    if (!hasTiles(rack, move.tiles.map((t) => (t.b ? '?' : t.l)))) return bad('Those tiles are not on your rack.');
+    const res = analyze(board, move.tiles);
+    if (!res.ok) return res;
+    if (dict) {
+      const missing = res.words.map((w) => w.word).filter((w) => !dict.has(w));
+      if (missing.length) return bad(missing.join(', ') + (missing.length > 1 ? ' are not in the word list.' : ' is not in the word list.'));
+    }
+    return res;
   }
 
   // Apply a legal move and return the new state; throws on an illegal one.
@@ -811,7 +816,9 @@
   // opts.vocab, the common list) carry a penalty that shrinks to nothing at 100,
   // and the value of the kept tiles counts for more as d rises, so low levels
   // chase points in everyday words. From 90 up it may solve the endgame
-  // exactly, always at 100: the top of the dial is the hard bot.
+  // exactly, always at 100: the top of the dial is the hard bot. With
+  // opts.scoreOnly the kept tiles don't count and it never exchanges, for
+  // Same Rack, where your own play never goes on the board.
   // Fitted on NWL2023 in bot-against-bot games: the dial loses to the hard bot
   // by about 3.8 points a game per step (0: 381, 35: 253, 50: 183, 80: 61,
   // 90: 28, 100: none), level 35 plays the old medium bot about evenly, and the
@@ -831,7 +838,7 @@
     }
     const common = opts && opts.vocab && opts.vocab !== dict ? opts.vocab : null;
     const moves = rank(generate(state.board, rack, dict), rack, bagEmpty);
-    const w = Math.min(1, 0.25 + 0.75 * d / 100);   // how much the kept tiles count
+    const w = opts && opts.scoreOnly ? 0 : Math.min(1, 0.25 + 0.75 * d / 100);   // how much the kept tiles count
     const k = (opts && opts.dial) || DIAL;
     const penalty = rarePenaltyAt(d, k);
     for (const m of moves) {
@@ -839,7 +846,7 @@
       m.val = m.score + w * (m.equity - m.score) - (rare ? penalty : 0);
     }
     moves.sort((a, b) => b.val - a.val);
-    const exch = bestExchange(rack, state.bag.length);
+    const exch = opts && opts.scoreOnly ? null : bestExchange(rack, state.bag.length);
     if (exch && (!moves.length || (exch.equity > moves[0].equity + 1 && rnd() < d / 100))) return { t: 'swap', tiles: exch.tiles };
     if (!moves.length) return exch ? { t: 'swap', tiles: exch.tiles } : { t: 'pass' };
     const loss = lossAt(d, k);
@@ -881,6 +888,180 @@
     return { t: 'play', tiles: pick.tiles };
   }
 
+  // ---- group play ------------------------------------------------------------
+  // Any number of players share one board and one rack. Each round everyone
+  // plays the same rack on their own copy of the board and scores their own
+  // play. Then one play goes on the shared board: the best play submitted
+  // (equal scores go to the earliest), or the engine's best when nobody found
+  // a legal play or when the game is set to always use it (board: 'engine').
+  // The tiles it leaves stay on the rack, which is filled from the bag for the
+  // next round. There are no swaps or passes.
+  //
+  // A game is determined by its seed, its options and each round's
+  // submissions. Unlike replay(), resolving a round needs the word list,
+  // since whether a play counts decides what goes on the board. Nothing here
+  // uses localeCompare, whose order differs between locales, so every phone
+  // settles a round the same way.
+  //
+  // A rack needs at least two vowels and two consonants up to round 15, then
+  // at least one of each (a blank counts as either, Y is a consonant), and a
+  // legal play. Otherwise every tile on it goes back in the bag and seven are
+  // drawn again. The game ends after `limit` rounds (0: no limit) or when the
+  // bag can no longer make such a rack.
+  //
+  // state.best is the best play for the rack being played. Given a list of
+  // everyday words (common), it is the best play made only of those, which
+  // is what most players can hope to find, and state.top is the best play
+  // of all. Without one, both are the best play of all. The page must not
+  // show either before the round is over. Whatever list is given becomes part
+  // of what decides the game, so every phone must use the same one.
+  const VOWELS = 'AEIOU', RULE_ROUNDS = 15, REDRAWS = 100, DEAD_REDRAWS = 10;
+  // Raised whenever a change here would settle a group game differently, so
+  // phones on different versions can tell before they disagree.
+  const GROUP_VERSION = 1;
+  const rackNeed = (round) => (round <= RULE_ROUNDS ? 2 : 1);
+  function rackMeets(tiles, need) {
+    let v = 0, c = 0, b = 0;
+    for (const t of tiles) { if (t === '?') b++; else if (VOWELS.includes(t)) v++; else c++; }
+    return Math.max(0, need - v) + Math.max(0, need - c) <= b;
+  }
+  const playKey = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+  // The engine's play from generate()'s list (best score first): equal scores
+  // are settled by the play's squares and letters, in an order every phone shares.
+  function enginePick(plays) {
+    let best = null, bestKey = '';
+    for (const m of plays) {
+      if (best && m.score < best.score) break;
+      const k = playKey(m.tiles);
+      if (!best || k < bestKey) { best = m; bestKey = k; }
+    }
+    return best;
+  }
+  const playSummary = (m) => ({ word: m.word, words: m.words.map((w) => ({ word: w.word, score: w.score })), score: m.score, bingo: m.bingo,
+                                tiles: m.tiles.map((t) => ({ r: t.r, c: t.c, l: t.l, b: !!t.b })) });
+  function groupOptions(opts) {
+    const o = opts || {};
+    return { limit: Number.isInteger(o.limit) && o.limit >= 0 && o.limit <= 99 ? o.limit : 10, board: o.board === 'engine' ? 'engine' : 'player' };
+  }
+  // Fills the rack for the next round, redrawing until it meets the rule and
+  // has a play, and notes the round's best play. Ends the game when the bag
+  // cannot make such a rack.
+  function dealRack(s, dict, common) {
+    const round = s.rounds.length + 1, need = rackNeed(round);
+    s.redraws = 0; s.best = null; s.top = null;
+    let dead = 0;
+    for (;;) {
+      while (s.rack.length < RACK && s.bag.length) s.rack.push(s.bag.pop());
+      if (rackMeets(s.rack, need)) {
+        const plays = generate(s.board, s.rack, dict), top = enginePick(plays);
+        if (top) {
+          const everyday = common ? enginePick(plays.filter((m) => m.words.every((w) => common.has(w.word)))) : null;
+          s.top = playSummary(top); s.best = everyday ? playSummary(everyday) : s.top;
+          return s;
+        }
+        dead++;
+      }
+      // a redraw helps only while there is a bag to draw from and the tiles left can meet the rule at all
+      if (!s.bag.length || !rackMeets(s.rack.concat(s.bag), need) || s.redraws >= REDRAWS || dead >= DEAD_REDRAWS) {
+        s.over = true; s.endReason = 'bag';
+        return s;
+      }
+      // sorted, so the order a player arranged their rack in cannot change the next draw
+      s.bag.push(...s.rack.slice().sort());
+      s.rack = [];
+      shuffle(s.bag, seededRandom(mix(s.seed, 1000 + round * REDRAWS + s.redraws)));
+      s.redraws++;
+    }
+  }
+  // A seed from text, so a game can be named by words people can say out
+  // loud: every phone that types the same words deals the same game.
+  function seedOf(text) {
+    let h = 2166136261;
+    const s = String(text);
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 1) || 1;
+  }
+  function newGroup(seed, opts, dict, common) {
+    if (!Number.isInteger(seed)) throw new Error('bad seed');
+    if (!dict) throw new Error('Group play needs the word list.');
+    const s = { version: VERSION, kind: 'group', seed, opts: groupOptions(opts), board: new Array(N * N).fill(null),
+                bag: shuffle(fullBag(), seededRandom(mix(seed, 0))), rack: [], rounds: [], history: [], best: null, top: null, redraws: 0, over: false, endReason: null };
+    return dealRack(s, dict, common);
+  }
+  // Settles the round being played and deals the next. subs: [{ p, at, move }]
+  // where p is the player's seat and at the server's time of submission in
+  // milliseconds; of two submissions from one player the later counts. A play
+  // that is not legal scores 0 and cannot go on the board. The round is kept
+  // as { rack, redraws, plays, board, best, top }, plays sorted best first,
+  // board with p null when the engine's play went on. common: as for newGroup.
+  function resolveRound(state, subs, dict, common) {
+    if (state.over) throw new Error('The game is over.');
+    if (!dict) throw new Error('Group play needs the word list.');
+    const s = clone(state), rack = s.rack.slice();
+    const when = (x) => (x === null ? Infinity : x);
+    const latest = new Map();
+    for (const sub of subs || []) {
+      if (!sub || !Number.isInteger(sub.p)) continue;
+      const at = typeof sub.at === 'number' && Number.isFinite(sub.at) ? sub.at : null;
+      const had = latest.get(sub.p);
+      if (!had || when(at) >= when(had.at)) latest.set(sub.p, { p: sub.p, at, move: sub.move });
+    }
+    const plays = [];
+    for (const { p, at, move } of latest.values()) {
+      const res = checkPlay(s.board, rack, move, dict);
+      if (res.ok) plays.push(Object.assign({ p, at, ok: true }, playSummary({ word: res.main, words: res.words, score: res.score, bingo: res.bingo, tiles: move.tiles })));
+      else plays.push({ p, at, ok: false, score: 0, reason: res.reason });
+    }
+    plays.sort((a, b) => b.score - a.score || when(a.at) - when(b.at) || a.p - b.p);
+    const found = s.opts.board === 'engine' ? null : plays.find((x) => x.ok);
+    if (!found && !s.best) throw new Error('This rack has no play.');
+    const board = found ? Object.assign({ p: found.p }, playSummary(found)) : Object.assign({ p: null }, playSummary(s.best));
+    for (const t of board.tiles) {
+      s.rack.splice(s.rack.indexOf(t.b ? '?' : t.l), 1);
+      s.board[t.r * N + t.c] = { l: t.l, b: t.b };
+    }
+    s.history.push(Object.assign({ p: board.p, t: 'play' }, playSummary(board)));
+    s.rounds.push({ rack, redraws: s.redraws, plays, board, best: s.best, top: s.top });
+    if (s.opts.limit && s.rounds.length >= s.opts.limit) { s.over = true; s.endReason = 'rounds'; s.best = null; s.top = null; return s; }
+    return dealRack(s, dict, common);
+  }
+  // Rebuilds a group game: rounds[k] holds the submissions of round k + 1.
+  // Rounds the server holds after the game ended are ignored.
+  function replayGroup(seed, opts, rounds, dict, common) {
+    let s = newGroup(seed, opts, dict, common);
+    for (const subs of rounds || []) { if (s.over) break; s = resolveRound(s, subs, dict, common); }
+    return s;
+  }
+  // Where everyone stands, best first: per player the total, the points there
+  // were to find since they joined (each round's best), their share of those,
+  // the rounds they matched the best, the rounds their play went on the board,
+  // bingos and their best play. players: [{ p, from }], from being the first
+  // round they could play (default 1). Left out, everyone who ever submitted
+  // counts from round 1. Equal totals share a rank.
+  function groupStandings(state, players) {
+    const list = players ? players.map((x) => ({ p: x.p, from: x.from || 1 }))
+      : [...new Set(state.rounds.flatMap((r) => r.plays.map((x) => x.p)))].map((p) => ({ p, from: 1 }));
+    const rows = list.map(({ p, from }) => {
+      const row = { p, total: 0, possible: 0, share: 0, plays: 0, tops: 0, boards: 0, bingos: 0, best_word: null, best_score: 0, rank: 0 };
+      state.rounds.forEach((r, k) => {
+        if (k + 1 >= from) row.possible += r.best.score;
+        if (r.board.p === p) row.boards++;
+        const mine = r.plays.find((x) => x.p === p);
+        if (!mine || !mine.ok) return;
+        row.total += mine.score; row.plays++;
+        if (mine.score >= r.best.score) row.tops++;
+        if (mine.bingo) row.bingos++;
+        if (mine.score > row.best_score) { row.best_score = mine.score; row.best_word = mine.word; }
+      });
+      row.share = row.possible ? Math.round(100 * row.total / row.possible) : 0;
+      return row;
+    });
+    rows.sort((a, b) => b.total - a.total || a.p - b.p);
+    for (const row of rows) row.rank = 1 + rows.filter((x) => x.total > row.total).length;
+    return rows;
+  }
+
   return { N, CENTER, RACK, BINGO, VERSION, PASS_LIMIT, LAYOUT, LM, WM, TILES, VALUE, bonusAt, tileValue, seededRandom,
-           newGame, analyze, check, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, botMoveAt, lossAt, LEVELS, DIAL, transpose, pack, unpack, encodeLexicon, decodeLexicon, packLexicon, unpackLexicon };
+           newGame, analyze, check, checkPlay, apply, replay, positions, options, winner, buildDict, generate, rank, leaveValue, leaveFeatures, LEAVE, LEAVE2, LEAVE_TUNE, pairKey, bestExchange, evaluateTurn, computeResult, endgameMove, lookahead, botMove, botMoveAt, lossAt, LEVELS, DIAL, transpose, pack, unpack, encodeLexicon, decodeLexicon, packLexicon, unpackLexicon,
+           GROUP_VERSION, rackNeed, rackMeets, groupOptions, seedOf, newGroup, resolveRound, replayGroup, groupStandings };
 });

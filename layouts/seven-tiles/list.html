@@ -30,6 +30,50 @@
 .sm-app .sm-bag b{display:block;font-size:20px;color:var(--text);letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
 .sm-app .sm-msg{text-align:center;margin:10px 0 12px;font-size:15px;color:var(--soft);min-height:22px}
 .sm-app .sm-msg b{color:var(--text)}
+.sm-app .sm-clock{font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+.sm-app .sm-clock.low{color:var(--bad)}
+.sm-app .sm-timebar{height:4px;max-width:260px;margin:6px auto 0;border-radius:2px;background:var(--plane);overflow:hidden}
+.sm-app .sm-timebar i{display:block;height:100%;width:100%;background:var(--accent);transition:width .25s linear}
+.sm-app .sm-timebar.low i{background:var(--bad)}
+.sm-app .sm-same-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;text-align:left}
+.sm-app .sm-same-opts label{font-size:12px;color:var(--muted)}
+.sm-app .sm-same-opts select{display:block;font:inherit;font-size:16px;padding:7px 8px;border-radius:8px;border:1px solid var(--ring);background:#fff;color:var(--text);width:100%;margin-top:4px}
+.sm-app .sm-addbot{align-items:end}
+.sm-app .sm-addbot button{padding:9px 10px}
+.sm-app .sm-room-words{font-size:26px;font-weight:700;letter-spacing:.01em;margin:4px 0 8px;color:var(--text)}
+.sm-app .sm-room-players{display:grid;gap:2px;margin:8px 0 4px;font-size:14px}
+.sm-app .sm-room-players div{display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:6px}
+.sm-app .sm-room-players div.me{background:var(--plane)}
+.sm-app .sm-room-players span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm-app .sm-room-players small{font-size:11px;color:var(--muted)}
+.sm-app .sm-room-players small.st-done,.sm-app .sm-room-players small.st-ready{color:var(--good)}
+.sm-app .sm-room-players b{font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
+.sm-app .sm-list>div.me{background:var(--plane)}
+.sm-app .sm-list.sm-roundplays>div,.sm-app .sm-list.sm-standings>div{display:grid;gap:10px;align-items:baseline}
+.sm-app .sm-list.sm-roundplays>div{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 52px}
+.sm-app .sm-list.sm-roundplays>div.board{box-shadow:inset 3px 0 0 var(--accent)}
+.sm-app .sm-list.sm-standings>div{grid-template-columns:16px minmax(0,1fr) 72px 48px}
+.sm-app .sm-list.sm-roundplays>div>:first-child,.sm-app .sm-list.sm-standings>div>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm-app .sm-list.sm-roundplays b,.sm-app .sm-list.sm-standings>div>:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums}
+.sm-app .sm-list.sm-standings>div>:first-child,.sm-app .sm-list.sm-standings>div>:nth-child(3){color:var(--soft);font-variant-numeric:tabular-nums}
+.sm-app .sm-list.sm-roundplays small,.sm-app .sm-list.sm-standings small{margin-left:4px}
+.sm-app .sm-list.sm-standings>div.head{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding-top:6px;padding-bottom:6px}
+.sm-app .sm-endstats{margin:14px 0 6px}
+.sm-app .sm-endstats b .of{font-size:13px;font-weight:600;color:var(--muted)}
+.sm-app .sm-card p.sm-endnote{margin:8px 0 0}
+.sm-app .sm-card .sm-endyou{text-align:left;margin:16px 0 0}
+.sm-app .sm-squares{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin:14px 0 0}
+.sm-app .sm-squares i,.sm-app .sm-sqlegend i{display:inline-block;width:22px;height:22px;border-radius:5px}
+.sm-app .sm-sqlegend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:12px;color:var(--muted);margin-top:8px}
+.sm-app .sm-sqlegend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.sm-app .sm-sqlegend i{width:11px;height:11px;border-radius:3px}
+.sm-app i.q-best{background:var(--good)}
+.sm-app i.q-close{background:#e2b23a}
+.sm-app i.q-half{background:#e8893a}
+.sm-app i.q-low{background:var(--bad)}
+.sm-app i.q-none{background:var(--muted)}
+.sm-app .sm-endshare{justify-content:center;margin-top:16px}
+.sm-app .sm-endnav{justify-content:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--ring)}
 .sm-app .sm-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
 @media(max-width:860px){.sm-app .sm-cols{grid-template-columns:1fr}}
 .sm-app .sm-main{max-width:600px;margin:0 auto;width:100%;container-type:inline-size}

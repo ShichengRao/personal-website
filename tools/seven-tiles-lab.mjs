@@ -5,6 +5,9 @@
    node tools/seven-tiles-lab.mjs leaves [games] [out.json] fit leave values from self-play
    node tools/seven-tiles-lab.mjs bench [games]             moves per second
    node tools/seven-tiles-lab.mjs fitklv <leaves.csv> [out]  fit singles + pairs to a MAGPIE leave csv
+   node tools/seven-tiles-lab.mjs group [player|engine] [levels] [games]
+                                                            group play to the end of the bag: rounds, redraws,
+                                                            scores; levels are the players' dial levels, e.g. 100,70,40,15
 
    A profile is a level (easy, medium, hard) with options after colons:
      hard:noendgame          skip the exact endgame search
@@ -50,7 +53,8 @@ function useLeaves(l) {
 }
 
 // ---- worker side -----------------------------------------------------------
-if (!isMainThread) {
+if (!isMainThread && workerData.job === 'group') groupWorker();
+else if (!isMainThread) {
   const dict = loadDict('words');
   const { job, seed, games, offset, a, b } = workerData;
   const rnd = C.seededRandom(seed);
@@ -249,6 +253,57 @@ function fitKlv(file, outFile) {
   console.log('wrote', outFile);
 }
 
+// Group play: whole games to the end of the bag, with dial bots as the players.
+// A bot's play is its 1v1 choice on the shared rack; a swap or pass means it
+// sent nothing that round.
+function groupWorker() {
+  const dict = loadDict('words'), common = loadDict('common');
+  const { seed, games, a: board, b: spec } = workerData;
+  const levels = spec.split(',').map(Number);
+  const rnd = C.seededRandom(seed);
+  const out = { games: [], rounds: 0, redrawn: 0, firstRedrawn: 0, best: 0, board: 0, engine: 0, ms: 0, slowest: 0, possible: 0, points: levels.map(() => 0), tops: levels.map(() => 0) };
+  for (let g = 0; g < games; g++) {
+    let s = C.newGroup(Math.floor(rnd() * 0x7fffffff) || 1, { limit: 0, board }, dict, common);
+    if (s.redraws) out.firstRedrawn++;
+    while (!s.over) {
+      const view = { board: s.board, racks: [s.rack, []], turn: 0, bag: s.bag, finalTurns: null, over: false };
+      const subs = [];
+      levels.forEach((d, p) => {
+        const m = C.botMoveAt(view, d, rnd, dict, { vocab: common, noEndgame: true });
+        if (m.t === 'play') subs.push({ p, at: Math.floor(rnd() * 90000), move: m });
+      });
+      const t0 = performance.now();
+      s = C.resolveRound(s, subs, dict, common);
+      const ms = performance.now() - t0;
+      out.ms += ms; out.slowest = Math.max(out.slowest, ms);
+      const r = s.rounds[s.rounds.length - 1];
+      out.rounds++;
+      if (r.redraws) out.redrawn++;
+      out.best += r.best.score; out.board += r.board.score;
+      if (r.board.p === null) out.engine++;
+    }
+    out.games.push(s.rounds.length);
+    const rows = C.groupStandings(s, levels.map((_, p) => ({ p })));
+    for (const row of rows) { out.points[row.p] += row.total; out.tops[row.p] += row.tops; }
+    out.possible += rows[0].possible;
+  }
+  parentPort.postMessage(out);
+}
+
+async function group(board, levels, games) {
+  const t0 = Date.now();
+  const res = await run('group', games, board, levels);
+  const sum = (k) => res.reduce((a, r) => a + r[k], 0);
+  const lens = res.flatMap((r) => r.games).sort((x, y) => x - y);
+  const n = lens.length, rounds = sum('rounds'), possible = sum('possible'), pct = (x, of) => (x / of * 100).toFixed(1) + '%';
+  console.log(`group play, board play from the ${board}, players at ${levels}: ${n} full-bag games in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  console.log(`  rounds a game: mean ${(rounds / n).toFixed(1)}, median ${lens[n >> 1]}, range ${lens[0]}-${lens[n - 1]}`);
+  console.log(`  racks redrawn in ${pct(sum('redrawn'), rounds)} of rounds and ${pct(sum('firstRedrawn'), n)} of first racks`);
+  console.log(`  best play ${(sum('best') / rounds).toFixed(1)} points a round, board play ${(sum('board') / rounds).toFixed(1)}, the engine's play went on in ${pct(sum('engine'), rounds)} of rounds`);
+  levels.split(',').forEach((d, p) => console.log(`  level ${d}: ${pct(res.reduce((a, r) => a + r.points[p], 0), possible)} of the best, found it in ${pct(res.reduce((a, r) => a + r.tops[p], 0), rounds)} of rounds`));
+  console.log(`  settling a round and dealing the next: ${(sum('ms') / rounds).toFixed(1)} ms on average, slowest ${Math.max(...res.map((r) => r.slowest)).toFixed(0)} ms`);
+}
+
 async function bench(games) {
   const res = await run('arena', games, 'hard', 'hard');
   const busy = res.filter((r) => r.moves > 0);
@@ -262,5 +317,6 @@ if (isMainThread) {
   else if (cmd === 'leaves') await leaves(+(args[0] || 400), args[1] || join(root, 'tools', 'leaves.json'), +(args[2] || 2));
   else if (cmd === 'bench') await bench(+(args[0] || 28));
   else if (cmd === 'fitklv') fitKlv(args[0], args[1] || join(root, 'tools', 'leaves.json'));
-  else console.log('usage: arena <A> <B> [games] | leaves [games] [out.json] [rounds] | bench [games]');
+  else if (cmd === 'group') await group(args[0] === 'engine' ? 'engine' : 'player', args[1] || '100,70,40,15', +(args[2] || 200));
+  else console.log('usage: arena <A> <B> [games] | leaves [games] [out.json] [rounds] | bench [games] | group [player|engine] [levels] [games]');
 }
