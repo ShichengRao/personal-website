@@ -11,7 +11,7 @@ Status: built and tested, on the real Supabase project too. There is one mode, a
 - **Bots.** The host adds them in the lobby at a level from casual to full strength (20 to 100 on the 1v1 dial). The host's page plays for them. A bot plays a few seconds into a round (at most about half a minute), or at once when everyone else is done, and is ready for the next round straight away, so it never holds the room up. It plays only while the host has the room open, and rounds it missed go in when the host is back.
 - **A round, with signal.** Everyone plays the same rack on their own copy of the board, on the server's clock. The message line shows the clock, a time bar and "3 of 5 done". Submit sends a play, and a better one can replace it. Done ends your round. When time runs out, a legal play still on the board is sent if it beats the one submitted. The round closes at the deadline or once everyone is done.
 - **The board play.** Each round the best play made of everyday words goes on the board, worked out by the engine from the common word list. Your own play scores for you and never goes on the board.
-- **Round card.** When a round closes, a card lists every play by score, with a star for each that matched or beat the best play. It names the play that goes on the board and, when it was higher, the top play of all ("SHANTY for 62, with a word most people don't know"). The next round opens after 15 seconds, or sooner once everyone has pressed "Next round". Tapping a round in the side panel shows its card again.
+- **Round card.** When a round closes, a card lists every play by score, with a star for each that matched or beat the best play. It names the play that goes on the board and, when it was higher, the top play of all ("The top play was SHANTY for 62."). The next round opens after 15 seconds, or sooner once everyone has pressed "Next round". Tapping a round in the side panel shows its card again.
 - **End.** Standings with % of best and total, then your own game: points, % of the best plays, best plays found, top word, and a colored square per round. One button shares the standings and your squares.
 
 ## Without signal
@@ -19,7 +19,7 @@ Status: built and tested, on the real Supabase project too. There is one mode, a
 - A phone that loses signal keeps going. The round under way finishes on the clock it had, and the next ones start with "Start round N" and run on the phone's own clock.
 - Plays are saved on the phone and sent, oldest first, once there is signal. A reload with no signal reopens the game from the saved copy, with a round under way and its deadline intact.
 - You see the other plays of a round only once you have finished it yourself and the room has closed it. So a late play could not have used them, and the server can accept it like any other. Late plays show up for everyone who has finished that round, and the standings fill in.
-- Back with signal, a player who fell behind sees "The room is on round 7. Catch up on your own clock, or skip ahead to it." Skipping marks the missed rounds as no play.
+- Back with signal, a player who fell behind sees "The room is on round 7." with two buttons, "Start round 5" to catch up on their own clock and "Skip to round 7". Skipping marks the missed rounds as no play.
 - A player who is behind or away never holds up the room. A player who played ahead offline counts as done and ready for those rounds, so the room runs straight through rounds everyone has played. The room never opens a round while nobody is there to play it.
 
 **Why the board play is the best everyday play.** When the best submitted play went on the board, the next rack depended on everyone's plays, and a phone without signal could not deal it. With the board play worked out from the seed alone, every phone can deal every rack by itself.
@@ -92,6 +92,10 @@ RLS on, no policies, everything through security-definer functions. `room_seat` 
   - All three pages ended on the same standings: Ann 356 (100% of the best), Bo 327 (92%), Cy 294 (83%). No page errors.
 - **Bots on the real project.** From the plain preview (so the bots' calls went to Supabase across origins): a room with two bots, both played within 8 seconds, the round closed 0.3 seconds after the host pressed Done, and the next round opened 0.2 seconds after Next. Locally, bots also played through the host losing signal: the room waited, and the bots sent the rounds they owed when the host was back.
 - **Not tested yet.** Real phones, and a dozen players.
+
+## Page text
+
+As little as possible. The page doesn't warn ahead of time about limits or what happens without signal. It says what's going on when it happens ("No signal.", "The room is on round 7.") and why something didn't work ("This room is full (12 players). You’re watching."). A call that never reaches the server reads as "no signal". The how-to-play card has one short paragraph on Same Rack.
 
 ## Not built
 

@@ -1184,7 +1184,7 @@
       '<div class="sm-botscale"><small>0: new to the game</small><small>100: full strength</small></div>' +
       '<button class="primary" id="sm-m-bot"' + noDict + '>Play at level <span id="sm-m-lvlnum">' + botLevel + '</span></button></div>' +
       '<button id="sm-m-hotseat"' + noDict + '><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
-      '<button id="sm-m-same"' + noDict + '><b>Same Rack</b><small>a group plays the same racks against the clock, and it keeps going without signal</small></button>' +
+      '<button id="sm-m-same"' + noDict + '><b>Same Rack</b><small>a group plays the same racks</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
     if (list.length) {
@@ -1249,8 +1249,7 @@
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
       '<div><b>Review:</b> click any move in the list to step through the game (against a person, once the game is over). <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
-      '<div><b>Same Rack:</b> a group plays the same racks. You have until the clock runs out to submit a play, and it scores for you alone. Then the best play made of everyday words goes on the board for everyone, and the tiles it left stay on the rack. A round ends early once everyone has pressed Done. Every rack has at least two vowels and two consonants (one of each after round 15). The highest total wins. The host can add bots before the start. They play from the host’s phone, so they play while the host has the room open.</div>' +
-      '<div><b>Without signal:</b> Same Rack keeps going on your own clock, and your rounds are sent once you’re back. You see the others’ plays for a round once you have finished it. If you fall behind, catch up on your own clock or skip ahead to the room’s round.</div>' +
+      '<div><b>Same Rack:</b> a group plays the same racks. Your play scores for you alone. Then the best play made of everyday words goes on the board for everyone. The highest total wins.</div>' +
       '<div><b>Word list:</b> ' + lexiconCredit() + ' The ratings use only its common words, and the bot keeps mostly to them at low levels, less so as the level rises.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
@@ -1400,6 +1399,9 @@
   const roomPlayer = (p) => (G.row ? G.row.players.find((x) => x.player === p) : null) || null;
   const joinedAt = () => (roomPlayer(G.me) || {}).joined || 1;
   const online = () => !G.offline && !!G.row;
+  // a failed call in words: one that never reached the server means no signal
+  const whyFailed = (e) => (navigator.onLine === false || /fetch|network|load failed|no answer/i.test(e.message) ? 'no signal'
+    : /room is full/.test(e.message) ? 'the room is full (12 players)' : e.message);
   // What decides a room's game besides its seed: the rules and both word lists.
   // A room keeps the one it was started with, and a page that differs (an old
   // copy from before an update, say) must not play it, or its boards would not
@@ -1437,14 +1439,12 @@
   // ---- choosing and opening a room
   function showSameSetup(note) {
     const name = store.get('sm.name', '') || (user && user.name) || '';
-    const can = Net.enabled && navigator.onLine !== false;
-    openOverlay('<h2>Same Rack</h2><p>A group plays the same racks against the clock. Your play scores for you, and the best play made of everyday words goes on the board for the next round. Up to twelve players.</p>' +
+    openOverlay('<h2>Same Rack</h2>' +
       (note ? '<p class="sm-card-note">' + esc(note) + '</p>' : '') +
-      (can ? '' : '<p class="sm-card-note">' + (Net.enabled ? 'You are offline. Starting or joining a room needs signal once, and after that a game keeps going without it.' : 'Rooms are not set up on this site yet.') + '</p>') +
-      '<div class="sm-k" style="text-align:left">Your name</div><input type="text" id="sm-live-name" maxlength="24" value="' + esc(name) + '" placeholder="Shown to the other players">' +
-      '<div class="sm-row" style="justify-content:center;margin-top:12px"><button class="primary" id="sm-live-new"' + (can ? '' : ' disabled') + '>Start a room</button></div>' +
+      '<div class="sm-k" style="text-align:left">Your name</div><input type="text" id="sm-live-name" maxlength="24" value="' + esc(name) + '">' +
+      '<div class="sm-row" style="justify-content:center;margin-top:12px"><button class="primary" id="sm-live-new">Start a room</button></div>' +
       '<div class="sm-k" style="text-align:left;margin-top:16px">Or join a room</div>' +
-      '<div class="sm-row" style="margin-top:0;flex-wrap:nowrap"><input type="text" id="sm-live-words" maxlength="40" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Its three words"><button id="sm-live-join" style="flex:none"' + (can ? '' : ' disabled') + '>Join</button></div>' +
+      '<div class="sm-row" style="margin-top:0;flex-wrap:nowrap"><input type="text" id="sm-live-words" maxlength="40" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Its three words"><button id="sm-live-join" style="flex:none">Join</button></div>' +
       '<div class="sm-note" id="sm-live-err" style="color:var(--bad)"></div>' +
       '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-live-back">Back</button></div>');
     const err = (t) => { $('sm-live-err').textContent = t; };
@@ -1472,6 +1472,7 @@
     await dictReady; await commonReady;
     if (my !== navGen) return;
     if (!dict || !common) { setStatus(''); showSameSetup('The word lists did not load. Reload to try again.'); return; }
+    if (!Net.enabled) { setStatus(''); showSameSetup('Rooms are not set up on this site.'); return; }
     for (let attempt = 0; attempt < 5; attempt++) {
       const words = newId();
       try {
@@ -1485,7 +1486,7 @@
         if (my !== navGen) return;
         if (/taken/.test(e.message)) continue;
         setStatus('');
-        showSameSetup('Could not open a room: ' + e.message);
+        showSameSetup('Could not open a room: ' + whyFailed(e) + '.');
         return;
       }
     }
@@ -1526,13 +1527,13 @@
       }
     } catch (e) {
       if (my !== navGen) return;
-      if (!(rec && rec.row)) { failToMenu('Could not open room ' + words + ': ' + e.message); return; }
+      if (!(rec && rec.row)) { failToMenu('Could not open room ' + words + ': ' + whyFailed(e) + '.'); return; }
       row = rec.row; offline = true;   // no signal: the copy saved here
     }
     let seed;
     try { seed = C.unpack(words, row.seed); } catch (e) { failToMenu('The record of room ' + words + ' is damaged.'); return; }
     if (!seed || !Number.isInteger(seed.s)) { failToMenu('The record of room ' + words + ' is damaged.'); return; }
-    if (seed.v !== rulesKey()) { failToMenu('Room ' + words + ' was started on a different version of Seven Tiles. Reload this page to update it, and if that does not help, start a new room.'); return; }
+    if (seed.v !== rulesKey()) { failToMenu('Room ' + words + ' was started on a different version of Seven Tiles. Reload the page to update it.'); return; }
     seed = seed.s;
     leaveGame();
     const saved = rec && rec.token === token ? rec : null;
@@ -1542,7 +1543,7 @@
           state: null, hidden: true, session: ++sessions };
     seenMoves = 0;
     setUrl(id);
-    setStatus(row.me === null ? (row.phase === 'over' ? 'This game is over.' : 'Watching: this room is full.') : '');
+    setStatus(row.me === null ? (row.phase === 'over' ? 'This game is over.' : 'This room is full (12 players). You’re watching.') : '');
     integrateRoom(row, t0, Date.now(), offline);
     // a round that was under way carries on with the time it had left, when the room is not playing it with everyone
     const c = saved && saved.cur;
@@ -1648,7 +1649,7 @@
     const m = mineAt(k), move = m && m.play ? unpackPlay(m.play) : null, res = move ? C.checkPlay(G.state.board, G.state.rack, move, dict) : null;
     if (res && res.ok) { G.cur.move = move; G.cur.score = res.score; G.cur.word = res.main; pending = draftFrom(move); }   // a play sent before, back on the board
     closeRoomCard();
-    setStatus(G.offline ? 'No signal. This round runs on your own clock, and your play is sent when you’re back.' : '');
+    setStatus('');
   }
   // a saved play laid back out on the board, matched to rack slots
   function draftFrom(move) {
@@ -1991,7 +1992,7 @@
     const here = row.players.filter((x) => x.here && x.joined <= row.round && !behind(x));
     const doneHere = here.filter((x) => x.done).length;
     const signal = G.offline ? ' · <i>no signal</i>' : '';
-    if (G.phase === 'lobby') ui.msg.innerHTML = '<b>Waiting to start.</b> ' + plural(row.players.length, 'player') + ' in the room.' + signal;
+    if (G.phase === 'lobby') ui.msg.innerHTML = '<b>Waiting to start.</b>' + signal;
     else if (G.phase === 'watch') ui.msg.innerHTML = '<i>Watching.</i> <b>' + roundsLabel(row.round) + '.</b> ' + (row.closed ? roomResult(row.closed) : '');
     else if (G.phase === 'play') ui.msg.innerHTML = '<b>' + roundsLabel(k) + '</b> · ' + (G.cur.ends ? '<span class="sm-clock" id="sm-clock"></span>' : 'no clock') +
       (G.cur.live ? ' · ' + doneHere + ' of ' + here.length + ' done' : ' · on your own clock') + signal + (G.cur.ends ? '<div class="sm-timebar"><i id="sm-timefill"></i></div>' : '');
@@ -2007,10 +2008,9 @@
     const drafting = canDraft();
     const preview = drafting && pending.length ? previewDraft(G.state) : null;
     const submitted = !!(preview && preview.ok && G.cur && G.cur.move && draftKey(G.cur.move.tiles) === draftKey(pending));
-    const unsent = G.cur && mineAt(G.cur.k) && !mineAt(G.cur.k).sent;
     ui.board.classList.toggle('valid', !!(preview && preview.ok));
     if (stickyError) { /* an action failed: keep saying so until the draft changes */ }
-    else if (submitted) { setStatus('Submitted ' + G.cur.word + ' for ' + plural(G.cur.score, 'point') + (unsent && G.offline ? ', to be sent when there is signal' : '') + '. Press Done if you’re finished, or change it until the round ends.', 'good'); statusIsPreview = true; }
+    else if (submitted) { setStatus('Submitted ' + G.cur.word + ' for ' + plural(G.cur.score, 'point') + '. Press Done when you’re finished.', 'good'); statusIsPreview = true; }
     else if (preview) { setStatus(preview.text, preview.kind); statusIsPreview = true; }
     else if (statusIsPreview) setStatus('');
     const ready = G.readyFor > row.round || !!(roomPlayer(G.me) || {}).ready;
@@ -2026,10 +2026,9 @@
   // why a round waits for you to start it
   function readyWhy(k) {
     const row = G.row;
-    if (G.offline) return 'No signal. Start it when you’re ready. It runs on your own clock, and your rounds are sent when you’re back.';
-    if (row.phase === 'over') return 'The room has finished. Play your last rounds on your own clock.';
-    if (k < liveRound()) return 'The room is on round ' + liveRound() + '. Catch up on your own clock, or skip ahead to it.';
-    return 'You are ahead of the room. Play on, on your own clock.';
+    if (G.offline) return 'No signal.';
+    if (row.phase === 'over') return 'The room has finished.';
+    return 'The room is on round ' + liveRound() + '.';
   }
   function renderRoomLog() {
     ui.movesTitle.textContent = 'Rounds';
@@ -2062,7 +2061,7 @@
       html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + x.rank + '. ' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
         (status ? '<small class="st-' + status.replace(/ /g, '-') + '">' + status + '</small>' : '') + '<b>' + x.total + '</b></div>';
     }
-    html += '</div>' + (row.phase !== 'over' ? '<div class="sm-note">Others can join with the link or the three words, even mid-game.</div><div class="sm-row"><button id="sm-room-link">Copy invite link</button></div>' : '');
+    html += '</div>' + (row.phase !== 'over' ? '<div class="sm-row"><button id="sm-room-link">Copy invite link</button></div>' : '');
     ui.online.innerHTML = html;
     const b = $('sm-room-link');
     if (b) b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(link); b.textContent = 'Copied'; } catch (e) { window.prompt('Copy this link:', link); } });
@@ -2073,17 +2072,15 @@
     const link = location.origin + pathFor(G.id), host = G.me === 0, last = store.get('sm.same', {});
     const limit = SAME_ROUNDS.includes(last.limit) ? last.limit : 10, seconds = SAME_SECONDS.includes(last.seconds) && last.seconds ? last.seconds : 90;
     const opts = (vals, cur, label) => vals.map((v) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + label(v) + '</option>').join('');
-    openOverlay('<div id="sm-room-card" hidden></div><h2>Same Rack</h2><p>Others join with the link, the QR code, or by typing these words under Same Rack.</p>' +
+    openOverlay('<div id="sm-room-card" hidden></div><h2>Same Rack</h2>' +
       '<div class="sm-room-words">' + esc(G.words.replace(/-/g, ' ')) + '</div>' +
       '<div class="sm-row" style="justify-content:center"><button id="sm-lobby-copy">Copy link</button>' + (navigator.share ? '<button id="sm-lobby-share">Share</button>' : '') + '<button id="sm-lobby-qr">QR code</button></div>' +
       '<div class="sm-qr" id="sm-lobby-qrbox" hidden></div>' +
       '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-lobby-count"></div><div class="sm-list sm-lobby" id="sm-lobby-players"></div>' +
       (host ? '<div class="sm-same-opts"><label>Rounds<select id="sm-lobby-rounds">' + opts(SAME_ROUNDS, limit, (n) => (n ? n + ' rounds' : 'The whole bag')) + '</select></label>' +
               '<label>Time per round<select id="sm-lobby-time">' + opts(SAME_SECONDS, seconds, (t) => (t ? secondsWords(t) : 'No clock')) + '</select></label></div>' +
-              '<div class="sm-note" style="text-align:left">With no clock, a round ends once everyone has pressed Done.</div>' +
               '<div class="sm-same-opts sm-addbot"><label>Bot<select id="sm-lobby-botlevel">' + opts(BOT_LEVELS, BOT_LEVELS.includes(last.bot) ? last.bot : 40, (d) => levelWords(d).replace(/^./, (c) => c.toUpperCase())) + '</select></label>' +
-              '<button id="sm-lobby-addbot">Add a bot</button></div>' +
-              '<div class="sm-note" style="text-align:left">Bots play from this page, so they play while you have the room open.</div>'
+              '<button id="sm-lobby-addbot">Add a bot</button></div>'
             : '<p id="sm-lobby-wait" style="margin-top:10px">Waiting for ' + esc(nameOf(0)) + ' to start the game.</p>') +
       '<div class="sm-note" id="sm-lobby-err" style="color:var(--bad)"></div>' +
       '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-lobby-leave">Games</button>' + (host ? '<button class="primary" id="sm-lobby-start">Start the game</button>' : '') + '</div>');
@@ -2103,9 +2100,8 @@
       store.set('sm.same', Object.assign(store.get('sm.same', {}), { bot: d }));
       addBtn.disabled = true; addBtn.textContent = 'Adding…';
       try { await addBot(d); if ($('sm-lobby-err')) $('sm-lobby-err').textContent = ''; }
-      catch (e) { if ($('sm-lobby-err')) $('sm-lobby-err').textContent = 'Could not add a bot: ' + e.message; }
-      addBtn.textContent = 'Add a bot';
-      updateLobby();
+      catch (e) { if ($('sm-lobby-err')) $('sm-lobby-err').textContent = 'Could not add a bot: ' + whyFailed(e) + '.'; }
+      addBtn.disabled = false; addBtn.textContent = 'Add a bot';
     });
     const start = $('sm-lobby-start');
     if (start) start.addEventListener('click', async () => {
@@ -2113,7 +2109,7 @@
       store.set('sm.same', Object.assign(store.get('sm.same', {}), { limit: n, seconds: t }));
       start.disabled = true; start.textContent = 'Starting…';
       try { const row = await Net.rpc('start_room', { p_code: G.words, p_token: G.token, p_seconds: t, p_limit: n }); if (alive(s)) integrateRoom(row, t0, Date.now()); }
-      catch (e) { if (!alive(s) || !$('sm-lobby-err')) return; $('sm-lobby-err').textContent = 'Could not start: ' + e.message; start.disabled = false; start.textContent = 'Start the game'; }
+      catch (e) { if (!alive(s) || !$('sm-lobby-err')) return; $('sm-lobby-err').textContent = 'Could not start: ' + whyFailed(e) + '.'; start.disabled = false; start.textContent = 'Start the game'; }
     });
     updateLobby();
   }
@@ -2121,10 +2117,8 @@
     const list = $('sm-lobby-players');
     if (!list) return;
     list.innerHTML = G.row.players.map((x) => '<div><span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' + (x.here ? '' : '<small>away</small>') + '</div>').join('');
-    $('sm-lobby-count').textContent = 'Players · ' + G.row.players.length + ' of 12';
-    const addBtn = $('sm-lobby-addbot');
-    if (addBtn && addBtn.textContent === 'Add a bot') addBtn.disabled = G.offline || G.row.players.length >= 12;
-    if (G.offline && $('sm-lobby-err')) $('sm-lobby-err').textContent = 'No signal. The game starts once there is.';
+    $('sm-lobby-count').textContent = 'Players · ' + G.row.players.length;
+    if (G.offline && $('sm-lobby-err')) $('sm-lobby-err').textContent = 'No signal.';
   }
   // A round's plays, best first. live: the card shown as you finish a round,
   // with the button for whatever comes next.
@@ -2151,8 +2145,8 @@
         '<b>' + Math.max(0, x.score) + (x.score >= r.best.score ? ' <span style="color:var(--good)">★</span>' : '') + '</b></div>';
     }
     html += '</div>';
-    if (!shown) html += '<p class="sm-note">' + (G.offline ? 'No signal. The others’ plays show up once you’re back.' : 'The others’ plays show up once the room finishes this round.') + '</p>';
-    if (r.top.score > r.best.score) html += '<p class="sm-note">The top play of all was <b>' + esc(r.top.word) + '</b> for ' + r.top.score + ', with a word most people don’t know.</p>';
+    if (!shown) html += '<p class="sm-note">' + (G.offline ? 'The others’ plays show when you have signal.' : 'The others’ plays show when the round ends.') + '</p>';
+    if (r.top.score > r.best.score) html += '<p class="sm-note">The top play was <b>' + esc(r.top.word) + '</b> for ' + r.top.score + '.</p>';
     html += '<div class="sm-row" style="justify-content:center"><button id="sm-round-close">' + (live ? 'Look at the board' : 'Close') + '</button>' +
       (live && G.me !== null ? '<button class="primary" id="sm-room-ready" hidden></button>' : '') + '</div>';
     openOverlay(html);
@@ -2197,7 +2191,7 @@
       html += '<div class="sm-list sm-standings"><div class="head"><span></span><span>Player</span><span>% of best</span><span>Total</span></div>';
       for (const x of rows) html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + x.rank + '</span><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span><span>' + x.share + '%</span><b>' + x.total + '</b></div>';
       html += '</div>';
-      if (late.length) html += '<p class="sm-note">' + esc(late.map((x) => nameOf(x.player)).join(' and ')) + (late.length > 1 ? ' are' : ' is') + ' still playing. Their rounds fill in as they finish.</p>';
+      if (late.length) html += '<p class="sm-note">' + esc(late.map((x) => nameOf(x.player)).join(' and ')) + (late.length > 1 ? ' are' : ' is') + ' still playing.</p>';
       if (mine) html += '<div class="sm-k sm-endyou">Your game</div>';
     }
     if (mine) html += endStatsHtml(mine) + squaresHtml();
