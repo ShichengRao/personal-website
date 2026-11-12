@@ -109,7 +109,7 @@
 
 <div id="drill-app">
 <div class="drill-header">
-  <h2 class="drill-title">Blunder drill</h2>
+  <h2 class="drill-title">Don't blunder again</h2>
   <span class="sub" id="dr-hdr"></span>
   <span style="flex:1"></span>
   <span class="score" id="dr-score"></span>
@@ -537,7 +537,7 @@ el('dr-export').onclick=()=>{
                      {type:"application/json"});
  const a=document.createElement("a");
  a.href=URL.createObjectURL(blob);
- a.download="blunder-drill-progress.json";
+ a.download="dont-blunder-again-progress.json";
  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 el('dr-import').onclick=()=>el('dr-importFile').click();

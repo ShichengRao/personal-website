@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Blunder drill</title>
+<title>Don't blunder again</title>
 <style>
 :root{
  --bg:#12141a;--surface-1:#1a1d26;--plane:#232733;--ring:#2f3442;
@@ -93,7 +93,7 @@ a{color:var(--accent)}
 .drill-status{padding:14px 18px;margin:16px;border:1px solid var(--ring);border-radius:10px;color:var(--muted);font:15px/1.5 system-ui,sans-serif}
 .drill-status.err{color:var(--bad);border-color:var(--bad)}</style></head><body>
 <header>
-  <h1>Blunder drill</h1>
+  <h1>Don't blunder again</h1>
   <span class="sub" id="hdr"></span>
   <span style="flex:1"></span>
   <span class="score" id="score"></span>
@@ -516,7 +516,7 @@ el('export').onclick=()=>{
                      {type:"application/json"});
  const a=document.createElement("a");
  a.href=URL.createObjectURL(blob);
- a.download="blunder-drill-progress.json";
+ a.download="dont-blunder-again-progress.json";
  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 el('import').onclick=()=>el('importFile').click();

@@ -40,7 +40,13 @@
   const newId = () => pick(WORDS) + '-' + pick(WORDS) + '-' + pick(WORDS);
   const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   const BASE = location.pathname.replace(/(\/seven-tiles\/).*$/, '$1');
-  const pathFor = (id) => (id ? (LOCAL_HOST ? BASE + '?g=' + id : BASE + id) : BASE);
+  // A live room is room:<words>, at /seven-tiles/room/<words>.
+  const roomWords = (id) => (/^room:([a-z]+(?:-[a-z]+){2})$/.exec(id || '') || [])[1] || null;
+  const pathFor = (id) => {
+    const room = roomWords(id);
+    if (room) return BASE + (LOCAL_HOST ? '?room=' : 'room/') + room;
+    return id ? (LOCAL_HOST ? BASE + '?g=' + id : BASE + id) : BASE;
+  };
   const linkFor = (id, token) => location.origin + pathFor(id) + (token ? '#k=' + token : '');
   function idFromUrl() {
     const q = new URLSearchParams(location.search).get('g');
@@ -87,6 +93,7 @@
     const old = store.get('sm.local', null);
     if (old && old.moves && old.seed) games.put({ id: newId(), kind: old.kind, level: old.level, names: old.names, seed: old.seed, moves: old.moves, over: !!old.over });
     store.del('sm.local'); store.del('sm.online');
+    for (const rec of games.list()) if (rec.kind === 'same') games.remove(rec.id);   // an offline Same Rack that never shipped
   })();
 
   // ---- dictionary --------------------------------------------------------
@@ -111,7 +118,8 @@
     .catch(() => { /* the full list stands in */ });
 
   // ---- session -----------------------------------------------------------
-  // G: { id, kind: 'bot'|'hotseat'|'online', level, names, state, me, online: {token}, hidden, session }
+  // G: { id, kind: 'bot'|'hotseat'|'online'|'room', level, names, state, me, online: {token}, hidden, session }
+  // (a Same Rack room has more: see "Same Rack" below)
   let G = null;
   let sessions = 0;        // bumps per opened game; async callbacks check it
   let navGen = 0;          // bumps per navigation request; a stale open() gives up
@@ -121,17 +129,18 @@
   let swapMode = false;
   let marks = new Set();   // rack slots marked for a swap
   let busy = false;        // a move is in flight (bot thinking, server call, list loading)
-  let pollTimer = null, botTimer = null, lastHiddenPoll = 0;
+  let pollTimer = null, botTimer = null, lastHiddenPoll = 0, roomClock = null, roomTimer = null;
   let statusIsPreview = false, stickyError = null;
   let R = null;            // review mode, see below
   let seenMoves = 0;       // history length already shown, for the bingo animation
 
   const alive = (s) => !!G && G.session === s;
-  const myTurn = () => !!G && !R && !G.state.over && !busy && (G.kind === 'hotseat' ? !G.hidden : G.state.turn === G.me);
+  const myTurn = () => !!G && !R && !G.state.over && !busy && (G.kind === 'room' ? G.phase === 'play' && G.me !== null : G.kind === 'hotseat' ? !G.hidden : G.state.turn === G.me);
   // Laying tiles out is allowed on the opponent's turn too: the board shows the
   // score and whether it is legal, and only playing it waits for the turn.
-  const canDraft = () => !!G && !R && !G.state.over && !G.hidden && viewer() !== null && !(busy && G.state.turn === viewer());
+  const canDraft = () => !!G && !R && !G.state.over && !G.hidden && viewer() !== null && (G.kind === 'room' ? G.phase === 'play' : !(busy && G.state.turn === viewer()));
   const viewer = () => (G.kind === 'hotseat' ? G.state.turn : G.me);   // null for a spectator
+  const myRack = () => (G.kind === 'room' ? G.state.rack : G.state.racks[viewer()]);   // Same Rack has one rack, everyone's
   const nameOf = (p) => G.names[p] || (p === 0 ? 'Player 1' : 'Player 2');
   const isYou = (p) => G.kind !== 'hotseat' && p === G.me;
 
@@ -163,6 +172,8 @@
   function leaveGame() {
     clearTimeout(botTimer); botTimer = null;
     stopPolling();
+    stopRoomClock();
+    stopRoomPoll();
     G = null; R = null; busy = false; resetTurnUi();
     ui.board.classList.remove('valid', 'review');
   }
@@ -223,8 +234,7 @@
       const before = R.states[R.k - 1];
       return before.racks[before.turn];
     }
-    const p = viewer();
-    return p === null ? [] : G.state.racks[p];
+    return viewer() === null ? [] : myRack();
   }
   // In review, the rack slots the reviewed move used: the tiles it played (a
   // blank counts as the blank) or swapped, or those of the suggested play
@@ -286,6 +296,10 @@
   }
   function render() {
     if (!G) return;
+    // Same Rack has no swaps, resigning or review
+    for (const b of [ui.swap, ui.resign, ui.review]) b.style.display = G.kind === 'room' ? 'none' : '';
+    if (G.kind === 'room') { renderRoom(); return; }
+    ui.pass.textContent = 'Pass';
     const s = G.state;
     for (let p = 0; p < 2; p++) {
       const el = ui.players[p];
@@ -331,7 +345,7 @@
 
   // ---- placing tiles -------------------------------------------------------
   function slotFor(letter) {
-    const rack = G.state.racks[viewer()];
+    const rack = myRack();
     const used = new Set(pending.map((t) => t.ri));
     let blank = -1;
     for (let i = 0; i < rack.length; i++) {
@@ -349,7 +363,7 @@
     cursor = (r < N && c < N) ? { r, c, down: cursor.down } : null;
   }
   async function place(r, c, ri, b) {
-    let l = G.state.racks[viewer()][ri];
+    let l = myRack()[ri];
     if (b) {
       const s = G.session, before = pending.length;
       l = await pickLetter();
@@ -414,7 +428,7 @@
     const pi = pending.findIndex((t) => t.r === r && t.c === c);
     if (pi >= 0) { takeBack(pi); return; }
     if (G.state.board[i]) return;
-    if (sel >= 0) { place(r, c, sel, G.state.racks[viewer()][sel] === '?'); return; }
+    if (sel >= 0) { place(r, c, sel, myRack()[sel] === '?'); return; }
     if (cursor && cursor.r === r && cursor.c === c) cursor.down = !cursor.down;
     else cursor = { r, c, down: cursor ? cursor.down : false };
     ui.board.focus({ preventScroll: true });
@@ -425,7 +439,7 @@
     const slot = e.target.closest('.sm-slot');
     if (!slot || !G || R || G.hidden || viewer() === null) return;
     const i = +slot.dataset.i;
-    const rack = G.state.racks[viewer()];
+    const rack = myRack();
     if (i >= rack.length || pending.some((t) => t.ri === i)) return;
     if (swapMode) { if (marks.has(i)) marks.delete(i); else marks.add(i); render(); return; }
     if (!canDraft()) return;
@@ -532,7 +546,7 @@
     drag = { src, x: e.clientX, y: e.clientY, active: false, ghost: null, over: null, pointerId: e.pointerId, lifted: null, hiddenNode: null };
   }
   function activateDrag() {
-    const rack = G.state.racks[viewer()];
+    const rack = myRack();
     const t = drag.src.kind === 'rack' ? rack[drag.src.i] : pending[drag.src.pi].l;
     const b = drag.src.kind === 'rack' ? t === '?' : pending[drag.src.pi].b;
     const ghost = document.createElement('div');
@@ -560,7 +574,7 @@
   function onPointerMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     if (pinch.active) { endDrag(drag); render(); return; }
-    const rack = G.state.racks[viewer()];
+    const rack = myRack();
     if (!drag.active) {
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
       activateDrag();
@@ -589,7 +603,7 @@
     if (!d.active && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) { drag = null; return; }   // a plain click; the click handlers take it
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
     if (!d.active) activateDrag();   // a press-and-release jump with no moves between (some pointers do that)
-    const rack = G.state.racks[viewer()];
+    const rack = myRack();
     const target = dropTarget(e.clientX, e.clientY);
     if (!target && rackBand(e.clientX, e.clientY)) {
       if (d.src.kind === 'pending') { pendingToRack(); if (!drag) return; }
@@ -703,7 +717,7 @@
   ui.recall.addEventListener('click', recall);
   ui.shuffle.addEventListener('click', () => {
     if (!G || R || G.hidden || viewer() === null) return;
-    const rack = G.state.racks[viewer()];
+    const rack = myRack();
     const order = rack.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
     permuteRack(rack, order);
@@ -717,6 +731,7 @@
     setStatus(swapMode ? 'Pick the tiles to swap, then confirm. Swapping uses your turn.' : '');
   });
   ui.pass.addEventListener('click', () => {
+    if (G && G.kind === 'room') { roomDone(); return; }   // Same Rack's Done: end this round now
     if (!myTurn()) return;
     if (pending.length) { setStatus('Recall your tiles before passing.', 'bad'); return; }
     if (G.state.racks[G.state.turn].length && !window.confirm('Pass this turn without playing?')) return;
@@ -731,12 +746,13 @@
   });
   ui.play.addEventListener('click', play);
   function play() {
+    if (G && G.kind === 'room') { roomPrimary(); return; }
     if (!myTurn()) {
       if (canDraft() && pending.length) { setStatus('Not your turn yet. The tiles stay where they are, ready to play when it is.'); statusIsPreview = true; }
       return;
     }
     if (swapMode) {
-      const rack = G.state.racks[viewer()];
+      const rack = myRack();
       commit({ t: 'swap', tiles: [...marks].map((i) => rack[i]) });
       return;
     }
@@ -837,6 +853,7 @@
     }, 650);
   }
   function persist() {
+    if (G && G.kind === 'room') { persistRoom(); return; }
     if (!G || (G.kind === 'online' && G.me === null)) return;
     const was = games.get(G.id);
     games.put({ id: G.id, kind: G.kind, level: G.level, names: G.names, seed: G.state.seed, moves: G.state.moves, over: G.state.over,
@@ -886,7 +903,7 @@
   // Against a person the review waits for the end of the game: past best
   // plays are hints about the board that is still in play. Against a bot it
   // is open at any time.
-  const reviewAllowed = () => !!G && (G.kind === 'bot' || G.state.over);
+  const reviewAllowed = () => !!G && G.kind !== 'room' && (G.kind === 'bot' || G.state.over);
   function enterReview(k) {
     if (!G || !dict || !reviewAllowed()) return;
     R = { k: 0, states: C.positions(G.state.seed, G.state.moves), cands: new Map(), ghost: null, summary: null };
@@ -1097,6 +1114,7 @@
   }
 
   function gameLabel(rec) {
+    if (rec.kind === 'room') return { kind: 'Same Rack', code: rec.words, when: rec.over ? 'finished' : rec.row && rec.row.phase !== 'lobby' ? 'round ' + rec.round : 'in the lobby' };
     const kind = rec.kind === 'bot' ? 'vs ' + botName(rec.level) : rec.kind === 'hotseat' ? 'Pass and play' : 'Online' + (rec.names && rec.names[1] ? ': ' + rec.names[0] + ' vs ' + rec.names[1] : rec.names && rec.names[0] ? ' with ' + rec.names[0] : '');
     const n = rec.moves ? rec.moves.length : 0;
     let when;
@@ -1109,7 +1127,7 @@
   function gameRowHtml(id, l) {
     const now = l.when === 'your turn';
     return '<button data-open="' + esc(id) + '"' + (now ? ' class="now"' : '') + '><b>' + esc(l.kind) + '</b>' + (now ? '<span class="sm-turn">Your turn</span>' : '') +
-      '<small>' + esc(l.when) + ' · ' + esc(id) + '</small></button>';
+      '<small>' + esc(l.when) + ' · ' + esc(l.code || id) + '</small></button>';
   }
   const serverWhen = (m) => (m.finished || m.resigned) ? 'finished' : m.moves % 2 === m.seat ? 'your turn' : m.p2_name ? 'their turn' : 'waiting for a player';
   // Correct a row already on screen once the server has said whose turn it is.
@@ -1166,6 +1184,7 @@
       '<div class="sm-botscale"><small>0: new to the game</small><small>100: full strength</small></div>' +
       '<button class="primary" id="sm-m-bot"' + noDict + '>Play at level <span id="sm-m-lvlnum">' + botLevel + '</span></button></div>' +
       '<button id="sm-m-hotseat"' + noDict + '><b>Two players, one device</b><small>pass it back and forth; racks hide between turns</small></button>' +
+      '<button id="sm-m-same"' + noDict + '><b>Same Rack</b><small>a group plays the same racks</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
     if (list.length) {
@@ -1205,6 +1224,7 @@
     $('sm-m-bot').addEventListener('click', () => { closeOverlay(); startLocal('bot', botLevel); });
     ui.overlay.querySelectorAll('button[data-open]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); openGame(b.dataset.open); }));
     $('sm-m-hotseat').addEventListener('click', () => { closeOverlay(); startLocal('hotseat'); });
+    $('sm-m-same').addEventListener('click', () => showSameSetup());
     $('sm-m-online').addEventListener('click', () => { closeOverlay(); createOnline(); });
     const back = $('sm-m-back');
     if (back) back.addEventListener('click', () => { closeOverlay(); setUrl(G.id); });
@@ -1229,6 +1249,7 @@
       '<div><b>Placing tiles:</b> drag a tile onto the board, or click a square and type, or click a tile and then a square. Drag tiles around the rack to reorder them.</div>' +
       '<div><kbd>→</kbd> <kbd>↓</kbd> switch across and down · <kbd>⌫</kbd> take back the tile at the cursor · <kbd>↵</kbd> play · <kbd>Esc</kbd> recall</div>' +
       '<div><b>Review:</b> click any move in the list to step through the game (against a person, once the game is over). <kbd>←</kbd> <kbd>→</kbd> move between turns. Ratings compare your move with the best play made of common words: that play is 100, and a rare word that beats it rates above 100. A better rare-word play you did not find is noted separately.</div>' +
+      '<div><b>Same Rack:</b> a group plays the same racks. Your play scores for you alone. Then the best play made of everyday words goes on the board for everyone. The highest total wins.</div>' +
       '<div><b>Word list:</b> ' + lexiconCredit() + ' The ratings use only its common words, and the bot keeps mostly to them at low levels, less so as the level rises.</div>' +
       '</div>' +
       '<button class="primary" id="sm-help-ok" style="margin-top:12px">Got it</button>');
@@ -1236,6 +1257,15 @@
   }
   // The tiles this player cannot see: the bag plus the other rack.
   function showUnseen() {
+    if (G.kind === 'room') {   // the bag, and the rack while it is hidden
+      const tiles = G.state.bag.concat(G.hidden ? G.state.rack : []), counts = {};
+      for (const t of tiles) counts[t] = (counts[t] || 0) + 1;
+      let html = '<h2>Unseen tiles</h2><p>' + G.state.bag.length + ' in the bag' + (G.hidden ? ' and ' + G.state.rack.length + ' on the next rack' : '') + '.</p><div class="sm-unseen">';
+      for (const k of Object.keys(C.TILES)) html += '<div class="' + (counts[k] ? '' : 'none') + '">' + k + '<small>' + (counts[k] || 0) + '</small></div>';
+      openOverlay(html + '</div><button class="primary" id="sm-unseen-ok">Close</button>');
+      $('sm-unseen-ok').addEventListener('click', closeOverlay);
+      return;
+    }
     const s = R ? R.states[R.k] : G.state;
     const me = R ? (R.k > 0 && canAnalyze(R.k) ? R.states[R.k - 1].turn : null) : viewer();
     const opp = me === null ? null : 1 - me;
@@ -1298,6 +1328,7 @@
   }
   async function openGame(id) {
     const rec = games.get(id);
+    if (rec && rec.kind === 'room') { openRoom(rec.words); return; }
     if (rec && rec.kind !== 'online') { resumeLocal(rec); return; }
     if (Net.enabled) { openOnline(id); return; }
     if (rec && rec.seed) { showCachedOnline(rec); return; }
@@ -1319,6 +1350,863 @@
     setStatus('Offline: this is the game as it was last seen here. Moves need a connection.', 'bad');
   }
 
+  // ---- Same Rack --------------------------------------------------------------------
+  // A group of up to twelve plays the same racks in a room on the server. Each
+  // round everyone plays the same rack on their own copy of the board, and a
+  // play scores for its player alone. Then the best play made of everyday
+  // words goes on the board for everyone (core.js, given the common list), so
+  // the whole game follows from the seed and every phone can deal every rack
+  // by itself.
+  //
+  // With signal, players share the server's clock: a round opens for everyone
+  // at once, closes at its deadline or once everyone is done, and the plays
+  // are shown together. Without signal, a phone keeps going on its own clock
+  // and files its plays when it can. The server shows the other plays of a
+  // round only to a player who has finished it, so a late play could not have
+  // used them. A player who falls behind catches up on their own clock, or
+  // skips ahead to the room's round. See the rooms section of
+  // plans/seven-tiles-supabase.sql.
+  //
+  // G for a room: { id: 'room:<words>', kind: 'room', words, token, me, names,
+  //   seed, states, row, offline, offset, rtt, mine, others, phase, cur, seconds, ... }
+  //   states[i]: the game after i rounds, worked out as far as needed.
+  //   row: the server's last answer (saved with the game, so it opens offline).
+  //   offset: server time minus this clock, from the quickest answer so far.
+  //   mine: { round: { play, done, sent } }, this player's plays, sent or not.
+  //   others: the other players' finished plays the server has shown, by 'round:player'.
+  //   phase: 'lobby', 'ready' (your next round waits for you to start it on
+  //     your own clock), 'play', 'wait' (you are done and the room is still
+  //     playing your round), 'reveal' (the room is between rounds), 'over'
+  //     (you have played every round) or 'watch' (no seat).
+  //   cur: the round being played, { k, live, ends, move, score, word }.
+  //   bots, botDue: the bots this page plays for (the host's), see "bots" below.
+  // Saved as { id, kind: 'room', words, token, player, over, round, row, mine, cur: { k, ends }, bots }.
+  const SAME_ROUNDS = [10, 15, 0], SAME_SECONDS = [60, 90, 120, 180, 0];
+  const secondsWords = (t) => (t < 120 ? t + ' seconds' : t / 60 + ' minutes');
+  const draftKey = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
+  const draftMove = () => ({ t: 'play', tiles: pending.map((t) => ({ r: t.r, c: t.c, l: t.l, b: t.b })) });
+  const roomId = (words) => 'room:' + words;
+  // three words however they were typed: "Otter slate, plum" is otter-slate-plum
+  function normWords(text) {
+    const w = String(text || '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    return w.length === 3 && w.every((x) => x.length <= 12) ? w.join('-') : null;
+  }
+  function roomFromUrl() {
+    const m = location.pathname.match(/\/seven-tiles\/room\/([a-z-]+)\/?$/i);
+    return normWords(new URLSearchParams(location.search).get('room') || (m && m[1]));
+  }
+  const unpackPlay = (str) => { try { return str ? C.unpack(G.words, str) : null; } catch (e) { return null; } };
+  const roomPlayer = (p) => (G.row ? G.row.players.find((x) => x.player === p) : null) || null;
+  const joinedAt = () => (roomPlayer(G.me) || {}).joined || 1;
+  const online = () => !G.offline && !!G.row;
+  // a failed call in words: one that never reached the server means no signal
+  const whyFailed = (e) => (navigator.onLine === false || /fetch|network|load failed|no answer/i.test(e.message) ? 'no signal'
+    : /room is full/.test(e.message) ? 'the room is full (12 players)' : e.message);
+  // What decides a room's game besides its seed: the rules and both word lists.
+  // A room keeps the one it was started with, and a page that differs (an old
+  // copy from before an update, say) must not play it, or its boards would not
+  // match everyone else's.
+  const rulesKey = () => C.GROUP_VERSION + ':' + dict.size + ':' + common.size;
+
+  // ---- the game, worked out from the seed
+  function upTo(n) {
+    const S = G.states;
+    while (S.length <= n && !S[S.length - 1].over) S.push(C.resolveRound(S[S.length - 1], [], dict, common));
+  }
+  // the game before round k, or null when it ends before then
+  function stateAt(k) { upTo(k - 1); const s = G.states[k - 1]; return s && !s.over ? s : null; }
+  // round k as it went: its rack, best play, top play and board play
+  function roundOf(k) { upTo(k); const s = G.states[k]; return s ? s.rounds[k - 1] : null; }
+  const roundsLabel = (k) => 'Round ' + k + (G.row && G.row.limit ? ' of ' + G.row.limit : '');
+
+  // ---- plays: this player's own, and the others' as the server shows them
+  const mineAt = (k) => (G.me === null ? null : G.mine[k] || null);
+  const entryOf = (k, p) => (p === G.me ? mineAt(k) : G.others.get(k + ':' + p) || null);
+  function myRound() { if (G.me === null) return Infinity; let k = joinedAt(); while (mineAt(k) && mineAt(k).done) k++; return k; }
+  // an entry's score on its round's board, worked out once
+  function scored(e, k) {
+    if (!e || !e.play) return null;
+    if (e.resFor !== e.play) {
+      const st = stateAt(k), move = unpackPlay(e.play);
+      e.res = st ? C.checkPlay(st.board, st.rack, move, dict) : { ok: false, reason: 'There is no such round.' };
+      e.resFor = e.play;
+    }
+    return e.res;
+  }
+  // the round the room plays next with everyone: the open one, or the one after the reveal
+  const liveRound = () => (G.row.closed < G.row.round ? G.row.round : G.row.round + 1);
+
+  // ---- choosing and opening a room
+  function showSameSetup(note) {
+    const name = store.get('sm.name', '') || (user && user.name) || '';
+    openOverlay('<h2>Same Rack</h2>' +
+      (note ? '<p class="sm-card-note">' + esc(note) + '</p>' : '') +
+      '<div class="sm-k" style="text-align:left">Your name</div><input type="text" id="sm-live-name" maxlength="24" value="' + esc(name) + '">' +
+      '<div class="sm-row" style="justify-content:center;margin-top:12px"><button class="primary" id="sm-live-new">Start a room</button></div>' +
+      '<div class="sm-k" style="text-align:left;margin-top:16px">Or join a room</div>' +
+      '<div class="sm-row" style="margin-top:0;flex-wrap:nowrap"><input type="text" id="sm-live-words" maxlength="40" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Its three words"><button id="sm-live-join" style="flex:none">Join</button></div>' +
+      '<div class="sm-note" id="sm-live-err" style="color:var(--bad)"></div>' +
+      '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-live-back">Back</button></div>');
+    const err = (t) => { $('sm-live-err').textContent = t; };
+    const named = () => {
+      const n = $('sm-live-name').value.trim();
+      if (!n) { err('Type your name first.'); $('sm-live-name').focus(); return null; }
+      store.set('sm.name', n);
+      return n;
+    };
+    const join = () => {
+      if (!named()) return;
+      const words = normWords($('sm-live-words').value);
+      if (!words) { err('Type the room’s three words, like ' + newId() + '.'); return; }
+      closeOverlay(); openRoom(words);
+    };
+    $('sm-live-new').addEventListener('click', () => { const n = named(); if (n) { closeOverlay(); createRoom(n); } });
+    $('sm-live-join').addEventListener('click', join);
+    $('sm-live-name').addEventListener('keydown', (e) => e.stopPropagation());
+    $('sm-live-words').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') join(); });
+    $('sm-live-back').addEventListener('click', showMenu);
+  }
+  async function createRoom(name) {
+    const my = ++navGen, token = randomToken();
+    setStatus('Opening a room…');
+    await dictReady; await commonReady;
+    if (my !== navGen) return;
+    if (!dict || !common) { setStatus(''); showSameSetup('The word lists did not load. Reload to try again.'); return; }
+    if (!Net.enabled) { setStatus(''); showSameSetup('Rooms are not set up on this site.'); return; }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const words = newId();
+      try {
+        await Net.rpc('create_room', { p_code: words, p_seed: C.pack(words, { s: randomSeed(), v: rulesKey() }), p_name: name, p_token: token });
+        if (my !== navGen) return;
+        games.put({ id: roomId(words), kind: 'room', words, token, player: 0, over: false, round: 0 });
+        setStatus('');
+        openRoom(words);
+        return;
+      } catch (e) {
+        if (my !== navGen) return;
+        if (/taken/.test(e.message)) continue;
+        setStatus('');
+        showSameSetup('Could not open a room: ' + whyFailed(e) + '.');
+        return;
+      }
+    }
+    setStatus('');
+    showSameSetup('Could not find free words for a room. Try again.');
+  }
+  // Opens a room, taking a seat when there is one: the seat this browser
+  // holds, the account's, or the next free one. A full or finished room is
+  // watched instead. Without signal, a room this browser has played opens
+  // from its saved copy.
+  async function openRoom(words) {
+    const my = ++navGen;
+    await dictReady; await commonReady;
+    if (my !== navGen) return;
+    if (!dict || !common) { failToMenu('The word lists did not load. Reload to try again.'); return; }
+    const id = roomId(words), rec = games.get(id);
+    let token = (rec && rec.token) || null, row = null, t0 = Date.now(), offline = false;
+    try {
+      if (!Net.enabled) throw new Error('rooms are not set up on this site');
+      row = await Net.rpc('get_room', { p_code: words, p_token: token });
+      if (my !== navGen) return;
+      if (!row) { failToMenu('There is no room called ' + words + '.'); return; }
+      if (row.me === null && row.phase !== 'over' && row.players.length < 12) {
+        let name = store.get('sm.name', '') || (user && user.name) || '';
+        if (!name) {
+          name = await askText('Join the room', 'Your name, shown to the other players.', 'Your name', '');
+          if (my !== navGen) return;
+          if (!name) { showMenu(); return; }
+          store.set('sm.name', name);
+        }
+        const seat = await Net.rpc('join_room', { p_code: words, p_name: name, p_token: token || randomToken() });
+        if (my !== navGen) return;
+        token = seat.token;
+        games.put({ id, kind: 'room', words, token, player: seat.player, over: false, round: row.round });
+        t0 = Date.now();
+        row = await Net.rpc('get_room', { p_code: words, p_token: token });
+        if (my !== navGen) return;
+      }
+    } catch (e) {
+      if (my !== navGen) return;
+      if (!(rec && rec.row)) { failToMenu('Could not open room ' + words + ': ' + whyFailed(e) + '.'); return; }
+      row = rec.row; offline = true;   // no signal: the copy saved here
+    }
+    let seed;
+    try { seed = C.unpack(words, row.seed); } catch (e) { failToMenu('The record of room ' + words + ' is damaged.'); return; }
+    if (!seed || !Number.isInteger(seed.s)) { failToMenu('The record of room ' + words + ' is damaged.'); return; }
+    if (seed.v !== rulesKey()) { failToMenu('Room ' + words + ' was started on a different version of Seven Tiles. Reload the page to update it.'); return; }
+    seed = seed.s;
+    leaveGame();
+    const saved = rec && rec.token === token ? rec : null;
+    G = { id, kind: 'room', words, token: row.me === null ? null : token, me: row.me, names: [], seed, states: null, row: null, offline: false, offset: 0, rtt: Infinity,
+          mine: (saved && saved.mine) || {}, others: new Map(), phase: null, cur: null, seconds: row.seconds, cardShown: 0, readyFor: 0,
+          bots: ((saved && saved.bots) || []).map((b) => Object.assign({}, b, { seen: 0 })), botDue: {},
+          state: null, hidden: true, session: ++sessions };
+    seenMoves = 0;
+    setUrl(id);
+    setStatus(row.me === null ? (row.phase === 'over' ? 'This game is over.' : 'This room is full (12 players). You’re watching.') : '');
+    integrateRoom(row, t0, Date.now(), offline);
+    // a round that was under way carries on with the time it had left, when the room is not playing it with everyone
+    const c = saved && saved.cur;
+    if (c && c.k === myRound() && G.phase === 'ready') { beginRound(c.k, false, c.ends); settle(); }
+    startRoomClock();
+    if (!offline) flush();
+  }
+
+  // Folds an answer from the server (or, offline, the saved one) into the page.
+  function integrateRoom(row, t0, t1, offline) {
+    if (!row || !G || G.kind !== 'room') return;
+    if (!offline) {
+      if (G.row && !G.offline && row.now < G.row.now) return;   // an older answer that arrived late
+      if (t1 - t0 <= G.rtt) { G.rtt = t1 - t0; G.offset = row.now - (t0 + t1) / 2; }   // the quickest answer gives the truest clock
+    }
+    G.offline = !!offline;
+    G.row = row; G.seconds = row.seconds;
+    G.names = [];
+    for (const x of row.players) G.names[x.player] = x.name;
+    if (!G.states || (G.states.length === 1 && G.states[0].opts.limit !== row.limit)) {
+      try { G.states = [C.newGroup(G.seed, { limit: row.limit, board: 'engine' }, dict, common)]; }
+      catch (e) { stopRoomPoll(); setStatus('This room’s game could not be dealt: ' + e.message, 'bad'); return; }
+    }
+    const others = new Map();
+    for (const x of row.plays) {
+      if (x.player === G.me) {
+        const m = G.mine[x.round];
+        if (!m || m.sent) G.mine[x.round] = { play: x.play, done: x.done, sent: true };   // what the server has, unless this phone has newer
+      } else {
+        const old = G.others.get(x.round + ':' + x.player);
+        others.set(x.round + ':' + x.player, old && old.play === x.play && old.done === x.done ? old : { play: x.play, done: x.done });
+      }
+    }
+    G.others = others;
+    if (G.cur && G.cur.live && G.cur.k === row.round) G.cur.ends = row.round_ends ? row.round_ends - G.offset : null;
+    settle();
+    if (!offline) { reportEnd(); driveBots(); }
+    persistRoom();
+    scheduleRoomPoll();
+  }
+  // The engine knows the game is over before the server does when the bag
+  // can no longer make a rack: the first page to see it says so.
+  function reportEnd() {
+    if (G.me === null || G.row.phase !== 'playing') return;
+    const k = myRound();
+    if (stateAt(k) || !G.states[G.states.length - 1].over || G.states[G.states.length - 1].endReason !== 'bag') return;
+    const last = G.states.length - 1;
+    if (G.reported === last + ':' + G.row.round) return;
+    G.reported = last + ':' + G.row.round;
+    Net.rpc('end_room', { p_code: G.words, p_token: G.token, p_round: last }).catch(() => { G.reported = null; });
+  }
+  function persistRoom() {
+    if (!G || G.kind !== 'room' || G.me === null) return;
+    const mine = {};
+    for (const k of Object.keys(G.mine)) mine[k] = { play: G.mine[k].play, done: G.mine[k].done, sent: G.mine[k].sent };
+    games.put({ id: G.id, kind: 'room', words: G.words, token: G.token, player: G.me, over: G.phase === 'over', round: Math.min(myRound(), 99),
+                row: G.row, mine, cur: G.cur ? { k: G.cur.k, ends: G.cur.ends } : null, bots: G.bots.map((b) => ({ p: b.p, token: b.token, d: b.d, upto: b.upto, ready: b.ready })) });
+  }
+
+  // Works out where this player is, starts a round the room is playing with
+  // everyone, and shows what goes with it.
+  function settle() {
+    if (!G || G.kind !== 'room') return;
+    const was = G.phase, row = G.row, k = myRound();
+    let phase;
+    if (row.phase === 'lobby') phase = 'lobby';
+    else if (G.me === null) phase = row.phase === 'over' ? 'over' : 'watch';
+    else if (!stateAt(k) || (row.end_reason === 'bag' && k > row.round)) phase = 'over';
+    else if (G.cur && G.cur.k === k) phase = 'play';
+    else if (online() && row.phase === 'playing' && row.round === k && row.closed < k) { beginRound(k, true); phase = 'play'; }
+    else if (online() && row.phase === 'playing' && row.round === k - 1) phase = row.closed < k - 1 ? 'wait' : 'reveal';
+    else phase = 'ready';
+    if (G.cur && (phase !== 'play' || G.cur.k !== k)) G.cur = null;
+    G.phase = phase;
+    // the board: before your round while you play it, after your last one otherwise
+    const at = G.me === null ? (row.phase === 'lobby' ? 0 : row.closed) : Math.max(0, Math.min(k - 1, 99));
+    upTo(at);
+    G.state = G.states[Math.min(at, G.states.length - 1)];
+    G.hidden = phase !== 'play';
+    if (G.state.history.length !== seenMoves) seenMoves = G.state.history.length;
+    render();
+    // the room's own cards take over the screen, but never from another card (the menu, a blank's letter)
+    const free = !ui.overlay.classList.contains('is-open') || !!$('sm-room-card');
+    const last = k - 1;
+    if (phase === 'lobby') { if (was !== 'lobby' && free) showLobby(); else updateLobby(); }
+    else if (phase === 'over') {
+      if (was !== 'over') { G.cardShown = last; if (free) showRoomOver(); }
+      else if ($('sm-room-over') && $('sm-room-over').dataset.sig !== overSig()) showRoomOver();   // late rounds fill in
+    }
+    else if (G.me !== null && last >= joinedAt() && last > G.cardShown && phase !== 'wait' && phase !== 'play') {
+      if (free) { G.cardShown = last; showRoundCard(last, true); }
+    } else if ($('sm-room-card')) {
+      const card = $('sm-room-card');
+      if (card.dataset.k && card.dataset.sig !== roundSig(+card.dataset.k)) showRoundCard(+card.dataset.k, card.dataset.live === '1');
+      else updateRoundCard();
+    }
+  }
+  function beginRound(k, live, ends) {
+    G.cur = { k, live, ends: live ? (G.row.round_ends ? G.row.round_ends - G.offset : null) : ends !== undefined ? ends : (G.seconds ? Date.now() + G.seconds * 1000 : null),
+              move: null, score: 0, word: null };
+    G.state = stateAt(k);
+    resetTurnUi();
+    const m = mineAt(k), move = m && m.play ? unpackPlay(m.play) : null, res = move ? C.checkPlay(G.state.board, G.state.rack, move, dict) : null;
+    if (res && res.ok) { G.cur.move = move; G.cur.score = res.score; G.cur.word = res.main; pending = draftFrom(move); }   // a play sent before, back on the board
+    closeRoomCard();
+    setStatus('');
+  }
+  // a saved play laid back out on the board, matched to rack slots
+  function draftFrom(move) {
+    const rack = G.state.rack, used = new Set(), out = [];
+    for (const t of move.tiles || []) {
+      const ri = rack.findIndex((x, i) => x === (t.b ? '?' : t.l) && !used.has(i));
+      if (ri < 0) return [];
+      used.add(ri); out.push({ r: t.r, c: t.c, l: t.l, b: !!t.b, ri });
+    }
+    return out;
+  }
+
+  // ---- playing a round
+  function roomPrimary() {
+    if (G.phase === 'play') roomSubmit();
+    else if (G.phase === 'ready') startOwnRound();
+    else if (G.phase === 'reveal') roomReady();
+    else if (G.phase === 'lobby') showLobby();
+    else if (G.phase === 'over') showRoomOver();
+  }
+  function startOwnRound() {
+    if (G.phase !== 'ready') return;
+    beginRound(myRound(), false);
+    G.phase = 'play';
+    persistRoom();
+    settle();
+  }
+  function roomSubmit() {
+    if (G.phase !== 'play' || G.me === null) return;
+    if (!pending.length) { setStatus('Place some tiles first: click a square and type, or drag a tile from the rack.'); return; }
+    const move = draftMove(), res = C.checkPlay(G.state.board, G.state.rack, move, dict);
+    if (!res.ok) { setStatus(res.reason, 'bad'); return; }
+    G.cur.move = move; G.cur.score = res.score; G.cur.word = res.main;
+    G.mine[G.cur.k] = { play: C.pack(G.words, move), done: false, sent: false };
+    persistRoom();
+    render();
+    flush();
+  }
+  // Done, or time up: the better of the submitted play and a legal one on the board stands.
+  function finishRound(timeUp) {
+    if (G.phase !== 'play' || !G.cur || G.me === null) return;
+    if (drag) endDrag(drag);
+    const k = G.cur.k, draft = pending.length ? draftMove() : null, res = draft ? C.checkPlay(G.state.board, G.state.rack, draft, dict) : null;
+    const better = res && res.ok && (!G.cur.move || res.score > G.cur.score);
+    const move = better ? draft : G.cur.move;
+    if (!timeUp && !move && !window.confirm('End this round without a play?')) return;
+    G.mine[k] = { play: move ? C.pack(G.words, move) : null, done: true, sent: false };
+    G.cur = null;
+    resetTurnUi();
+    setStatus('');
+    persistRoom();
+    settle();
+    flush();
+  }
+  function roomDone() {
+    if (G.phase === 'play') finishRound(false);
+    else if (G.phase === 'ready' && online() && myRound() < liveRound()) skipAhead();
+  }
+  // Behind the room: the rounds in between score nothing, and you join the room's round.
+  function skipAhead() {
+    const from = myRound(), to = liveRound();
+    if (!window.confirm(to - from > 1 ? 'Skip rounds ' + from + ' to ' + (to - 1) + '? They score nothing for you.' : 'Skip round ' + from + '? It scores nothing for you.')) return;
+    for (let k = from; k < to; k++) G.mine[k] = { play: null, done: true, sent: false };
+    G.cardShown = to - 1;
+    persistRoom();
+    settle();
+    flush();
+  }
+  async function roomReady() {
+    if (G.phase !== 'reveal' || G.me === null) return;
+    const want = G.row.round + 1, s = G.session, t0 = Date.now();
+    if (G.readyFor >= want) return;
+    G.readyFor = want;
+    updateRoundCard(); render();
+    try {
+      const row = await ask('room_ready', { p_code: G.words, p_token: G.token, p_round: want });
+      if (alive(s)) integrateRoom(row, t0, Date.now());
+    } catch (e) {
+      if (!alive(s)) return;
+      G.readyFor = 0;
+      wentOffline(e);
+    }
+  }
+
+  // ---- talking to the server
+  // Sends this player's unsent plays, oldest round first. A play the server
+  // will never take (a round it has already finished, say) is let go.
+  const ask = (fn, args, anon) => Promise.race([anon ? Net.anon(fn, args) : Net.rpc(fn, args), new Promise((_, no) => setTimeout(() => no(new Error('no answer')), 12000))]);
+  let flushing = false;
+  async function flush() {
+    if (flushing || !G || G.kind !== 'room' || G.me === null) return;
+    flushing = true;
+    const s = G.session;
+    try {
+      for (;;) {
+        const k = Object.keys(G.mine).map(Number).sort((a, b) => a - b).find((x) => !G.mine[x].sent);
+        if (k === undefined) return;
+        const m = G.mine[k], t0 = Date.now();
+        let row;
+        try { row = await ask('submit_play', { p_code: G.words, p_token: G.token, p_round: k, p_play: m.play, p_done: m.done }); }
+        catch (e) {
+          if (!alive(s)) return;
+          if (/done with that round|no round|joined at round|not started|bad play/.test(e.message)) { if (G.mine[k] === m) m.sent = true; persistRoom(); continue; }
+          wentOffline(e);
+          return;
+        }
+        if (!alive(s)) return;
+        if (G.mine[k] === m) m.sent = true;   // unless it was changed meanwhile, and that goes next
+        integrateRoom(row, t0, Date.now());
+      }
+    } finally { flushing = false; }
+  }
+  function wentOffline() {
+    if (!G || G.kind !== 'room') return;
+    const was = G.offline;
+    G.offline = true;
+    if (!was) settle();
+    scheduleRoomPoll();
+  }
+  // Polling: every two or three seconds with signal, and right after the moment
+  // the clock says something changes; every few seconds without. A page in the
+  // background stops asking, so after twenty seconds the others stop waiting for it.
+  function stopRoomPoll() { clearTimeout(roomTimer); roomTimer = null; }
+  function scheduleRoomPoll() {
+    stopRoomPoll();
+    if (!G || G.kind !== 'room' || document.visibilityState === 'hidden') return;
+    const row = G.row, now = Date.now();
+    let wait;
+    if (G.offline) wait = 6000;
+    else if (G.phase === 'over') { if (row.phase === 'over' && !row.players.some((x) => behind(x))) return; wait = 6000; }
+    else if (G.phase === 'play' && G.cur.live) wait = G.cur.ends ? Math.min(3000, Math.max(250, G.cur.ends + 3300 - now)) : 3000;
+    else if (G.phase === 'reveal') wait = row.next_starts ? Math.min(2000, Math.max(250, row.next_starts - G.offset + 250 - now)) : 2000;
+    else if (G.phase === 'play' || G.phase === 'ready') wait = 5000;
+    else wait = 2000;
+    const s = G.session;
+    roomTimer = setTimeout(() => { if (alive(s)) pollRoom(); }, wait);
+  }
+  // still playing rounds the room has finished
+  const behind = (x) => x.player !== G.me && x.joined + x.finished <= G.row.closed;
+  let roomAsking = false;
+  async function pollRoom() {
+    if (!G || G.kind !== 'room' || roomAsking) return;
+    const s = G.session;
+    roomAsking = true;
+    const back = G.offline;
+    try {
+      if (Object.values(G.mine).some((m) => !m.sent)) { await flush(); if (!alive(s) || G.offline) return; }
+      const t0 = Date.now();
+      let row;
+      try { row = await ask('get_room', { p_code: G.words, p_token: G.token }); }
+      catch (e) { if (alive(s)) wentOffline(e); return; }
+      if (!alive(s)) return;
+      if (!row) { stopRoomPoll(); setStatus('This room no longer exists.', 'bad'); return; }
+      integrateRoom(row, t0, Date.now());
+      if (back && !stickyError) setStatus('Back online. Your rounds are in.', 'good');
+    } finally { roomAsking = false; scheduleRoomPoll(); }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && G && G.kind === 'room') pollRoom(); });
+  window.addEventListener('online', () => { if (G && G.kind === 'room') pollRoom(); });
+
+  // ---- bots
+  // The host can seat bots in the lobby, to fill out a small game or to try a
+  // room out. The host's page plays for them: each round a bot works out its
+  // play at its level on the dial (core.js) and sends it as itself, by its own
+  // token and never with the host's account. A bot is here while the host's
+  // page is, and it never holds the room up for long: it plays a few seconds
+  // into a round (at once when everyone else is done) and is ready for the next
+  // round straight away. Rounds it missed while the host had no signal or
+  // left the room go in once the host is back.
+  // G.bots: [{ p, token, d, upto, ready, seen }]: its seat, token and level, the
+  //   last round it has played, the round it said it was ready for, and when it last called.
+  const BOT_LEVELS = [20, 40, 60, 80, 100];
+  const isBot = (p) => G.bots.some((b) => b.p === p);
+  async function addBot(d) {
+    const s = G.session, token = randomToken();
+    const seat = await ask('join_room', { p_code: G.words, p_name: 'Bot ' + (G.bots.length + 1) + ' (' + levelWords(d) + ')', p_token: token }, true);
+    if (!alive(s)) return;
+    G.bots.push({ p: seat.player, token, d, upto: 0, ready: 0, seen: Date.now() });
+    persistRoom();
+    pollRoom();
+  }
+  // a bot's play in round k, the same however often it is worked out
+  function botPlay(b, k) {
+    const st = stateAt(k);
+    if (!st) return null;
+    const view = { board: st.board, racks: [st.rack, []], turn: 0, bag: st.bag, finalTurns: null, over: false };
+    const rnd = C.seededRandom((G.seed ^ (b.p * 7919 + k * 104729)) >>> 0);
+    const m = C.botMoveAt(view, b.d, rnd, dict, { vocab: common, noEndgame: true, scoreOnly: true });
+    return m.t === 'play' ? C.pack(G.words, { t: 'play', tiles: m.tiles }) : null;
+  }
+  // when a bot plays the open round: a few seconds in, or now if everyone else here is done
+  function botDue(b, k, row) {
+    const key = b.p + ':' + k;
+    if (!G.botDue[key]) G.botDue[key] = Date.now() + (4 + Math.random() * (G.seconds ? Math.min(30, G.seconds * 0.4) : 20)) * 1000;
+    const people = row.players.filter((x) => !isBot(x.player) && x.here && x.joined <= row.round && !behind(x));
+    return people.length && people.every((x) => x.done) ? 0 : G.botDue[key];
+  }
+  // One pass over the bots, after each answer from the server: each plays the
+  // rounds it owes, says it is ready, or just checks in so it counts as here.
+  let botsBusy = false;
+  async function driveBots() {
+    if (botsBusy || !G || G.kind !== 'room' || !G.bots.length || G.offline || !G.row) return;
+    botsBusy = true;
+    const s = G.session;
+    let moved = false;
+    try {
+      for (const b of G.bots) {
+        let row = G.row;
+        for (let step = 0; step < 30; step++) {
+          if (!alive(s) || G.offline) return;
+          const x = row.players.find((y) => y.player === b.p);
+          if (!x || (row.phase === 'over' && b.upto >= row.round)) break;
+          const k = Math.max(b.upto + 1, x.joined), open = row.phase === 'playing' && row.closed < row.round;
+          let fn, args, after = null;
+          if (row.phase !== 'lobby' && (k <= row.closed || (open && k === row.round && Date.now() >= botDue(b, k, row))) && stateAt(k)) {
+            fn = 'submit_play'; args = { p_code: G.words, p_token: b.token, p_round: k, p_play: botPlay(b, k), p_done: true }; after = () => { b.upto = k; };
+          } else if (row.phase === 'playing' && row.next_starts && b.upto >= row.round && b.ready <= row.round) {
+            const want = row.round + 1;
+            fn = 'room_ready'; args = { p_code: G.words, p_token: b.token, p_round: want }; after = () => { b.ready = want; };
+          } else if (Date.now() - b.seen > 8000) {
+            fn = 'get_room'; args = { p_code: G.words, p_token: b.token };
+          } else break;
+          try {
+            const answer = await ask(fn, args, true);
+            if (answer && answer.players) row = answer;   // the room as the bot sees it: the same clock and players
+          } catch (e) {
+            if (fn !== 'submit_play' || !/done with that round|no round/.test(e.message)) return;   // no signal: next time
+          }
+          b.seen = Date.now();
+          if (after) { after(); moved = true; }
+          if (fn === 'get_room') break;
+        }
+      }
+    } finally {
+      botsBusy = false;
+      if (moved && alive(s)) { persistRoom(); pollRoom(); }
+    }
+  }
+
+  // The clock: the round's countdown, the reveal's, and the end of a round on this page.
+  function stopRoomClock() { if (roomClock) clearInterval(roomClock); roomClock = null; }
+  function startRoomClock() {
+    stopRoomClock();
+    const s = G.session;
+    roomClock = setInterval(() => {
+      if (!alive(s)) { stopRoomClock(); return; }
+      if (G.phase === 'play' && G.cur && G.cur.ends) { if (Date.now() >= G.cur.ends) finishRound(true); else paintClock(); }
+      else if (G.phase === 'reveal') paintNext();
+    }, 250);
+  }
+  function paintClock() {
+    if (!G || !G.cur || !G.cur.ends) return;
+    const left = Math.max(0, G.cur.ends - Date.now()), secs = Math.ceil(left / 1000), low = secs <= 10;
+    const clock = $('sm-clock'), fill = $('sm-timefill');
+    if (clock) { clock.textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); clock.classList.toggle('low', low); }
+    if (fill) { fill.style.width = (100 * left / (G.seconds * 1000)).toFixed(1) + '%'; fill.parentElement.classList.toggle('low', low); }
+  }
+  const nextIn = () => Math.max(0, Math.ceil((G.row.next_starts - G.offset - Date.now()) / 1000));
+  function paintNext() {
+    if (!G.row || !G.row.next_starts) return;
+    const n = nextIn(), el = $('sm-next-in'), btn = $('sm-room-ready');
+    if (el) el.textContent = n;
+    if (btn && !btn.disabled) btn.textContent = 'Next round (' + n + ')';
+  }
+
+  // ---- standings and results
+  // Each player's numbers over the rounds they have finished that this page
+  // can see, measured against each round's best play.
+  function roomStandings() {
+    const rows = G.row.players.map((x) => ({ p: x.player, total: 0, possible: 0, share: 0, plays: 0, rounds: 0, tops: 0, bingos: 0, best_word: null, best_score: 0, rank: 0 }));
+    for (const row of rows) {
+      const keys = row.p === G.me ? Object.keys(G.mine).map(Number) : [...G.others.keys()].filter((key) => +key.split(':')[1] === row.p).map((key) => +key.split(':')[0]);
+      for (const k of keys) {
+        const e = entryOf(k, row.p), r = roundOf(k);
+        if (!e || !e.done || !r) continue;
+        row.rounds++; row.possible += r.best.score;
+        const res = scored(e, k);
+        if (!res || !res.ok) continue;
+        row.total += res.score; row.plays++;
+        if (res.score >= r.best.score) row.tops++;
+        if (res.bingo) row.bingos++;
+        if (res.score > row.best_score) { row.best_score = res.score; row.best_word = res.main; }
+      }
+      row.share = row.possible ? Math.round(100 * row.total / row.possible) : 0;
+    }
+    rows.sort((a, b) => b.total - a.total || a.p - b.p);
+    for (const row of rows) row.rank = 1 + rows.filter((x) => x.total > row.total).length;
+    return rows;
+  }
+  function roomWinner(rows) {
+    if (!rows.length) return '';
+    if (rows.length === 1) return (rows[0].p === G.me ? 'You scored ' : nameOf(rows[0].p) + ' scored ') + rows[0].total + '.';
+    const top = rows.filter((x) => x.rank === 1);
+    if (top.length > 1) return top.map((x) => nameOf(x.p)).join(' and ') + ' tie on ' + top[0].total + '.';
+    return (top[0].p === G.me ? 'You win' : nameOf(top[0].p) + ' wins') + ' with ' + top[0].total + '.';
+  }
+  // One line on a round: the play that goes on the board, and this player's.
+  function roomResult(k) {
+    const r = roundOf(k);
+    if (!r) return '';
+    const best = '<b>' + esc(r.best.word) + '</b> for ' + r.best.score;
+    const e = mineAt(k), res = scored(e, k);
+    if (G.me === null) return best + ' goes on the board.';
+    if (!e || !e.play) return 'You had no play. ' + best + ' goes on the board.';
+    if (!res.ok) return 'Your play did not count (' + esc(res.reason.replace(/\.$/, '')) + '). ' + best + ' goes on the board.';
+    const yours = 'You played ' + esc(res.main) + ' for ' + res.score;
+    if (res.score > r.best.score) return yours + ', more than the best everyday play. ' + best + ' goes on the board.';
+    if (res.score === r.best.score) return draftKey(unpackPlay(e.play).tiles) === draftKey(r.best.tiles) ? 'You found the best play, ' + best + ', and it goes on the board.' : yours + ', as much as the best play. ' + best + ' goes on the board.';
+    return yours + '. ' + best + ' goes on the board.';
+  }
+  // A square per round of yours: how close your play came to the best.
+  const SQUARES = { best: ['🟩', 'the best play or better'], close: ['🟨', 'three quarters or more'], half: ['🟧', 'half or more'], low: ['🟥', 'less'], none: ['⬛', 'no play'] };
+  function squareKinds() {
+    const out = [];
+    for (let k = joinedAt(); k < myRound(); k++) {
+      const r = roundOf(k), res = scored(mineAt(k), k);
+      if (!r) break;
+      if (!res || !res.ok) { out.push('none'); continue; }
+      const f = r.best.score ? res.score / r.best.score : 1;
+      out.push(f >= 1 ? 'best' : f >= 0.75 ? 'close' : f >= 0.5 ? 'half' : 'low');
+    }
+    return out;
+  }
+  const squaresHtml = () => '<div class="sm-squares">' + squareKinds().map((k, i) => '<i class="q-' + k + '" title="Round ' + (joinedAt() + i) + ': ' + SQUARES[k][1] + '"></i>').join('') + '</div>' +
+    '<div class="sm-sqlegend">' + Object.keys(SQUARES).map((k) => '<span><i class="q-' + k + '"></i>' + SQUARES[k][1] + '</span>').join('') + '</div>';
+
+  // ---- the room's screens
+  function renderRoom() {
+    const row = G.row, rows = roomStandings(), k = myRound();
+    const mine = rows.find((x) => x.p === G.me), others = rows.filter((x) => x.p !== G.me);
+    const boxes = mine ? [['You', mine.total], others.length ? [nameOf(others[0].p), others[0].total] : ['Best possible', mine.possible]]
+      : [rows[0] ? [nameOf(rows[0].p), rows[0].total] : ['Nobody yet', 0], rows[1] ? [nameOf(rows[1].p), rows[1].total] : ['', '']];
+    boxes.forEach(([name, score], p) => {
+      const el = ui.players[p], nm = el.querySelector('.sm-name');
+      nm.textContent = name; nm.classList.remove('link'); el.dataset.handle = '';
+      el.querySelector('.sm-score').textContent = score;
+      el.classList.remove('turn');
+    });
+    ui.bag.textContent = G.state.bag.length;
+    const here = row.players.filter((x) => x.here && x.joined <= row.round && !behind(x));
+    const doneHere = here.filter((x) => x.done).length;
+    const signal = G.offline ? ' · <i>no signal</i>' : '';
+    if (G.phase === 'lobby') ui.msg.innerHTML = '<b>Waiting to start.</b>' + signal;
+    else if (G.phase === 'watch') ui.msg.innerHTML = '<i>Watching.</i> <b>' + roundsLabel(row.round) + '.</b> ' + (row.closed ? roomResult(row.closed) : '');
+    else if (G.phase === 'play') ui.msg.innerHTML = '<b>' + roundsLabel(k) + '</b> · ' + (G.cur.ends ? '<span class="sm-clock" id="sm-clock"></span>' : 'no clock') +
+      (G.cur.live ? ' · ' + doneHere + ' of ' + here.length + ' done' : ' · on your own clock') + signal + (G.cur.ends ? '<div class="sm-timebar"><i id="sm-timefill"></i></div>' : '');
+    else if (G.phase === 'wait') ui.msg.innerHTML = '<b>Round ' + (k - 1) + '.</b> You are done. Waiting for ' + plural(here.length - doneHere, 'player') + '…';
+    else if (G.phase === 'reveal') ui.msg.innerHTML = '<b>Round ' + (k - 1) + '.</b> ' + roomResult(k - 1) + ' Next round in <span id="sm-next-in">' + nextIn() + '</span>.';
+    else if (G.phase === 'ready') ui.msg.innerHTML = '<b>' + roundsLabel(k) + '.</b> ' + readyWhy(k);
+    else ui.msg.innerHTML = '<b>Game over.</b> ' + esc(roomWinner(rows)) + signal;
+    paintClock();
+    renderBoard();
+    renderRack();
+    renderRoomLog();
+    renderRoomPanel(rows);
+    const drafting = canDraft();
+    const preview = drafting && pending.length ? previewDraft(G.state) : null;
+    const submitted = !!(preview && preview.ok && G.cur && G.cur.move && draftKey(G.cur.move.tiles) === draftKey(pending));
+    ui.board.classList.toggle('valid', !!(preview && preview.ok));
+    if (stickyError) { /* an action failed: keep saying so until the draft changes */ }
+    else if (submitted) { setStatus('Submitted ' + G.cur.word + ' for ' + plural(G.cur.score, 'point') + '. Press Done when you’re finished.', 'good'); statusIsPreview = true; }
+    else if (preview) { setStatus(preview.text, preview.kind); statusIsPreview = true; }
+    else if (statusIsPreview) setStatus('');
+    const ready = G.readyFor > row.round || !!(roomPlayer(G.me) || {}).ready;
+    const behindRoom = G.phase === 'ready' && online() && row.phase === 'playing' && k < liveRound();
+    ui.play.textContent = G.phase === 'lobby' ? 'Room' : G.phase === 'over' ? 'Results' : G.phase === 'watch' ? 'Watching' : G.phase === 'wait' ? 'Waiting' : G.phase === 'reveal' ? (ready ? 'Ready' : 'Next round')
+      : G.phase === 'ready' ? 'Start round ' + k : submitted ? 'Submitted' : preview && preview.ok ? (G.cur.move ? 'Resubmit for ' : 'Submit for ') + preview.score : 'Submit';
+    ui.play.disabled = G.phase === 'watch' || G.phase === 'wait' || (G.phase === 'reveal' && ready) || (G.phase === 'play' && submitted);
+    ui.pass.textContent = behindRoom ? 'Skip to round ' + liveRound() : 'Done';
+    ui.pass.disabled = !(G.phase === 'play' || behindRoom);
+    ui.recall.disabled = !drafting || !pending.length;
+    ui.shuffle.disabled = G.hidden || G.me === null;
+  }
+  // why a round waits for you to start it
+  function readyWhy(k) {
+    const row = G.row;
+    if (G.offline) return 'No signal.';
+    if (row.phase === 'over') return 'The room has finished.';
+    return 'The room is on round ' + liveRound() + '.';
+  }
+  function renderRoomLog() {
+    ui.movesTitle.textContent = 'Rounds';
+    ui.nav.hidden = true; ui.analysis.hidden = true;
+    let html = '';
+    const end = G.me === null ? G.row.closed + 1 : myRound();
+    for (let k = G.me === null ? 1 : joinedAt(); k < end; k++) {
+      const r = roundOf(k);
+      if (!r) break;
+      const res = scored(mineAt(k), k), found = res && res.ok && res.score >= r.best.score;
+      const you = G.me === null ? '' : ' <small>you: ' + (!res ? 'no play' : !res.ok ? 'did not count' : esc(res.main) + ' ' + res.score) + '</small>';
+      html += '<li data-k="' + k + '"><span><span class="n">' + k + '.</span>' + esc(r.best.word) + you + '</span><b>' + r.best.score + (found ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
+    }
+    ui.log.innerHTML = html || '<li><span class="who">No rounds yet.</span></li>';
+    ui.log.classList.remove('locked');
+    ui.log.querySelectorAll('li[data-k]').forEach((li) => li.addEventListener('click', () => showRoundCard(+li.dataset.k, false)));
+  }
+  function renderRoomPanel(rows) {
+    ui.online.style.display = '';
+    const row = G.row, link = location.origin + pathFor(G.id);
+    let html = '<div class="sm-k">Same Rack</div><div>Room <span class="sm-code">' + esc(G.words) + '</span></div><div class="sm-room-players">';
+    for (const x of rows) {
+      const p = roomPlayer(x.p) || {};
+      let status = '';
+      if (x.p === G.me) status = G.offline ? 'no signal' : '';
+      else if (behind(p) && row.phase !== 'lobby') status = 'round ' + (p.joined + p.finished);
+      else if (G.phase === 'play' || G.phase === 'wait') status = p.joined > row.round ? 'next round' : p.done ? 'done' : !p.here ? 'away' : p.played ? 'played' : '';
+      else if (G.phase === 'reveal') status = p.ready ? 'ready' : !p.here ? 'away' : '';
+      else if (!p.here && G.phase !== 'over') status = 'away';
+      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + x.rank + '. ' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
+        (status ? '<small class="st-' + status.replace(/ /g, '-') + '">' + status + '</small>' : '') + '<b>' + x.total + '</b></div>';
+    }
+    html += '</div>' + (row.phase !== 'over' ? '<div class="sm-row"><button id="sm-room-link">Copy invite link</button></div>' : '');
+    ui.online.innerHTML = html;
+    const b = $('sm-room-link');
+    if (b) b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(link); b.textContent = 'Copied'; } catch (e) { window.prompt('Copy this link:', link); } });
+  }
+  const closeRoomCard = () => { if ($('sm-room-card')) closeOverlay(); };
+  // The lobby: the room's words to read out, the link and its QR code, who is in, and for the host the settings.
+  function showLobby() {
+    const link = location.origin + pathFor(G.id), host = G.me === 0, last = store.get('sm.same', {});
+    const limit = SAME_ROUNDS.includes(last.limit) ? last.limit : 10, seconds = SAME_SECONDS.includes(last.seconds) && last.seconds ? last.seconds : 90;
+    const opts = (vals, cur, label) => vals.map((v) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + label(v) + '</option>').join('');
+    openOverlay('<div id="sm-room-card" hidden></div><h2>Same Rack</h2>' +
+      '<div class="sm-room-words">' + esc(G.words.replace(/-/g, ' ')) + '</div>' +
+      '<div class="sm-row" style="justify-content:center"><button id="sm-lobby-copy">Copy link</button>' + (navigator.share ? '<button id="sm-lobby-share">Share</button>' : '') + '<button id="sm-lobby-qr">QR code</button></div>' +
+      '<div class="sm-qr" id="sm-lobby-qrbox" hidden></div>' +
+      '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-lobby-count"></div><div class="sm-list sm-lobby" id="sm-lobby-players"></div>' +
+      (host ? '<div class="sm-same-opts"><label>Rounds<select id="sm-lobby-rounds">' + opts(SAME_ROUNDS, limit, (n) => (n ? n + ' rounds' : 'The whole bag')) + '</select></label>' +
+              '<label>Time per round<select id="sm-lobby-time">' + opts(SAME_SECONDS, seconds, (t) => (t ? secondsWords(t) : 'No clock')) + '</select></label></div>' +
+              '<div class="sm-same-opts sm-addbot"><label>Bot<select id="sm-lobby-botlevel">' + opts(BOT_LEVELS, BOT_LEVELS.includes(last.bot) ? last.bot : 40, (d) => levelWords(d).replace(/^./, (c) => c.toUpperCase())) + '</select></label>' +
+              '<button id="sm-lobby-addbot">Add a bot</button></div>'
+            : '<p id="sm-lobby-wait" style="margin-top:10px">Waiting for ' + esc(nameOf(0)) + ' to start the game.</p>') +
+      '<div class="sm-note" id="sm-lobby-err" style="color:var(--bad)"></div>' +
+      '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-lobby-leave">Games</button>' + (host ? '<button class="primary" id="sm-lobby-start">Start the game</button>' : '') + '</div>');
+    $('sm-lobby-copy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText(link); e.target.textContent = 'Copied'; } catch (err) { window.prompt('Copy this link:', link); } });
+    const share = $('sm-lobby-share');
+    if (share) share.addEventListener('click', () => navigator.share({ text: 'Join my Same Rack room: ' + G.words.replace(/-/g, ' '), url: link }).catch(() => { /* closed without sharing */ }));
+    $('sm-lobby-qr').addEventListener('click', () => {
+      const box = $('sm-lobby-qrbox');
+      if (!box.hidden) { box.hidden = true; return; }
+      withQr(() => { if (!$('sm-lobby-qrbox')) return; const qr = window.qrcode(0, 'M'); qr.addData(link); qr.make(); box.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); box.hidden = false; },
+             () => { const err = $('sm-lobby-err'); if (err) err.textContent = 'Could not load the QR code.'; });
+    });
+    $('sm-lobby-leave').addEventListener('click', showMenu);
+    const addBtn = $('sm-lobby-addbot');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      const d = +$('sm-lobby-botlevel').value;
+      store.set('sm.same', Object.assign(store.get('sm.same', {}), { bot: d }));
+      addBtn.disabled = true; addBtn.textContent = 'Adding…';
+      try { await addBot(d); if ($('sm-lobby-err')) $('sm-lobby-err').textContent = ''; }
+      catch (e) { if ($('sm-lobby-err')) $('sm-lobby-err').textContent = 'Could not add a bot: ' + whyFailed(e) + '.'; }
+      addBtn.disabled = false; addBtn.textContent = 'Add a bot';
+    });
+    const start = $('sm-lobby-start');
+    if (start) start.addEventListener('click', async () => {
+      const n = +$('sm-lobby-rounds').value, t = +$('sm-lobby-time').value, s = G.session, t0 = Date.now();
+      store.set('sm.same', Object.assign(store.get('sm.same', {}), { limit: n, seconds: t }));
+      start.disabled = true; start.textContent = 'Starting…';
+      try { const row = await Net.rpc('start_room', { p_code: G.words, p_token: G.token, p_seconds: t, p_limit: n }); if (alive(s)) integrateRoom(row, t0, Date.now()); }
+      catch (e) { if (!alive(s) || !$('sm-lobby-err')) return; $('sm-lobby-err').textContent = 'Could not start: ' + whyFailed(e) + '.'; start.disabled = false; start.textContent = 'Start the game'; }
+    });
+    updateLobby();
+  }
+  function updateLobby() {
+    const list = $('sm-lobby-players');
+    if (!list) return;
+    list.innerHTML = G.row.players.map((x) => '<div><span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' + (x.here ? '' : '<small>away</small>') + '</div>').join('');
+    $('sm-lobby-count').textContent = 'Players · ' + G.row.players.length;
+    if (G.offline && $('sm-lobby-err')) $('sm-lobby-err').textContent = 'No signal.';
+  }
+  // A round's plays, best first. live: the card shown as you finish a round,
+  // with the button for whatever comes next.
+  function showRoundCard(k, live) {
+    const r = roundOf(k);
+    if (!r) return;
+    const list = [];
+    for (const x of G.row.players) {
+      if (x.joined > k) continue;
+      const e = entryOf(k, x.player), res = e && e.done ? scored(e, k) : null;
+      list.push({ p: x.player, e, res, score: res && res.ok ? res.score : -1 });
+    }
+    list.sort((a, b) => b.score - a.score || a.p - b.p);
+    const shown = G.me === null || (online() && G.row.closed >= k);   // the server shows the others once the room has closed the round
+    let html = '<div id="sm-room-card" hidden data-k="' + k + '" data-live="' + (live ? 1 : 0) + '" data-sig="' + roundSig(k) + '"></div><h2>Round ' + k + '</h2><p>' + roomResult(k) + '</p><div class="sm-list sm-roundplays">';
+    for (const x of list) {
+      if (x.p !== G.me && !(x.e && x.e.done)) {
+        if (!shown) continue;
+        html += '<div><span>' + esc(nameOf(x.p)) + '</span><span class="w"><small>still playing</small></span><b></b></div>';
+        continue;
+      }
+      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
+        '<span class="w">' + (!x.res ? '<small>no play</small>' : x.res.ok ? esc(x.res.main) + (x.res.bingo ? ' <small>bingo</small>' : '') : '<small>' + esc(x.res.reason.replace(/\.$/, '')) + '</small>') + '</span>' +
+        '<b>' + Math.max(0, x.score) + (x.score >= r.best.score ? ' <span style="color:var(--good)">★</span>' : '') + '</b></div>';
+    }
+    html += '</div>';
+    if (!shown) html += '<p class="sm-note">' + (G.offline ? 'The others’ plays show when you have signal.' : 'The others’ plays show when the round ends.') + '</p>';
+    if (r.top.score > r.best.score) html += '<p class="sm-note">The top play was <b>' + esc(r.top.word) + '</b> for ' + r.top.score + '.</p>';
+    html += '<div class="sm-row" style="justify-content:center"><button id="sm-round-close">' + (live ? 'Look at the board' : 'Close') + '</button>' +
+      (live && G.me !== null ? '<button class="primary" id="sm-room-ready" hidden></button>' : '') + '</div>';
+    openOverlay(html);
+    $('sm-round-close').addEventListener('click', closeOverlay);
+    const next = $('sm-room-ready');
+    if (next) next.addEventListener('click', () => { if (G.phase === 'reveal') roomReady(); else { closeOverlay(); roomPrimary(); } });
+    updateRoundCard();
+  }
+  // what a round's card shows depends on: whether the others' plays can be seen, and which have come in
+  const roundSig = (k) => (G.me === null || (online() && G.row.closed >= k) ? 's' : 'h') + G.row.players.map((x) => (entryOf(k, x.player) || {}).done ? 1 : 0).join('');
+  // the card's button follows the phase: the next round with everyone, or on your own clock
+  function updateRoundCard() {
+    const btn = $('sm-room-ready');
+    if (!btn) return;
+    const mine = roomPlayer(G.me), ready = G.readyFor > G.row.round || !!(mine && mine.ready);
+    btn.hidden = !(G.phase === 'reveal' || G.phase === 'ready' || G.phase === 'over');
+    if (G.phase === 'reveal') {
+      const waiting = G.row.players.filter((x) => x.here && x.joined <= G.row.round + 1 && !x.ready && !behind(x) && x.player !== G.me).length;
+      btn.disabled = ready;
+      btn.textContent = ready ? (waiting ? 'Waiting for ' + plural(waiting, 'player') : 'Starting…') : 'Next round (' + nextIn() + ')';
+    } else { btn.disabled = false; btn.textContent = G.phase === 'over' ? 'See the results' : 'Start round ' + myRound(); }
+  }
+  // The end: your numbers as three tiles, your rounds as squares, and the standings.
+  function endStatsHtml(row) {
+    return '<div class="sm-stats sm-endstats"><div><b>' + row.total + '</b><small>points</small></div>' +
+      '<div><b>' + row.share + '%</b><small>of the best plays</small></div>' +
+      '<div><b>' + row.tops + '<span class="of"> of ' + row.rounds + '</span></b><small>best plays found</small></div></div>' +
+      (row.best_word ? '<p class="sm-endnote">Top word <b>' + esc(row.best_word) + '</b> for ' + row.best_score + (row.bingos ? ' · ' + plural(row.bingos, 'bingo') : '') + '</p>' : '');
+  }
+  function roomShareText(rows) {
+    const squares = G.me === null ? '' : squareKinds().map((k) => SQUARES[k][0]).join('') + '\n';
+    return 'Same Rack · ' + G.words + ' · ' + plural(Math.max(0, G.states.length - 1), 'round') + '\n' + squares +
+      rows.map((x) => x.rank + '. ' + nameOf(x.p) + ' ' + x.total + ' (' + x.share + '%)').join('\n');
+  }
+  const overSig = () => roomStandings().map((x) => x.p + ':' + x.total + ':' + x.rounds).join(' ');
+  function showRoomOver() {
+    const rows = roomStandings(), mine = rows.find((x) => x.p === G.me), n = Math.max(0, G.states.length - 1);
+    const bag = G.row.end_reason === 'bag' || G.states[G.states.length - 1].endReason === 'bag';
+    const late = G.row.players.filter((x) => behind(x) || (G.row.phase !== 'over' && x.player !== G.me && x.joined + x.finished <= n));
+    let html = '<div id="sm-room-card" hidden></div><div id="sm-room-over" hidden data-sig="' + overSig() + '"></div><h2>' + esc(roomWinner(rows).replace(/\.$/, '')) + '</h2><p>' + plural(n, 'round') + ' of ' + esc(G.words.replace(/-/g, ' ')) + (bag ? ', until the bag ran out' : '') + '.</p>';
+    if (rows.length > 1) {
+      html += '<div class="sm-list sm-standings"><div class="head"><span></span><span>Player</span><span>% of best</span><span>Total</span></div>';
+      for (const x of rows) html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + x.rank + '</span><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span><span>' + x.share + '%</span><b>' + x.total + '</b></div>';
+      html += '</div>';
+      if (late.length) html += '<p class="sm-note">' + esc(late.map((x) => nameOf(x.player)).join(' and ')) + (late.length > 1 ? ' are' : ' is') + ' still playing.</p>';
+      if (mine) html += '<div class="sm-k sm-endyou">Your game</div>';
+    }
+    if (mine) html += endStatsHtml(mine) + squaresHtml();
+    html += '<div class="sm-row sm-endshare"><button id="sm-end-share">' + (navigator.share ? 'Share results' : 'Copy results') + '</button></div>' +
+      '<div class="sm-row sm-endnav"><button id="sm-end-board">Look at the board</button><button class="primary" id="sm-end-new">New game</button></div>';
+    openOverlay(html);
+    const text = roomShareText(rows), share = $('sm-end-share');
+    share.addEventListener('click', async () => {
+      if (navigator.share) { navigator.share({ text }).catch(() => { /* closed without sharing */ }); return; }
+      try { await navigator.clipboard.writeText(text); share.textContent = 'Copied'; } catch (e) { window.prompt('Copy this:', text); }
+    });
+    $('sm-end-board').addEventListener('click', closeOverlay);
+    $('sm-end-new').addEventListener('click', showSameSetup);
+  }
+
   // ---- online --------------------------------------------------------------------
   // The Supabase client (loaded from a CDN in the layout) carries the signed-in
   // user's token on every call, so the server can tie seats to an account.
@@ -1328,6 +2216,13 @@
     async rpc(fn, args) {
       const { data, error } = await sb.rpc(fn, args || {});
       if (error) throw new Error(error.message || error.hint || 'request failed');
+      return data;
+    },
+    // a call without the signed-in user's token, for a seat that goes by its own (a bot's)
+    async anon(fn, args) {
+      const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: CFG.key, authorization: 'Bearer ' + CFG.key, 'content-type': 'application/json' }, body: JSON.stringify(args || {}) });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((data && (data.message || data.hint)) || 'request failed');
       return data;
     }
   };
@@ -1795,7 +2690,15 @@
     if (pub) pub.addEventListener('change', async () => { try { await Net.rpc('set_visibility', { p_public: pub.checked }); } catch (e) { setStatus(e.message, 'bad'); pub.checked = !pub.checked; } });
     on('sm-pr-add', async () => { const code = ($('sm-pr-code').value || '').trim(); if (!code) return; try { const f = await Net.rpc('add_friend', { p_handle: code }); setStatus('Added ' + f.name + '.', 'good'); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
   }
-  // A QR code of the profile link, drawn by a small library fetched on demand.
+  // The QR code library, fetched on first use.
+  function withQr(done, failed) {
+    if (window.qrcode) { done(); return; }
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+    sc.onload = done; sc.onerror = failed;
+    document.head.appendChild(sc);
+  }
+  // A QR code of the profile link.
   function showQr(pr) {
     const link = profileUrl(pr.handle);
     const draw = () => {
@@ -1809,11 +2712,8 @@
     openOverlay('<h2>QR code</h2><p>Loading…</p><button id="sm-qr-cancel">Cancel</button>');
     let cancelled = false;
     $('sm-qr-cancel').addEventListener('click', () => { cancelled = true; showProfile(pr.handle); });
-    const sc = document.createElement('script');
-    sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
-    sc.onload = () => { if (!cancelled) draw(); };
-    sc.onerror = () => { if (cancelled) return; openOverlay('<h2>QR code</h2><p>Could not load the QR library. The link is ' + esc(link) + '</p><button id="sm-qr-back">Back</button>'); $('sm-qr-back').addEventListener('click', () => showProfile(pr.handle)); };
-    document.head.appendChild(sc);
+    withQr(() => { if (!cancelled) draw(); },
+           () => { if (cancelled) return; openOverlay('<h2>QR code</h2><p>Could not load the QR library. The link is ' + esc(link) + '</p><button id="sm-qr-back">Back</button>'); $('sm-qr-back').addEventListener('click', () => showProfile(pr.handle)); });
   }
 
   // ---- zoom ------------------------------------------------------------------------
@@ -1852,12 +2752,14 @@
 
   const wanted = idFromUrl();
   const wantedProfile = new URLSearchParams(location.search).get('u') || (location.pathname.match(/\/seven-tiles\/u\/([A-Za-z0-9]+)\/?$/) || [])[1];
+  const wantedRoom = roomFromUrl();
   if (wantedProfile) { history.replaceState(null, '', BASE); showProfile(wantedProfile.toUpperCase()); }
+  else if (wantedRoom) openRoom(wantedRoom);
   else if (wanted) openGame(wanted);
   else {
     const latest = games.list().find((r) => !r.over);
     if (latest) openGame(latest.id); else showMenu();
   }
 
-  window.__sm = { get game() { return G; }, get review() { return R; }, core: C, get dict() { return dict; }, games, enterReview, reviewGo };
+  window.__sm = { get game() { return G; }, get review() { return R; }, core: C, get dict() { return dict; }, games, enterReview, reviewGo, pollRoom };
 })();

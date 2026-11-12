@@ -1,5 +1,5 @@
 ---
-title: "Blunder Drill"
+title: "Don't Blunder Again"
 description: "Practice against 2,939 positions taken from my own games. Play a move and find out whether you repeated my blunder, played something merely suboptimal, or held the position."
 date: 2026-08-04T15:00:00-04:00
 draft: false
