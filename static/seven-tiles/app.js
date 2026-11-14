@@ -263,12 +263,13 @@
     const rack = rackShown();
     const used = new Set(pending.map((t) => t.ri));
     const reviewed = reviewUsedSlots();
+    const back = G.hidden && !(G.kind === 'room' && G.phase === 'wait');   // waiting on the room, the rack you played stays up
     let html = '';
     for (let i = 0; i < C.RACK; i++) {
-      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : '', reviewed.has(i) ? (R.ghost ? 'used alt' : 'used') : ''].join(' ').trim();
+      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', back ? 'hidden' : '', reviewed.has(i) ? (R.ghost ? 'used alt' : 'used') : ''].join(' ').trim();
       const t = rack[i];
       // while hidden between pass-and-play turns, show anonymous backs: the letters must not reach the page at all
-      const inner = G.hidden ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
+      const inner = back ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
       html += '<div class="' + cls + '" data-i="' + i + '">' + inner + '</div>';
     }
     ui.rack.innerHTML = html;
@@ -1625,11 +1626,15 @@
     else phase = 'ready';
     if (G.cur && (phase !== 'play' || G.cur.k !== k)) G.cur = null;
     G.phase = phase;
-    // the board: before your round while you play it, after your last one otherwise
-    const at = G.me === null ? (row.phase === 'lobby' ? 0 : row.closed) : Math.max(0, Math.min(k - 1, 99, lastRound()));
+    // the board: before your round while you play it, and with your play on it
+    // while the room finishes that round, so the board play shows with its card;
+    // after your last round otherwise
+    const at = G.me === null ? (row.phase === 'lobby' ? 0 : row.closed) : Math.max(0, Math.min(k - (phase === 'wait' ? 2 : 1), 99, lastRound()));
     upTo(at);
     G.state = G.states[Math.min(at, G.states.length - 1)];
     G.hidden = phase !== 'play';
+    if (phase === 'wait') { const m = mineAt(k - 1), move = m && m.play ? unpackPlay(m.play) : null; pending = move ? draftFrom(move) : []; }
+    else if (was === 'wait') pending = [];
     if (G.state.history.length !== seenMoves) seenMoves = G.state.history.length;
     render();
     // the room's own cards take over the screen, but never from another card (the menu, a blank's letter)
@@ -2010,7 +2015,7 @@
     if (!res.ok) return 'Your play did not count (' + esc(res.reason.replace(/\.$/, '')) + '). ' + best + ' goes on the board.';
     const yours = 'You played ' + esc(res.main) + ' for ' + res.score;
     if (res.score > r.best.score) return yours + ', more than the best everyday play. ' + best + ' goes on the board.';
-    if (res.score === r.best.score) return draftKey(unpackPlay(e.play).tiles) === draftKey(r.best.tiles) ? 'You found the best play, ' + best + ', and it goes on the board.' : yours + ', as much as the best play. ' + best + ' goes on the board.';
+    if (res.score === r.best.score) return res.main === r.best.word ? 'You found the best play, ' + best + ', and it goes on the board.' : yours + ', as much as the best play. ' + best + ' goes on the board.';
     return yours + '. ' + best + ' goes on the board.';
   }
   // A square per round of yours: how close your play came to the best.
@@ -2098,7 +2103,7 @@
     ui.movesTitle.textContent = 'Rounds';
     ui.nav.hidden = true; ui.analysis.hidden = true;
     let html = '';
-    const end = G.me === null ? G.row.closed + 1 : myRound();
+    const end = G.me === null ? G.row.closed + 1 : myRound() - (G.phase === 'wait' ? 1 : 0);   // a round you wait on shows with its card
     for (let k = G.me === null ? 1 : joinedAt(); k < end; k++) {
       const r = roundOf(k);
       if (!r) break;
