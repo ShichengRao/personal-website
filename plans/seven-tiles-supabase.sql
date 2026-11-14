@@ -811,15 +811,16 @@ grant execute on function push_prune(text, jsonb) to anon, authenticated;
 -- keeping up is ready, but never while nobody is: the room does not run on
 -- without its players. A player who has already played that round (offline)
 -- counts as ready, so the room runs straight through rounds everyone has
--- played. The room is over after its last round, or when a page reports that
--- the bag can no longer make a rack. Players who are behind can still finish
--- their rounds after that.
+-- played. The room is over after its last round, when a page reports that
+-- the bag can no longer make a rack, or when every player has voted to end it.
+-- Players who are behind can still finish their rounds after that.
 
 create table if not exists rooms (
   id          text primary key,
   seed        text not null,                -- packed by the page
   seconds     integer not null default 90,  -- per round; 0 for no clock
   round_limit integer not null default 10,  -- 0 to play out the bag
+  fresh_racks boolean not null default false,  -- seven new tiles each round, rather than what the board play left plus new ones
   phase       text not null default 'lobby' check (phase in ('lobby', 'playing', 'over')),
   round       integer not null default 0,   -- the round open or last closed, from 1
   round_ends  timestamptz,                  -- the open round's deadline; null with no clock
@@ -837,8 +838,11 @@ create table if not exists room_players (
   joined    integer not null default 1,     -- the first round they could play
   ready     integer not null default 0,     -- the latest round they are ready to start
   last_seen timestamptz not null default now(),
+  wants_end boolean not null default false,  -- has voted to end the game now
   primary key (room_id, player)
 );
+alter table rooms add column if not exists fresh_racks boolean not null default false;
+alter table room_players add column if not exists wants_end boolean not null default false;
 create index if not exists room_players_token on room_players (room_id, token);
 create index if not exists room_players_user on room_players (user_id);
 -- One row per player per round. A new play replaces the old one until the player is done with the round.
@@ -933,13 +937,13 @@ begin
   closed := case when r.phase = 'over' or r.next_starts is not null then r.round else r.round - 1 end;
   select k.joined into joined from room_players k where k.room_id = p_code and k.player = who;
   return jsonb_build_object(
-    'id', r.id, 'seed', r.seed, 'seconds', r.seconds, 'limit', r.round_limit, 'phase', r.phase, 'round', r.round,
+    'id', r.id, 'seed', r.seed, 'seconds', r.seconds, 'limit', r.round_limit, 'fresh', r.fresh_racks, 'phase', r.phase, 'round', r.round,
     'closed', closed, 'end_reason', r.end_reason, 'me', who,
     'round_ends', (extract(epoch from r.round_ends) * 1000)::bigint,
     'next_starts', (extract(epoch from r.next_starts) * 1000)::bigint,
     'now', (extract(epoch from now()) * 1000)::bigint,
     'players', (select coalesce(jsonb_agg(jsonb_build_object(
-        'player', k.player, 'name', k.name, 'joined', k.joined, 'here', k.last_seen > now() - interval '20 seconds',
+        'player', k.player, 'name', k.name, 'joined', k.joined, 'here', k.last_seen > now() - interval '20 seconds', 'end', k.wants_end,
         'finished', (select count(*) from room_plays d where d.room_id = p_code and d.player = k.player and d.done),
         'played', exists (select 1 from room_plays d where d.room_id = p_code and d.player = k.player and d.round = r.round and d.play is not null),
         'done', exists (select 1 from room_plays d where d.room_id = p_code and d.player = k.player and d.round = r.round and d.done),
@@ -1010,8 +1014,10 @@ begin
 end $$;
 
 -- The host starts the game with its settings: seconds per round (0 for no
--- clock) and the number of rounds (0 to play out the bag).
-create or replace function start_room(p_code text, p_token text, p_seconds integer, p_limit integer)
+-- clock), the number of rounds (0 to play out the bag) and whether each round
+-- deals fresh racks.
+drop function if exists start_room(text, text, integer, integer);
+create or replace function start_room(p_code text, p_token text, p_seconds integer, p_limit integer, p_fresh boolean default false)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   r rooms%rowtype;
@@ -1021,11 +1027,29 @@ begin
   if r.phase <> 'lobby' then raise exception 'the game has already started'; end if;
   if p_seconds is null or not (p_seconds = 0 or p_seconds between 30 and 600) then raise exception 'bad time per round'; end if;
   if p_limit is null or p_limit < 0 or p_limit > 99 then raise exception 'bad number of rounds'; end if;
-  update rooms set seconds = p_seconds, round_limit = p_limit, phase = 'playing', round = 1, next_starts = null,
+  update rooms set seconds = p_seconds, round_limit = p_limit, fresh_racks = coalesce(p_fresh, false), phase = 'playing', round = 1, next_starts = null,
                    round_ends = case when p_seconds > 0 then now() + make_interval(secs => p_seconds) end, updated_at = now()
   where id = p_code;
   update room_players set last_seen = now() where room_id = p_code and player = 0;
   return get_room(p_code, p_token);
+end $$;
+
+-- A player leaves before the game starts. The host's page uses it to take a
+-- bot it seated back out, by the bot's own token. The host cannot leave.
+create or replace function leave_room(p_code text, p_token text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  who smallint;
+  r rooms%rowtype;
+begin
+  select * into r from rooms where id = p_code for update;   -- not while the game starts
+  if r.id is null then raise exception 'no such room'; end if;
+  who := room_seat(p_code, p_token);
+  if who is null then raise exception 'not a player in this room'; end if;
+  if who = 0 then raise exception 'the host cannot leave'; end if;
+  if r.phase <> 'lobby' then raise exception 'the game has already started'; end if;
+  delete from room_players where room_id = p_code and player = who;
+  update rooms set updated_at = now() where id = p_code;
 end $$;
 
 -- Files the caller's play for a round (null keeps the one already sent), and
@@ -1050,7 +1074,7 @@ begin
   if r.phase = 'lobby' then raise exception 'the game has not started'; end if;
   select joined into first from room_players where room_id = p_code and player = who;
   if p_round is null or p_round < first then raise exception 'you joined at round %', first; end if;
-  if p_round > (case when r.round_limit > 0 then r.round_limit else 99 end) or (r.end_reason = 'bag' and p_round > r.round) then
+  if p_round > (case when r.round_limit > 0 then r.round_limit else 99 end) or (r.phase = 'over' and p_round > r.round) then
     raise exception 'there is no round %', p_round;
   end if;
   if exists (select 1 from room_plays where room_id = p_code and round = p_round and player = who and done) then
@@ -1103,23 +1127,57 @@ begin
   return get_room(p_code, p_token);
 end $$;
 
+-- The caller wants the game to end now (p_end), or no longer does. Once every
+-- player does, it ends with the last round the room closed: a round under way
+-- does not count, and its plays are dropped. The host's page votes for its
+-- bots as the host does. Not while the first round is on. Returns the room as
+-- get_room does.
+create or replace function vote_end(p_code text, p_token text, p_end boolean)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  who smallint;
+  r rooms%rowtype;
+  last int;
+begin
+  who := room_seat(p_code, p_token);
+  if who is null then raise exception 'not a player in this room'; end if;
+  update room_players set last_seen = now() where room_id = p_code and player = who;
+  perform room_tick(p_code);   -- locks the room
+  select * into r from rooms where id = p_code;
+  if r.phase = 'lobby' then raise exception 'the game has not started'; end if;
+  if r.phase = 'over' then return get_room(p_code, p_token); end if;
+  last := case when r.next_starts is null then r.round - 1 else r.round end;
+  if p_end and last < 1 then raise exception 'the first round is still on'; end if;
+  update room_players set wants_end = coalesce(p_end, false) where room_id = p_code and player = who;
+  if not exists (select 1 from room_players where room_id = p_code and not wants_end) then
+    delete from room_plays where room_id = p_code and round > last;
+    update rooms set phase = 'over', end_reason = 'vote', round = last, next_starts = coalesce(next_starts, now()), updated_at = now()
+    where id = p_code;
+  end if;
+  return get_room(p_code, p_token);
+end $$;
+
 -- Supabase grants new functions to anon and authenticated by name, so revoking from public alone leaves them callable
 revoke all on function room_seat(text, text) from public, anon, authenticated;
 revoke all on function room_tick(text) from public, anon, authenticated;
 revoke all on function get_room(text, text) from public;
 revoke all on function create_room(text, text, text, text) from public;
 revoke all on function join_room(text, text, text) from public;
-revoke all on function start_room(text, text, integer, integer) from public;
+revoke all on function start_room(text, text, integer, integer, boolean) from public;
+revoke all on function leave_room(text, text) from public;
 revoke all on function submit_play(text, text, integer, text, boolean) from public;
 revoke all on function room_ready(text, text, integer) from public;
 revoke all on function end_room(text, text, integer) from public;
+revoke all on function vote_end(text, text, boolean) from public;
 grant execute on function get_room(text, text) to anon, authenticated;
 grant execute on function create_room(text, text, text, text) to anon, authenticated;
 grant execute on function join_room(text, text, text) to anon, authenticated;
-grant execute on function start_room(text, text, integer, integer) to anon, authenticated;
+grant execute on function start_room(text, text, integer, integer, boolean) to anon, authenticated;
+grant execute on function leave_room(text, text) to anon, authenticated;
 grant execute on function submit_play(text, text, integer, text, boolean) to anon, authenticated;
 grant execute on function room_ready(text, text, integer) to anon, authenticated;
 grant execute on function end_room(text, text, integer) to anon, authenticated;
+grant execute on function vote_end(text, text, boolean) to anon, authenticated;
 
 -- Optional housekeeping: rooms are over within the hour; drop them after a week.
 -- delete from rooms where updated_at < now() - interval '7 days';
