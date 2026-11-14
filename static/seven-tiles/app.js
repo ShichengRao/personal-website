@@ -29,6 +29,7 @@
   const randomSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1);
   const randomToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const sentence = (t) => (/[.!?]$/.test(t) ? t : t + '.');
 
   // ---- game ids and addresses --------------------------------------------
   const WORDS = ('acorn amber apple arrow badger bagel basil beach birch bison bloom brick brook cabin candle canoe cedar cherry ' +
@@ -262,12 +263,13 @@
     const rack = rackShown();
     const used = new Set(pending.map((t) => t.ri));
     const reviewed = reviewUsedSlots();
+    const back = G.hidden && !(G.kind === 'room' && G.phase === 'wait');   // waiting on the room, the rack you played stays up
     let html = '';
     for (let i = 0; i < C.RACK; i++) {
-      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', G.hidden ? 'hidden' : '', reviewed.has(i) ? (R.ghost ? 'used alt' : 'used') : ''].join(' ').trim();
+      const cls = ['sm-slot', sel === i ? 'sel' : '', marks.has(i) ? 'mark' : '', back ? 'hidden' : '', reviewed.has(i) ? (R.ghost ? 'used alt' : 'used') : ''].join(' ').trim();
       const t = rack[i];
       // while hidden between pass-and-play turns, show anonymous backs: the letters must not reach the page at all
-      const inner = G.hidden ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
+      const inner = back ? (t ? '<div class="sm-tile back" aria-hidden="true"></div>' : '') : (t && !used.has(i) ? tileHtml(t === '?' ? '?' : t, t === '?', '') : '');
       html += '<div class="' + cls + '" data-i="' + i + '">' + inner + '</div>';
     }
     ui.rack.innerHTML = html;
@@ -296,10 +298,11 @@
   }
   function render() {
     if (!G) return;
-    // Same Rack has no swaps, resigning or review
+    // Same Rack has no swaps, resigning or review (its players vote to end the game instead)
     for (const b of [ui.swap, ui.resign, ui.review]) b.style.display = G.kind === 'room' ? 'none' : '';
     if (G.kind === 'room') { renderRoom(); return; }
-    ui.pass.textContent = 'Pass';
+    ui.resign.textContent = 'Resign'; ui.resign.classList.add('danger');
+    ui.pass.textContent = 'Pass'; ui.pass.style.display = '';
     const s = G.state;
     for (let p = 0; p < 2; p++) {
       const el = ui.players[p];
@@ -731,13 +734,14 @@
     setStatus(swapMode ? 'Pick the tiles to swap, then confirm. Swapping uses your turn.' : '');
   });
   ui.pass.addEventListener('click', () => {
-    if (G && G.kind === 'room') { roomDone(); return; }   // Same Rack's Done: end this round now
+    if (G && G.kind === 'room') { if (G.phase === 'ready' && online() && myRound() < liveRound()) skipAhead(); return; }   // Same Rack: skip to the room's round
     if (!myTurn()) return;
     if (pending.length) { setStatus('Recall your tiles before passing.', 'bad'); return; }
     if (G.state.racks[G.state.turn].length && !window.confirm('Pass this turn without playing?')) return;
     commit({ t: 'pass' });
   });
   ui.resign.addEventListener('click', () => {
+    if (G && G.kind === 'room') { voteEnd(); return; }   // Same Rack: End game
     if (!G || R || G.state.over) return;
     if (G.kind === 'hotseat' ? G.hidden : (G.state.turn !== G.me || busy)) { setStatus('You can resign on your own turn.'); return; }
     if (G.kind === 'online' && !G.names[1]) { setStatus('Nobody has joined yet; there is no one to resign to.'); return; }
@@ -1381,7 +1385,7 @@
   //   cur: the round being played, { k, live, ends, move, score, word }.
   //   bots, botDue: the bots this page plays for (the host's), see "bots" below.
   // Saved as { id, kind: 'room', words, token, player, over, round, row, mine, cur: { k, ends }, bots }.
-  const SAME_ROUNDS = [10, 15, 0], SAME_SECONDS = [60, 90, 120, 180, 0];
+  const SAME_ROUNDS = [5, 10, 15, 0], SAME_SECONDS = [60, 90, 120, 180, 0];
   const secondsWords = (t) => (t < 120 ? t + ' seconds' : t / 60 + ' minutes');
   const draftKey = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
   const draftMove = () => ({ t: 'play', tiles: pending.map((t) => ({ r: t.r, c: t.c, l: t.l, b: t.b })) });
@@ -1413,10 +1417,13 @@
     const S = G.states;
     while (S.length <= n && !S[S.length - 1].over) S.push(C.resolveRound(S[S.length - 1], [], dict, common));
   }
+  // the last round of a room that is over: its last round, the bag's, or the one its players ended it with
+  const lastRound = () => (G.row && G.row.phase === 'over' ? G.row.round : Infinity);
   // the game before round k, or null when it ends before then
-  function stateAt(k) { upTo(k - 1); const s = G.states[k - 1]; return s && !s.over ? s : null; }
+  function stateAt(k) { if (k > lastRound()) return null; upTo(k - 1); const s = G.states[k - 1]; return s && !s.over ? s : null; }
   // round k as it went: its rack, best play, top play and board play
-  function roundOf(k) { upTo(k); const s = G.states[k]; return s ? s.rounds[k - 1] : null; }
+  function roundOf(k) { if (k > lastRound()) return null; upTo(k); const s = G.states[k]; return s ? s.rounds[k - 1] : null; }
+  const roundsPlayed = () => Math.max(0, Math.min(G.states.length - 1, lastRound()));
   const roundsLabel = (k) => 'Round ' + k + (G.row && G.row.limit ? ' of ' + G.row.limit : '');
 
   // ---- plays: this player's own, and the others' as the server shows them
@@ -1563,8 +1570,9 @@
     G.row = row; G.seconds = row.seconds;
     G.names = [];
     for (const x of row.players) G.names[x.player] = x.name;
-    if (!G.states || (G.states.length === 1 && G.states[0].opts.limit !== row.limit)) {
-      try { G.states = [C.newGroup(G.seed, { limit: row.limit, board: 'engine' }, dict, common)]; }
+    const opts = { limit: row.limit, board: 'engine', racks: row.fresh ? 'fresh' : 'keep' };
+    if (!G.states || G.states[0].opts.limit !== opts.limit || G.states[0].opts.racks !== opts.racks) {
+      try { G.states = [C.newGroup(G.seed, opts, dict, common)]; }
       catch (e) { stopRoomPoll(); setStatus('This room’s game could not be dealt: ' + e.message, 'bad'); return; }
     }
     const others = new Map();
@@ -1611,18 +1619,22 @@
     let phase;
     if (row.phase === 'lobby') phase = 'lobby';
     else if (G.me === null) phase = row.phase === 'over' ? 'over' : 'watch';
-    else if (!stateAt(k) || (row.end_reason === 'bag' && k > row.round)) phase = 'over';
+    else if (!stateAt(k)) phase = 'over';
     else if (G.cur && G.cur.k === k) phase = 'play';
     else if (online() && row.phase === 'playing' && row.round === k && row.closed < k) { beginRound(k, true); phase = 'play'; }
     else if (online() && row.phase === 'playing' && row.round === k - 1) phase = row.closed < k - 1 ? 'wait' : 'reveal';
     else phase = 'ready';
     if (G.cur && (phase !== 'play' || G.cur.k !== k)) G.cur = null;
     G.phase = phase;
-    // the board: before your round while you play it, after your last one otherwise
-    const at = G.me === null ? (row.phase === 'lobby' ? 0 : row.closed) : Math.max(0, Math.min(k - 1, 99));
+    // the board: before your round while you play it, and with your play on it
+    // while the room finishes that round, so the board play shows with its card;
+    // after your last round otherwise
+    const at = G.me === null ? (row.phase === 'lobby' ? 0 : row.closed) : Math.max(0, Math.min(k - (phase === 'wait' ? 2 : 1), 99, lastRound()));
     upTo(at);
     G.state = G.states[Math.min(at, G.states.length - 1)];
     G.hidden = phase !== 'play';
+    if (phase === 'wait') { const m = mineAt(k - 1), move = m && m.play ? unpackPlay(m.play) : null; pending = move ? draftFrom(move) : []; }
+    else if (was === 'wait') pending = [];
     if (G.state.history.length !== seenMoves) seenMoves = G.state.history.length;
     render();
     // the room's own cards take over the screen, but never from another card (the menu, a blank's letter)
@@ -1664,7 +1676,7 @@
 
   // ---- playing a round
   function roomPrimary() {
-    if (G.phase === 'play') roomSubmit();
+    if (G.phase === 'play') finishRound(false);
     else if (G.phase === 'ready') startOwnRound();
     else if (G.phase === 'reveal') roomReady();
     else if (G.phase === 'lobby') showLobby();
@@ -1677,18 +1689,18 @@
     persistRoom();
     settle();
   }
-  function roomSubmit() {
-    if (G.phase !== 'play' || G.me === null) return;
-    if (!pending.length) { setStatus('Place some tiles first: click a square and type, or drag a tile from the rack.'); return; }
+  // The best legal play laid out this round is saved as you go, and sent (not
+  // done) so that it stands if the round ends first.
+  function keepBest(preview) {
+    if (G.phase !== 'play' || !G.cur || G.me === null || !preview || !preview.ok || (G.cur.move && preview.score <= G.cur.score)) return;
     const move = draftMove(), res = C.checkPlay(G.state.board, G.state.rack, move, dict);
-    if (!res.ok) { setStatus(res.reason, 'bad'); return; }
+    if (!res.ok) return;
     G.cur.move = move; G.cur.score = res.score; G.cur.word = res.main;
     G.mine[G.cur.k] = { play: C.pack(G.words, move), done: false, sent: false };
     persistRoom();
-    render();
     flush();
   }
-  // Done, or time up: the better of the submitted play and a legal one on the board stands.
+  // Finish round, or time up: the better of the saved play and a legal one on the board stands.
   function finishRound(timeUp) {
     if (G.phase !== 'play' || !G.cur || G.me === null) return;
     if (drag) endDrag(drag);
@@ -1703,10 +1715,6 @@
     persistRoom();
     settle();
     flush();
-  }
-  function roomDone() {
-    if (G.phase === 'play') finishRound(false);
-    else if (G.phase === 'ready' && online() && myRound() < liveRound()) skipAhead();
   }
   // Behind the room: the rounds in between score nothing, and you join the room's round.
   function skipAhead() {
@@ -1732,6 +1740,23 @@
       G.readyFor = 0;
       wentOffline(e);
     }
+  }
+
+  // End game, and Keep playing to take it back. The game ends once every
+  // player wants it to, and the host's bots go along with the host.
+  let voting = false;
+  async function voteEnd() {
+    if (G.me === null || !online() || voting || G.row.phase !== 'playing') return;
+    const row = G.row, want = !(roomPlayer(G.me) || {}).end, s = G.session, t0 = Date.now();
+    const last = row.players.every((x) => x.player === G.me || x.end || isBot(x.player));
+    if (want && last && !window.confirm('End the game now?' + (row.closed < row.round ? ' This round won’t count.' : ''))) return;
+    voting = true; render();
+    try {
+      const answer = await ask('vote_end', { p_code: G.words, p_token: G.token, p_end: want });
+      if (alive(s)) integrateRoom(answer, t0, Date.now());
+    } catch (e) {
+      if (alive(s)) setStatus((want ? 'Could not end the game: ' : 'Could not take that back: ') + whyFailed(e) + '.', 'bad');
+    } finally { voting = false; if (alive(s)) render(); }
   }
 
   // ---- talking to the server
@@ -1789,6 +1814,16 @@
   }
   // still playing rounds the room has finished
   const behind = (x) => x.player !== G.me && x.joined + x.finished <= G.row.closed;
+  // How a player is playing right now: 'live' with the room, 'behind' (catching
+  // up on their own clock) or 'off' (not heard from lately), shown as a dot.
+  function liveness(p) {
+    const row = G.row;
+    if (p === G.me) return G.offline ? 'off' : (G.phase === 'ready' && row.phase !== 'lobby') || (G.phase === 'play' && G.cur && !G.cur.live) ? 'behind' : 'live';
+    const x = roomPlayer(p) || {};
+    return !x.here ? 'off' : row.phase !== 'lobby' && behind(x) ? 'behind' : 'live';
+  }
+  const DOT_WORDS = { live: 'playing with the room', behind: 'catching up', off: 'offline' };
+  const dotHtml = (live) => '<i class="sm-dot ' + live + '" title="' + DOT_WORDS[live] + '"></i>';
   let roomAsking = false;
   async function pollRoom() {
     if (!G || G.kind !== 'room' || roomAsking) return;
@@ -1817,18 +1852,37 @@
   // token and never with the host's account. A bot is here while the host's
   // page is, and it never holds the room up for long: it plays a few seconds
   // into a round (at once when everyone else is done) and is ready for the next
-  // round straight away. Rounds it missed while the host had no signal or
-  // left the room go in once the host is back.
+  // round straight away. It wants the game to end when the host does. Rounds
+  // it missed while the host had no signal or left the room go in once the
+  // host is back.
   // G.bots: [{ p, token, d, upto, ready, seen }]: its seat, token and level, the
   //   last round it has played, the round it said it was ready for, and when it last called.
   const BOT_LEVELS = [20, 40, 60, 80, 100];
   const isBot = (p) => G.bots.some((b) => b.p === p);
   async function addBot(d) {
     const s = G.session, token = randomToken();
-    const seat = await ask('join_room', { p_code: G.words, p_name: 'Bot ' + (G.bots.length + 1) + ' (' + levelWords(d) + ')', p_token: token }, true);
+    const taken = G.row.players.filter((x) => isBot(x.player)).map((x) => +(x.name.match(/^Bot (\d+)/) || [])[1]);
+    let n = 1;
+    while (taken.includes(n)) n++;
+    const seat = await ask('join_room', { p_code: G.words, p_name: 'Bot ' + n + ' (' + levelWords(d) + ')', p_token: token }, true);
     if (!alive(s)) return;
     G.bots.push({ p: seat.player, token, d, upto: 0, ready: 0, seen: Date.now() });
     persistRoom();
+    pollRoom();
+  }
+  // Takes a bot out of the lobby: it leaves by its own token.
+  const removing = new Set();   // the seats of bots on their way out
+  async function removeBot(p) {
+    const b = G.bots.find((x) => x.p === p), s = G.session;
+    if (!b || removing.has(p)) return;
+    removing.add(p);
+    try { await ask('leave_room', { p_code: G.words, p_token: b.token }, true); }
+    finally { removing.delete(p); }
+    if (!alive(s)) return;
+    G.bots = G.bots.filter((x) => x !== b);
+    if (G.row) G.row.players = G.row.players.filter((x) => x.player !== p);
+    persistRoom();
+    updateLobby();
     pollRoom();
   }
   // a bot's play in round k, the same however often it is worked out
@@ -1847,8 +1901,9 @@
     const people = row.players.filter((x) => !isBot(x.player) && x.here && x.joined <= row.round && !behind(x));
     return people.length && people.every((x) => x.done) ? 0 : G.botDue[key];
   }
-  // One pass over the bots, after each answer from the server: each plays the
-  // rounds it owes, says it is ready, or just checks in so it counts as here.
+  // One pass over the bots, after each answer from the server: each votes as
+  // the host has, plays the rounds it owes, says it is ready, or just checks in
+  // so it counts as here.
   let botsBusy = false;
   async function driveBots() {
     if (botsBusy || !G || G.kind !== 'room' || !G.bots.length || G.offline || !G.row) return;
@@ -1863,8 +1918,11 @@
           const x = row.players.find((y) => y.player === b.p);
           if (!x || (row.phase === 'over' && b.upto >= row.round)) break;
           const k = Math.max(b.upto + 1, x.joined), open = row.phase === 'playing' && row.closed < row.round;
+          const host = !!(row.players.find((y) => y.player === G.me) || {}).end;
           let fn, args, after = null;
-          if (row.phase !== 'lobby' && (k <= row.closed || (open && k === row.round && Date.now() >= botDue(b, k, row))) && stateAt(k)) {
+          if (row.phase === 'playing' && !!x.end !== host) {
+            fn = 'vote_end'; args = { p_code: G.words, p_token: b.token, p_end: host }; after = () => {};
+          } else if (row.phase !== 'lobby' && (k <= row.closed || (open && k === row.round && Date.now() >= botDue(b, k, row))) && stateAt(k)) {
             fn = 'submit_play'; args = { p_code: G.words, p_token: b.token, p_round: k, p_play: botPlay(b, k), p_done: true }; after = () => { b.upto = k; };
           } else if (row.phase === 'playing' && row.next_starts && b.upto >= row.round && b.ready <= row.round) {
             const want = row.round + 1;
@@ -1957,7 +2015,7 @@
     if (!res.ok) return 'Your play did not count (' + esc(res.reason.replace(/\.$/, '')) + '). ' + best + ' goes on the board.';
     const yours = 'You played ' + esc(res.main) + ' for ' + res.score;
     if (res.score > r.best.score) return yours + ', more than the best everyday play. ' + best + ' goes on the board.';
-    if (res.score === r.best.score) return draftKey(unpackPlay(e.play).tiles) === draftKey(r.best.tiles) ? 'You found the best play, ' + best + ', and it goes on the board.' : yours + ', as much as the best play. ' + best + ' goes on the board.';
+    if (res.score === r.best.score) return res.main === r.best.word ? 'You found the best play, ' + best + ', and it goes on the board.' : yours + ', as much as the best play. ' + best + ' goes on the board.';
     return yours + '. ' + best + ' goes on the board.';
   }
   // A square per round of yours: how close your play came to the best.
@@ -1992,13 +2050,15 @@
     const here = row.players.filter((x) => x.here && x.joined <= row.round && !behind(x));
     const doneHere = here.filter((x) => x.done).length;
     const signal = G.offline ? ' · <i>no signal</i>' : '';
+    const ending = row.phase === 'playing' ? row.players.filter((x) => x.end).length : 0;
+    const endWords = ending + ' of ' + row.players.length + (ending === 1 ? ' wants' : ' want') + ' to end', endNote = ending ? ' ' + endWords + '.' : '';
     if (G.phase === 'lobby') ui.msg.innerHTML = '<b>Waiting to start.</b>' + signal;
     else if (G.phase === 'watch') ui.msg.innerHTML = '<i>Watching.</i> <b>' + roundsLabel(row.round) + '.</b> ' + (row.closed ? roomResult(row.closed) : '');
     else if (G.phase === 'play') ui.msg.innerHTML = '<b>' + roundsLabel(k) + '</b> · ' + (G.cur.ends ? '<span class="sm-clock" id="sm-clock"></span>' : 'no clock') +
-      (G.cur.live ? ' · ' + doneHere + ' of ' + here.length + ' done' : ' · on your own clock') + signal + (G.cur.ends ? '<div class="sm-timebar"><i id="sm-timefill"></i></div>' : '');
-    else if (G.phase === 'wait') ui.msg.innerHTML = '<b>Round ' + (k - 1) + '.</b> You are done. Waiting for ' + plural(here.length - doneHere, 'player') + '…';
-    else if (G.phase === 'reveal') ui.msg.innerHTML = '<b>Round ' + (k - 1) + '.</b> ' + roomResult(k - 1) + ' Next round in <span id="sm-next-in">' + nextIn() + '</span>.';
-    else if (G.phase === 'ready') ui.msg.innerHTML = '<b>' + roundsLabel(k) + '.</b> ' + readyWhy(k);
+      (G.cur.live ? ' · ' + doneHere + ' of ' + here.length + ' done' : ' · on your own clock') + (ending ? ' · ' + endWords : '') + signal + (G.cur.ends ? '<div class="sm-timebar"><i id="sm-timefill"></i></div>' : '');
+    else if (G.phase === 'wait') ui.msg.innerHTML = '<b>Round ' + (k - 1) + '.</b> You are done. Waiting for ' + plural(here.length - doneHere, 'player') + '…' + endNote;
+    else if (G.phase === 'reveal') ui.msg.innerHTML = '<b>Round ' + (k - 1) + '.</b> ' + roomResult(k - 1) + ' Next round in <span id="sm-next-in">' + nextIn() + '</span>.' + endNote;
+    else if (G.phase === 'ready') ui.msg.innerHTML = '<b>' + roundsLabel(k) + '.</b> ' + readyWhy(k) + endNote;
     else ui.msg.innerHTML = '<b>Game over.</b> ' + esc(roomWinner(rows)) + signal;
     paintClock();
     renderBoard();
@@ -2007,21 +2067,30 @@
     renderRoomPanel(rows);
     const drafting = canDraft();
     const preview = drafting && pending.length ? previewDraft(G.state) : null;
-    const submitted = !!(preview && preview.ok && G.cur && G.cur.move && draftKey(G.cur.move.tiles) === draftKey(pending));
+    keepBest(preview);
+    const saved = G.phase === 'play' && G.cur && G.cur.move ? G.cur : null;
+    const onBoard = !!(saved && preview && preview.ok && draftKey(saved.move.tiles) === draftKey(pending));
+    const savedNote = saved ? 'Saved: ' + saved.word + ' for ' + plural(saved.score, 'point') + '.' : '';
     ui.board.classList.toggle('valid', !!(preview && preview.ok));
     if (stickyError) { /* an action failed: keep saying so until the draft changes */ }
-    else if (submitted) { setStatus('Submitted ' + G.cur.word + ' for ' + plural(G.cur.score, 'point') + '. Press Done when you’re finished.', 'good'); statusIsPreview = true; }
-    else if (preview) { setStatus(preview.text, preview.kind); statusIsPreview = true; }
+    else if (onBoard) { setStatus(sentence(preview.text) + ' Saved.', 'good'); statusIsPreview = true; }
+    else if (preview) { setStatus(saved ? sentence(preview.text) + ' ' + savedNote : preview.text, preview.kind); statusIsPreview = true; }
+    else if (saved) { setStatus(savedNote); statusIsPreview = true; }
     else if (statusIsPreview) setStatus('');
     const ready = G.readyFor > row.round || !!(roomPlayer(G.me) || {}).ready;
     const behindRoom = G.phase === 'ready' && online() && row.phase === 'playing' && k < liveRound();
     ui.play.textContent = G.phase === 'lobby' ? 'Room' : G.phase === 'over' ? 'Results' : G.phase === 'watch' ? 'Watching' : G.phase === 'wait' ? 'Waiting' : G.phase === 'reveal' ? (ready ? 'Ready' : 'Next round')
-      : G.phase === 'ready' ? 'Start round ' + k : submitted ? 'Submitted' : preview && preview.ok ? (G.cur.move ? 'Resubmit for ' : 'Submit for ') + preview.score : 'Submit';
-    ui.play.disabled = G.phase === 'watch' || G.phase === 'wait' || (G.phase === 'reveal' && ready) || (G.phase === 'play' && submitted);
-    ui.pass.textContent = behindRoom ? 'Skip to round ' + liveRound() : 'Done';
-    ui.pass.disabled = !(G.phase === 'play' || behindRoom);
+      : G.phase === 'ready' ? 'Start round ' + k : 'Finish round';
+    ui.play.disabled = G.phase === 'watch' || G.phase === 'wait' || (G.phase === 'reveal' && ready);
+    ui.pass.textContent = 'Skip to round ' + liveRound();
+    ui.pass.style.display = behindRoom ? '' : 'none'; ui.pass.disabled = false;
     ui.recall.disabled = !drafting || !pending.length;
     ui.shuffle.disabled = G.hidden || G.me === null;
+    const wants = !!(roomPlayer(G.me) || {}).end;
+    ui.resign.style.display = G.me !== null && row.phase === 'playing' && row.closed >= 1 ? '' : 'none';
+    ui.resign.textContent = wants ? 'Keep playing' : 'End game';
+    ui.resign.classList.toggle('danger', !wants);
+    ui.resign.disabled = !online() || voting;
   }
   // why a round waits for you to start it
   function readyWhy(k) {
@@ -2034,13 +2103,13 @@
     ui.movesTitle.textContent = 'Rounds';
     ui.nav.hidden = true; ui.analysis.hidden = true;
     let html = '';
-    const end = G.me === null ? G.row.closed + 1 : myRound();
+    const end = G.me === null ? G.row.closed + 1 : myRound() - (G.phase === 'wait' ? 1 : 0);   // a round you wait on shows with its card
     for (let k = G.me === null ? 1 : joinedAt(); k < end; k++) {
       const r = roundOf(k);
       if (!r) break;
       const res = scored(mineAt(k), k), found = res && res.ok && res.score >= r.best.score;
-      const you = G.me === null ? '' : ' <small>you: ' + (!res ? 'no play' : !res.ok ? 'did not count' : esc(res.main) + ' ' + res.score) + '</small>';
-      html += '<li data-k="' + k + '"><span><span class="n">' + k + '.</span>' + esc(r.best.word) + you + '</span><b>' + r.best.score + (found ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
+      const plays = topPlays(k).map((x) => (x.p === G.me ? 'you' : esc(nameOf(x.p))) + ' ' + (!x.res ? 'no play' : !x.res.ok ? 'did not count' : esc(x.res.main) + ' ' + x.res.score)).join(' · ');
+      html += '<li data-k="' + k + '"><span><span class="n">' + k + '.</span>' + esc(r.best.word) + (plays ? '<small class="plays">' + plays + '</small>' : '') + '</span><b>' + r.best.score + (found ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
     }
     ui.log.innerHTML = html || '<li><span class="who">No rounds yet.</span></li>';
     ui.log.classList.remove('locked');
@@ -2051,14 +2120,15 @@
     const row = G.row, link = location.origin + pathFor(G.id);
     let html = '<div class="sm-k">Same Rack</div><div>Room <span class="sm-code">' + esc(G.words) + '</span></div><div class="sm-room-players">';
     for (const x of rows) {
-      const p = roomPlayer(x.p) || {};
+      const p = roomPlayer(x.p) || {}, live = liveness(x.p);
       let status = '';
-      if (x.p === G.me) status = G.offline ? 'no signal' : '';
-      else if (behind(p) && row.phase !== 'lobby') status = 'round ' + (p.joined + p.finished);
-      else if (G.phase === 'play' || G.phase === 'wait') status = p.joined > row.round ? 'next round' : p.done ? 'done' : !p.here ? 'away' : p.played ? 'played' : '';
-      else if (G.phase === 'reveal') status = p.ready ? 'ready' : !p.here ? 'away' : '';
-      else if (!p.here && G.phase !== 'over') status = 'away';
-      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + x.rank + '. ' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
+      if (x.p === G.me) status = G.offline ? 'no signal' : row.phase === 'playing' && p.end ? 'wants to end' : '';
+      else if (row.phase === 'playing' && p.end) status = 'wants to end';
+      else if (live === 'off') status = row.phase === 'over' ? '' : 'offline';
+      else if (live === 'behind') status = 'on round ' + (p.joined + p.finished);
+      else if (G.phase === 'play' || G.phase === 'wait') status = p.joined > row.round ? 'next round' : p.done ? 'done' : '';
+      else if (G.phase === 'reveal') status = p.ready ? 'ready' : '';
+      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '>' + dotHtml(live) + '<span>' + x.rank + '. ' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
         (status ? '<small class="st-' + status.replace(/ /g, '-') + '">' + status + '</small>' : '') + '<b>' + x.total + '</b></div>';
     }
     html += '</div>' + (row.phase !== 'over' ? '<div class="sm-row"><button id="sm-room-link">Copy invite link</button></div>' : '');
@@ -2071,6 +2141,7 @@
   function showLobby() {
     const link = location.origin + pathFor(G.id), host = G.me === 0, last = store.get('sm.same', {});
     const limit = SAME_ROUNDS.includes(last.limit) ? last.limit : 10, seconds = SAME_SECONDS.includes(last.seconds) && last.seconds ? last.seconds : 90;
+    const racks = last.racks === 'fresh' ? 'fresh' : 'keep';
     const opts = (vals, cur, label) => vals.map((v) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + label(v) + '</option>').join('');
     openOverlay('<div id="sm-room-card" hidden></div><h2>Same Rack</h2>' +
       '<div class="sm-room-words">' + esc(G.words.replace(/-/g, ' ')) + '</div>' +
@@ -2078,7 +2149,8 @@
       '<div class="sm-qr" id="sm-lobby-qrbox" hidden></div>' +
       '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-lobby-count"></div><div class="sm-list sm-lobby" id="sm-lobby-players"></div>' +
       (host ? '<div class="sm-same-opts"><label>Rounds<select id="sm-lobby-rounds">' + opts(SAME_ROUNDS, limit, (n) => (n ? n + ' rounds' : 'The whole bag')) + '</select></label>' +
-              '<label>Time per round<select id="sm-lobby-time">' + opts(SAME_SECONDS, seconds, (t) => (t ? secondsWords(t) : 'No clock')) + '</select></label></div>' +
+              '<label>Time per round<select id="sm-lobby-time">' + opts(SAME_SECONDS, seconds, (t) => (t ? secondsWords(t) : 'No clock')) + '</select></label>' +
+              '<label class="sm-wide">Racks<select id="sm-lobby-racks">' + opts(['keep', 'fresh'], racks, (r) => (r === 'fresh' ? 'Fresh each round' : 'Keep leftovers')) + '</select></label></div>' +
               '<div class="sm-same-opts sm-addbot"><label>Bot<select id="sm-lobby-botlevel">' + opts(BOT_LEVELS, BOT_LEVELS.includes(last.bot) ? last.bot : 40, (d) => levelWords(d).replace(/^./, (c) => c.toUpperCase())) + '</select></label>' +
               '<button id="sm-lobby-addbot">Add a bot</button></div>'
             : '<p id="sm-lobby-wait" style="margin-top:10px">Waiting for ' + esc(nameOf(0)) + ' to start the game.</p>') +
@@ -2105,10 +2177,12 @@
     });
     const start = $('sm-lobby-start');
     if (start) start.addEventListener('click', async () => {
-      const n = +$('sm-lobby-rounds').value, t = +$('sm-lobby-time').value, s = G.session, t0 = Date.now();
-      store.set('sm.same', Object.assign(store.get('sm.same', {}), { limit: n, seconds: t }));
+      const n = +$('sm-lobby-rounds').value, t = +$('sm-lobby-time').value, r = $('sm-lobby-racks').value, s = G.session, t0 = Date.now();
+      store.set('sm.same', Object.assign(store.get('sm.same', {}), { limit: n, seconds: t, racks: r }));
       start.disabled = true; start.textContent = 'Starting…';
-      try { const row = await Net.rpc('start_room', { p_code: G.words, p_token: G.token, p_seconds: t, p_limit: n }); if (alive(s)) integrateRoom(row, t0, Date.now()); }
+      // p_fresh only when chosen, so that starting works against a server without it
+      const args = Object.assign({ p_code: G.words, p_token: G.token, p_seconds: t, p_limit: n }, r === 'fresh' ? { p_fresh: true } : {});
+      try { const row = await Net.rpc('start_room', args); if (alive(s)) integrateRoom(row, t0, Date.now()); }
       catch (e) { if (!alive(s) || !$('sm-lobby-err')) return; $('sm-lobby-err').textContent = 'Could not start: ' + whyFailed(e) + '.'; start.disabled = false; start.textContent = 'Start the game'; }
     });
     updateLobby();
@@ -2116,35 +2190,56 @@
   function updateLobby() {
     const list = $('sm-lobby-players');
     if (!list) return;
-    list.innerHTML = G.row.players.map((x) => '<div><span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' + (x.here ? '' : '<small>away</small>') + '</div>').join('');
+    list.innerHTML = G.row.players.map((x) => {
+      const live = liveness(x.player), bot = G.me === 0 && isBot(x.player);
+      return '<div>' + dotHtml(live) + '<span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' +
+        (bot ? '<button class="sm-rm" data-bot="' + x.player + '"' + (removing.has(x.player) ? ' disabled>Removing…' : '>Remove') + '</button>'
+         : live === 'off' && x.player !== G.me ? '<small>offline</small>' : '') + '</div>';
+    }).join('');
+    for (const b of list.querySelectorAll('[data-bot]')) b.addEventListener('click', async () => {
+      const p = +b.dataset.bot;
+      b.disabled = true; b.textContent = 'Removing…';
+      try { await removeBot(p); if ($('sm-lobby-err')) $('sm-lobby-err').textContent = ''; }
+      catch (e) { if ($('sm-lobby-err')) $('sm-lobby-err').textContent = 'Could not remove the bot: ' + whyFailed(e) + '.'; updateLobby(); }
+    });
     $('sm-lobby-count').textContent = 'Players · ' + G.row.players.length;
     if (G.offline && $('sm-lobby-err')) $('sm-lobby-err').textContent = 'No signal.';
   }
-  // A round's plays, best first. live: the card shown as you finish a round,
-  // with the button for whatever comes next.
-  function showRoundCard(k, live) {
-    const r = roundOf(k);
-    if (!r) return;
+  // Round k's plays this page can see, best first, each with its place: the
+  // finished ones, and yours.
+  function roundPlays(k) {
     const list = [];
     for (const x of G.row.players) {
       if (x.joined > k) continue;
       const e = entryOf(k, x.player), res = e && e.done ? scored(e, k) : null;
-      list.push({ p: x.player, e, res, score: res && res.ok ? res.score : -1 });
+      if (e && e.done) list.push({ p: x.player, res, score: res && res.ok ? res.score : -1 });
     }
     list.sort((a, b) => b.score - a.score || a.p - b.p);
+    for (const x of list) x.place = 1 + list.filter((y) => y.score > x.score).length;
+    return list;
+  }
+  // the plays of round k placed third or better (more than three with ties), and yours when it is not among them
+  function topPlays(k) {
+    const list = roundPlays(k), top = list.filter((x) => x.score >= 0 && x.place <= 3), mine = list.find((x) => x.p === G.me);
+    if (mine && !top.includes(mine)) top.push(mine);
+    return top;
+  }
+  // A round's top plays. live: the card shown as you finish a round, with the
+  // button for whatever comes next.
+  function showRoundCard(k, live) {
+    const r = roundOf(k);
+    if (!r) return;
     const shown = G.me === null || (online() && G.row.closed >= k);   // the server shows the others once the room has closed the round
-    let html = '<div id="sm-room-card" hidden data-k="' + k + '" data-live="' + (live ? 1 : 0) + '" data-sig="' + roundSig(k) + '"></div><h2>Round ' + k + '</h2><p>' + roomResult(k) + '</p><div class="sm-list sm-roundplays">';
-    for (const x of list) {
-      if (x.p !== G.me && !(x.e && x.e.done)) {
-        if (!shown) continue;
-        html += '<div><span>' + esc(nameOf(x.p)) + '</span><span class="w"><small>still playing</small></span><b></b></div>';
-        continue;
-      }
-      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
+    let html = '<div id="sm-room-card" hidden data-k="' + k + '" data-live="' + (live ? 1 : 0) + '" data-sig="' + roundSig(k) + '"></div><h2>Round ' + k + '</h2><p>' + roomResult(k) + '</p>';
+    let rows = '';
+    for (const x of topPlays(k)) {
+      rows += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + (x.score >= 0 ? x.place : '') + '</span><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
         '<span class="w">' + (!x.res ? '<small>no play</small>' : x.res.ok ? esc(x.res.main) + (x.res.bingo ? ' <small>bingo</small>' : '') : '<small>' + esc(x.res.reason.replace(/\.$/, '')) + '</small>') + '</span>' +
         '<b>' + Math.max(0, x.score) + (x.score >= r.best.score ? ' <span style="color:var(--good)">★</span>' : '') + '</b></div>';
     }
-    html += '</div>';
+    if (rows) html += '<div class="sm-list sm-roundplays">' + rows + '</div>';
+    const late = shown ? G.row.players.filter((x) => x.joined <= k && x.player !== G.me && !(entryOf(k, x.player) || {}).done) : [];
+    if (late.length) html += '<p class="sm-note">' + esc(late.map((x) => nameOf(x.player)).join(' and ')) + (late.length > 1 ? ' are' : ' is') + ' still playing.</p>';
     if (!shown) html += '<p class="sm-note">' + (G.offline ? 'The others’ plays show when you have signal.' : 'The others’ plays show when the round ends.') + '</p>';
     if (r.top.score > r.best.score) html += '<p class="sm-note">The top play was <b>' + esc(r.top.word) + '</b> for ' + r.top.score + '.</p>';
     html += '<div class="sm-row" style="justify-content:center"><button id="sm-round-close">' + (live ? 'Look at the board' : 'Close') + '</button>' +
@@ -2178,12 +2273,12 @@
   }
   function roomShareText(rows) {
     const squares = G.me === null ? '' : squareKinds().map((k) => SQUARES[k][0]).join('') + '\n';
-    return 'Same Rack · ' + G.words + ' · ' + plural(Math.max(0, G.states.length - 1), 'round') + '\n' + squares +
+    return 'Same Rack · ' + G.words + ' · ' + plural(roundsPlayed(), 'round') + '\n' + squares +
       rows.map((x) => x.rank + '. ' + nameOf(x.p) + ' ' + x.total + ' (' + x.share + '%)').join('\n');
   }
   const overSig = () => roomStandings().map((x) => x.p + ':' + x.total + ':' + x.rounds).join(' ');
   function showRoomOver() {
-    const rows = roomStandings(), mine = rows.find((x) => x.p === G.me), n = Math.max(0, G.states.length - 1);
+    const rows = roomStandings(), mine = rows.find((x) => x.p === G.me), n = roundsPlayed();
     const bag = G.row.end_reason === 'bag' || G.states[G.states.length - 1].endReason === 'bag';
     const late = G.row.players.filter((x) => behind(x) || (G.row.phase !== 'over' && x.player !== G.me && x.joined + x.finished <= n));
     let html = '<div id="sm-room-card" hidden></div><div id="sm-room-over" hidden data-sig="' + overSig() + '"></div><h2>' + esc(roomWinner(rows).replace(/\.$/, '')) + '</h2><p>' + plural(n, 'round') + ' of ' + esc(G.words.replace(/-/g, ' ')) + (bag ? ', until the bag ran out' : '') + '.</p>';

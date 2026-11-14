@@ -907,7 +907,9 @@
   // at least one of each (a blank counts as either, Y is a consonant), and a
   // legal play. Otherwise every tile on it goes back in the bag and seven are
   // drawn again. The game ends after `limit` rounds (0: no limit) or when the
-  // bag can no longer make such a rack.
+  // bag can no longer make such a rack. With racks 'fresh', what the board
+  // play left goes back in the bag too, and every round starts from seven new
+  // tiles.
   //
   // state.best is the best play for the rack being played. Given a list of
   // everyday words (common), it is the best play made only of those, which
@@ -915,10 +917,10 @@
   // of all. Without one, both are the best play of all. The page must not
   // show either before the round is over. Whatever list is given becomes part
   // of what decides the game, so every phone must use the same one.
-  const VOWELS = 'AEIOU', RULE_ROUNDS = 15, REDRAWS = 100, DEAD_REDRAWS = 10;
+  const VOWELS = 'AEIOU', RULE_ROUNDS = 15, REDRAWS = 100, DEAD_REDRAWS = 10, FRESH = 1000000;   // FRESH: past every redraw's shuffle
   // Raised whenever a change here would settle a group game differently, so
   // phones on different versions can tell before they disagree.
-  const GROUP_VERSION = 1;
+  const GROUP_VERSION = 2;
   const rackNeed = (round) => (round <= RULE_ROUNDS ? 2 : 1);
   function rackMeets(tiles, need) {
     let v = 0, c = 0, b = 0;
@@ -941,7 +943,8 @@
                                 tiles: m.tiles.map((t) => ({ r: t.r, c: t.c, l: t.l, b: !!t.b })) });
   function groupOptions(opts) {
     const o = opts || {};
-    return { limit: Number.isInteger(o.limit) && o.limit >= 0 && o.limit <= 99 ? o.limit : 10, board: o.board === 'engine' ? 'engine' : 'player' };
+    return { limit: Number.isInteger(o.limit) && o.limit >= 0 && o.limit <= 99 ? o.limit : 10, board: o.board === 'engine' ? 'engine' : 'player',
+             racks: o.racks === 'fresh' ? 'fresh' : 'keep' };
   }
   // Fills the rack for the next round, redrawing until it meets the rule and
   // has a play, and notes the round's best play. Ends the game when the bag
@@ -949,6 +952,11 @@
   function dealRack(s, dict, common) {
     const round = s.rounds.length + 1, need = rackNeed(round);
     s.redraws = 0; s.best = null; s.top = null;
+    if (s.opts.racks === 'fresh' && s.rack.length) {
+      s.bag.push(...s.rack.slice().sort());
+      s.rack = [];
+      shuffle(s.bag, seededRandom(mix(s.seed, FRESH + round)));
+    }
     let dead = 0;
     for (;;) {
       while (s.rack.length < RACK && s.bag.length) s.rack.push(s.bag.pop());
