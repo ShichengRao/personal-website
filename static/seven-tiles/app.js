@@ -29,6 +29,7 @@
   const randomSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1);
   const randomToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const sentence = (t) => (/[.!?]$/.test(t) ? t : t + '.');
 
   // ---- game ids and addresses --------------------------------------------
   const WORDS = ('acorn amber apple arrow badger bagel basil beach birch bison bloom brick brook cabin candle canoe cedar cherry ' +
@@ -299,7 +300,7 @@
     // Same Rack has no swaps, resigning or review
     for (const b of [ui.swap, ui.resign, ui.review]) b.style.display = G.kind === 'room' ? 'none' : '';
     if (G.kind === 'room') { renderRoom(); return; }
-    ui.pass.textContent = 'Pass';
+    ui.pass.textContent = 'Pass'; ui.pass.style.display = '';
     const s = G.state;
     for (let p = 0; p < 2; p++) {
       const el = ui.players[p];
@@ -731,7 +732,7 @@
     setStatus(swapMode ? 'Pick the tiles to swap, then confirm. Swapping uses your turn.' : '');
   });
   ui.pass.addEventListener('click', () => {
-    if (G && G.kind === 'room') { roomDone(); return; }   // Same Rack's Done: end this round now
+    if (G && G.kind === 'room') { if (G.phase === 'ready' && online() && myRound() < liveRound()) skipAhead(); return; }   // Same Rack: skip to the room's round
     if (!myTurn()) return;
     if (pending.length) { setStatus('Recall your tiles before passing.', 'bad'); return; }
     if (G.state.racks[G.state.turn].length && !window.confirm('Pass this turn without playing?')) return;
@@ -1664,7 +1665,7 @@
 
   // ---- playing a round
   function roomPrimary() {
-    if (G.phase === 'play') roomSubmit();
+    if (G.phase === 'play') finishRound(false);
     else if (G.phase === 'ready') startOwnRound();
     else if (G.phase === 'reveal') roomReady();
     else if (G.phase === 'lobby') showLobby();
@@ -1677,18 +1678,18 @@
     persistRoom();
     settle();
   }
-  function roomSubmit() {
-    if (G.phase !== 'play' || G.me === null) return;
-    if (!pending.length) { setStatus('Place some tiles first: click a square and type, or drag a tile from the rack.'); return; }
+  // The best legal play laid out this round is saved as you go, and sent (not
+  // done) so that it stands if the round ends first.
+  function keepBest(preview) {
+    if (G.phase !== 'play' || !G.cur || G.me === null || !preview || !preview.ok || (G.cur.move && preview.score <= G.cur.score)) return;
     const move = draftMove(), res = C.checkPlay(G.state.board, G.state.rack, move, dict);
-    if (!res.ok) { setStatus(res.reason, 'bad'); return; }
+    if (!res.ok) return;
     G.cur.move = move; G.cur.score = res.score; G.cur.word = res.main;
     G.mine[G.cur.k] = { play: C.pack(G.words, move), done: false, sent: false };
     persistRoom();
-    render();
     flush();
   }
-  // Done, or time up: the better of the submitted play and a legal one on the board stands.
+  // Finish round, or time up: the better of the saved play and a legal one on the board stands.
   function finishRound(timeUp) {
     if (G.phase !== 'play' || !G.cur || G.me === null) return;
     if (drag) endDrag(drag);
@@ -1703,10 +1704,6 @@
     persistRoom();
     settle();
     flush();
-  }
-  function roomDone() {
-    if (G.phase === 'play') finishRound(false);
-    else if (G.phase === 'ready' && online() && myRound() < liveRound()) skipAhead();
   }
   // Behind the room: the rounds in between score nothing, and you join the room's round.
   function skipAhead() {
@@ -1789,6 +1786,16 @@
   }
   // still playing rounds the room has finished
   const behind = (x) => x.player !== G.me && x.joined + x.finished <= G.row.closed;
+  // How a player is playing right now: 'live' with the room, 'behind' (catching
+  // up on their own clock) or 'off' (not heard from lately), shown as a dot.
+  function liveness(p) {
+    const row = G.row;
+    if (p === G.me) return G.offline ? 'off' : (G.phase === 'ready' && row.phase !== 'lobby') || (G.phase === 'play' && G.cur && !G.cur.live) ? 'behind' : 'live';
+    const x = roomPlayer(p) || {};
+    return !x.here ? 'off' : row.phase !== 'lobby' && behind(x) ? 'behind' : 'live';
+  }
+  const DOT_WORDS = { live: 'playing with the room', behind: 'catching up', off: 'offline' };
+  const dotHtml = (live) => '<i class="sm-dot ' + live + '" title="' + DOT_WORDS[live] + '"></i>';
   let roomAsking = false;
   async function pollRoom() {
     if (!G || G.kind !== 'room' || roomAsking) return;
@@ -2007,19 +2014,23 @@
     renderRoomPanel(rows);
     const drafting = canDraft();
     const preview = drafting && pending.length ? previewDraft(G.state) : null;
-    const submitted = !!(preview && preview.ok && G.cur && G.cur.move && draftKey(G.cur.move.tiles) === draftKey(pending));
+    keepBest(preview);
+    const saved = G.phase === 'play' && G.cur && G.cur.move ? G.cur : null;
+    const onBoard = !!(saved && preview && preview.ok && draftKey(saved.move.tiles) === draftKey(pending));
+    const savedNote = saved ? 'Saved: ' + saved.word + ' for ' + plural(saved.score, 'point') + '.' : '';
     ui.board.classList.toggle('valid', !!(preview && preview.ok));
     if (stickyError) { /* an action failed: keep saying so until the draft changes */ }
-    else if (submitted) { setStatus('Submitted ' + G.cur.word + ' for ' + plural(G.cur.score, 'point') + '. Press Done when you’re finished.', 'good'); statusIsPreview = true; }
-    else if (preview) { setStatus(preview.text, preview.kind); statusIsPreview = true; }
+    else if (onBoard) { setStatus(sentence(preview.text) + ' Saved.', 'good'); statusIsPreview = true; }
+    else if (preview) { setStatus(saved ? sentence(preview.text) + ' ' + savedNote : preview.text, preview.kind); statusIsPreview = true; }
+    else if (saved) { setStatus(savedNote); statusIsPreview = true; }
     else if (statusIsPreview) setStatus('');
     const ready = G.readyFor > row.round || !!(roomPlayer(G.me) || {}).ready;
     const behindRoom = G.phase === 'ready' && online() && row.phase === 'playing' && k < liveRound();
     ui.play.textContent = G.phase === 'lobby' ? 'Room' : G.phase === 'over' ? 'Results' : G.phase === 'watch' ? 'Watching' : G.phase === 'wait' ? 'Waiting' : G.phase === 'reveal' ? (ready ? 'Ready' : 'Next round')
-      : G.phase === 'ready' ? 'Start round ' + k : submitted ? 'Submitted' : preview && preview.ok ? (G.cur.move ? 'Resubmit for ' : 'Submit for ') + preview.score : 'Submit';
-    ui.play.disabled = G.phase === 'watch' || G.phase === 'wait' || (G.phase === 'reveal' && ready) || (G.phase === 'play' && submitted);
-    ui.pass.textContent = behindRoom ? 'Skip to round ' + liveRound() : 'Done';
-    ui.pass.disabled = !(G.phase === 'play' || behindRoom);
+      : G.phase === 'ready' ? 'Start round ' + k : 'Finish round';
+    ui.play.disabled = G.phase === 'watch' || G.phase === 'wait' || (G.phase === 'reveal' && ready);
+    ui.pass.textContent = 'Skip to round ' + liveRound();
+    ui.pass.style.display = behindRoom ? '' : 'none'; ui.pass.disabled = false;
     ui.recall.disabled = !drafting || !pending.length;
     ui.shuffle.disabled = G.hidden || G.me === null;
   }
@@ -2039,8 +2050,8 @@
       const r = roundOf(k);
       if (!r) break;
       const res = scored(mineAt(k), k), found = res && res.ok && res.score >= r.best.score;
-      const you = G.me === null ? '' : ' <small>you: ' + (!res ? 'no play' : !res.ok ? 'did not count' : esc(res.main) + ' ' + res.score) + '</small>';
-      html += '<li data-k="' + k + '"><span><span class="n">' + k + '.</span>' + esc(r.best.word) + you + '</span><b>' + r.best.score + (found ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
+      const plays = topPlays(k).map((x) => (x.p === G.me ? 'you' : esc(nameOf(x.p))) + ' ' + (!x.res ? 'no play' : !x.res.ok ? 'did not count' : esc(x.res.main) + ' ' + x.res.score)).join(' · ');
+      html += '<li data-k="' + k + '"><span><span class="n">' + k + '.</span>' + esc(r.best.word) + (plays ? '<small class="plays">' + plays + '</small>' : '') + '</span><b>' + r.best.score + (found ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
     }
     ui.log.innerHTML = html || '<li><span class="who">No rounds yet.</span></li>';
     ui.log.classList.remove('locked');
@@ -2051,14 +2062,14 @@
     const row = G.row, link = location.origin + pathFor(G.id);
     let html = '<div class="sm-k">Same Rack</div><div>Room <span class="sm-code">' + esc(G.words) + '</span></div><div class="sm-room-players">';
     for (const x of rows) {
-      const p = roomPlayer(x.p) || {};
+      const p = roomPlayer(x.p) || {}, live = liveness(x.p);
       let status = '';
       if (x.p === G.me) status = G.offline ? 'no signal' : '';
-      else if (behind(p) && row.phase !== 'lobby') status = 'round ' + (p.joined + p.finished);
-      else if (G.phase === 'play' || G.phase === 'wait') status = p.joined > row.round ? 'next round' : p.done ? 'done' : !p.here ? 'away' : p.played ? 'played' : '';
-      else if (G.phase === 'reveal') status = p.ready ? 'ready' : !p.here ? 'away' : '';
-      else if (!p.here && G.phase !== 'over') status = 'away';
-      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + x.rank + '. ' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
+      else if (live === 'off') status = row.phase === 'over' ? '' : 'offline';
+      else if (live === 'behind') status = 'on round ' + (p.joined + p.finished);
+      else if (G.phase === 'play' || G.phase === 'wait') status = p.joined > row.round ? 'next round' : p.done ? 'done' : '';
+      else if (G.phase === 'reveal') status = p.ready ? 'ready' : '';
+      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '>' + dotHtml(live) + '<span>' + x.rank + '. ' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
         (status ? '<small class="st-' + status.replace(/ /g, '-') + '">' + status + '</small>' : '') + '<b>' + x.total + '</b></div>';
     }
     html += '</div>' + (row.phase !== 'over' ? '<div class="sm-row"><button id="sm-room-link">Copy invite link</button></div>' : '');
@@ -2116,35 +2127,45 @@
   function updateLobby() {
     const list = $('sm-lobby-players');
     if (!list) return;
-    list.innerHTML = G.row.players.map((x) => '<div><span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' + (x.here ? '' : '<small>away</small>') + '</div>').join('');
+    list.innerHTML = G.row.players.map((x) => { const live = liveness(x.player); return '<div>' + dotHtml(live) + '<span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' + (live === 'off' && x.player !== G.me ? '<small>offline</small>' : '') + '</div>'; }).join('');
     $('sm-lobby-count').textContent = 'Players · ' + G.row.players.length;
     if (G.offline && $('sm-lobby-err')) $('sm-lobby-err').textContent = 'No signal.';
   }
-  // A round's plays, best first. live: the card shown as you finish a round,
-  // with the button for whatever comes next.
-  function showRoundCard(k, live) {
-    const r = roundOf(k);
-    if (!r) return;
+  // Round k's plays this page can see, best first, each with its place: the
+  // finished ones, and yours.
+  function roundPlays(k) {
     const list = [];
     for (const x of G.row.players) {
       if (x.joined > k) continue;
       const e = entryOf(k, x.player), res = e && e.done ? scored(e, k) : null;
-      list.push({ p: x.player, e, res, score: res && res.ok ? res.score : -1 });
+      if (e && e.done) list.push({ p: x.player, res, score: res && res.ok ? res.score : -1 });
     }
     list.sort((a, b) => b.score - a.score || a.p - b.p);
+    for (const x of list) x.place = 1 + list.filter((y) => y.score > x.score).length;
+    return list;
+  }
+  // the plays of round k placed third or better (more than three with ties), and yours when it is not among them
+  function topPlays(k) {
+    const list = roundPlays(k), top = list.filter((x) => x.score >= 0 && x.place <= 3), mine = list.find((x) => x.p === G.me);
+    if (mine && !top.includes(mine)) top.push(mine);
+    return top;
+  }
+  // A round's top plays. live: the card shown as you finish a round, with the
+  // button for whatever comes next.
+  function showRoundCard(k, live) {
+    const r = roundOf(k);
+    if (!r) return;
     const shown = G.me === null || (online() && G.row.closed >= k);   // the server shows the others once the room has closed the round
-    let html = '<div id="sm-room-card" hidden data-k="' + k + '" data-live="' + (live ? 1 : 0) + '" data-sig="' + roundSig(k) + '"></div><h2>Round ' + k + '</h2><p>' + roomResult(k) + '</p><div class="sm-list sm-roundplays">';
-    for (const x of list) {
-      if (x.p !== G.me && !(x.e && x.e.done)) {
-        if (!shown) continue;
-        html += '<div><span>' + esc(nameOf(x.p)) + '</span><span class="w"><small>still playing</small></span><b></b></div>';
-        continue;
-      }
-      html += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
+    let html = '<div id="sm-room-card" hidden data-k="' + k + '" data-live="' + (live ? 1 : 0) + '" data-sig="' + roundSig(k) + '"></div><h2>Round ' + k + '</h2><p>' + roomResult(k) + '</p>';
+    let rows = '';
+    for (const x of topPlays(k)) {
+      rows += '<div' + (x.p === G.me ? ' class="me"' : '') + '><span>' + (x.score >= 0 ? x.place : '') + '</span><span>' + esc(nameOf(x.p)) + (x.p === G.me ? ' <small>you</small>' : '') + '</span>' +
         '<span class="w">' + (!x.res ? '<small>no play</small>' : x.res.ok ? esc(x.res.main) + (x.res.bingo ? ' <small>bingo</small>' : '') : '<small>' + esc(x.res.reason.replace(/\.$/, '')) + '</small>') + '</span>' +
         '<b>' + Math.max(0, x.score) + (x.score >= r.best.score ? ' <span style="color:var(--good)">★</span>' : '') + '</b></div>';
     }
-    html += '</div>';
+    if (rows) html += '<div class="sm-list sm-roundplays">' + rows + '</div>';
+    const late = shown ? G.row.players.filter((x) => x.joined <= k && x.player !== G.me && !(entryOf(k, x.player) || {}).done) : [];
+    if (late.length) html += '<p class="sm-note">' + esc(late.map((x) => nameOf(x.player)).join(' and ')) + (late.length > 1 ? ' are' : ' is') + ' still playing.</p>';
     if (!shown) html += '<p class="sm-note">' + (G.offline ? 'The others’ plays show when you have signal.' : 'The others’ plays show when the round ends.') + '</p>';
     if (r.top.score > r.best.score) html += '<p class="sm-note">The top play was <b>' + esc(r.top.word) + '</b> for ' + r.top.score + '.</p>';
     html += '<div class="sm-row" style="justify-content:center"><button id="sm-round-close">' + (live ? 'Look at the board' : 'Close') + '</button>' +

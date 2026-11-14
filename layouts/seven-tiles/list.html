@@ -48,14 +48,19 @@
 .sm-app .sm-room-players small{font-size:11px;color:var(--muted)}
 .sm-app .sm-room-players small.st-done,.sm-app .sm-room-players small.st-ready{color:var(--good)}
 .sm-app .sm-room-players b{font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
+.sm-app .sm-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--good)}
+.sm-app .sm-dot.behind{background:var(--recent)}
+.sm-app .sm-dot.off{background:none;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.sm-app .sm-list.sm-lobby>div{justify-content:flex-start}
+.sm-app .sm-list.sm-lobby>div>span{flex:1;min-width:0}
 .sm-app .sm-list>div.me{background:var(--plane)}
 .sm-app .sm-list.sm-roundplays>div,.sm-app .sm-list.sm-standings>div{display:grid;gap:10px;align-items:baseline}
-.sm-app .sm-list.sm-roundplays>div{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 52px}
+.sm-app .sm-list.sm-roundplays>div{grid-template-columns:16px minmax(0,1fr) minmax(0,1.3fr) 52px}
 .sm-app .sm-list.sm-roundplays>div.board{box-shadow:inset 3px 0 0 var(--accent)}
 .sm-app .sm-list.sm-standings>div{grid-template-columns:16px minmax(0,1fr) 72px 48px}
-.sm-app .sm-list.sm-roundplays>div>:first-child,.sm-app .sm-list.sm-standings>div>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm-app .sm-list.sm-roundplays>div>:nth-child(2),.sm-app .sm-list.sm-standings>div>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sm-app .sm-list.sm-roundplays b,.sm-app .sm-list.sm-standings>div>:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums}
-.sm-app .sm-list.sm-standings>div>:first-child,.sm-app .sm-list.sm-standings>div>:nth-child(3){color:var(--soft);font-variant-numeric:tabular-nums}
+.sm-app .sm-list.sm-roundplays>div>:first-child,.sm-app .sm-list.sm-standings>div>:first-child,.sm-app .sm-list.sm-standings>div>:nth-child(3){color:var(--soft);font-variant-numeric:tabular-nums}
 .sm-app .sm-list.sm-roundplays small,.sm-app .sm-list.sm-standings small{margin-left:4px}
 .sm-app .sm-list.sm-standings>div.head{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding-top:6px;padding-bottom:6px}
 .sm-app .sm-endstats{margin:14px 0 6px}
@@ -139,9 +144,10 @@
 .sm-app .sm-log.locked li:hover{background:none}
 .sm-app .sm-log li.cur{background:var(--dw)}
 .sm-app .sm-log li:last-child{border-bottom:0}
-.sm-app .sm-log li b{color:var(--text);font-variant-numeric:tabular-nums}
+.sm-app .sm-log li b{color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sm-app .sm-log li .who{color:var(--muted);margin-right:4px}
 .sm-app .sm-log li .n{color:var(--muted);margin-right:6px;font-variant-numeric:tabular-nums}
+.sm-app .sm-log li small.plays{display:block;color:var(--muted);padding-left:1.5em}
 .sm-app .sm-nav{display:flex;gap:4px;align-items:center;margin-bottom:8px}
 .sm-app .sm-nav[hidden],.sm-app #sm-analysis[hidden]{display:none}
 .sm-app .sm-nav button{padding:4px 9px}

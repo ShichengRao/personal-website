@@ -2,16 +2,17 @@
 
 Name: **Same Rack**.
 
-Status: built and tested, on the real Supabase project too. There is one mode, a room on the server that keeps going on each phone without signal, and the host can add bots. The engine, the page and the server functions are done, and the rooms schema is on the Supabase project (applied 2026-11-12). Stats are not built. Nothing is committed and there is no PR.
+Status: built and tested, on the real Supabase project too. There is one mode, a room on the server that keeps going on each phone without signal, and the host can add bots. The engine, the page and the server functions are done, and the rooms schema is on the Supabase project (applied 2026-11-12). Stats are not built. It shipped in PR #34 (merged 2026-11-12). A second pass after a review (one Finish round button, live dots, the top plays of each round) followed on 2026-11-14.
 
 ## How it plays
 
 - **Starting.** The menu's "Same Rack" card takes your name and either starts a room or joins one by its three words. A room lives at `/seven-tiles/room/<words>`, apart from the two-player games. Starting or joining needs signal once.
 - **Lobby.** The room's words in large type, a copy link, a share button on phones, a QR code, and the players as they join. The host picks the rounds (10, 15 or the whole bag) and the time per round (1, 1.5, 2 or 3 minutes, or no clock), can add bots, and presses Start.
 - **Bots.** The host adds them in the lobby at a level from casual to full strength (20 to 100 on the 1v1 dial). The host's page plays for them. A bot plays a few seconds into a round (at most about half a minute), or at once when everyone else is done, and is ready for the next round straight away, so it never holds the room up. It plays only while the host has the room open, and rounds it missed go in when the host is back.
-- **A round, with signal.** Everyone plays the same rack on their own copy of the board, on the server's clock. The message line shows the clock, a time bar and "3 of 5 done". Submit sends a play, and a better one can replace it. Done ends your round. When time runs out, a legal play still on the board is sent if it beats the one submitted. The round closes at the deadline or once everyone is done.
+- **A round, with signal.** Everyone plays the same rack on their own copy of the board, on the server's clock. The message line shows the clock, a time bar and "3 of 5 done". The best legal play you lay out is saved as you go ("Saved: SHANTY for 32 points.") and sent, so it stands even if your phone drops out. Finish round ends your round with the better of the saved play and the one on the board, and asks first if there is neither. Time running out does the same without asking. The round closes at the deadline or once everyone has finished.
 - **The board play.** Each round the best play made of everyday words goes on the board, worked out by the engine from the common word list. Your own play scores for you and never goes on the board.
-- **Round card.** When a round closes, a card lists every play by score, with a star for each that matched or beat the best play. It names the play that goes on the board and, when it was higher, the top play of all ("The top play was SHANTY for 62."). The next round opens after 15 seconds, or sooner once everyone has pressed "Next round". Tapping a round in the side panel shows its card again.
+- **Players.** The side panel lists everyone by total, with a dot for how each is playing: green with the room, amber catching up on their own clock ("on round 5"), and hollow when not heard from in 20 seconds ("offline"). The lobby shows the same dots.
+- **Round card.** When a round closes, a card lists the plays placed third or better (more than three when there are ties), and yours below them when it isn't among them, with a star for each that matched or beat the best play. Players who haven't finished the round are named under it ("Bo is still playing."). It names the play that goes on the board and, when it was higher, the top play of all ("The top play was SHANTY for 62."). The next round opens after 15 seconds, or sooner once everyone has pressed "Next round". The rounds list in the side panel shows the same top plays under each round's board play, and tapping a round shows its card again.
 - **End.** Standings with % of best and total, then your own game: points, % of the best plays, best plays found, top word, and a colored square per round. One button shares the standings and your squares.
 
 ## Without signal
@@ -91,6 +92,7 @@ RLS on, no policies, everything through security-definer functions. `room_seat` 
   - Cy had a 6-second blip in round 2 (nothing changed), lost signal for 100 seconds in round 3 and played rounds 3 to 5 on her own clock, then came back just as the room opened round 6 and joined it, with her three rounds sent. A 6-second blip during a reveal made her Next fail once, and she pressed it again when back. She lost signal again for 90 seconds in round 7, played 7 and 8 on her own clock, came back with the room on round 10, and skipped round 9.
   - All three pages ended on the same standings: Ann 356 (100% of the best), Bo 327 (92%), Cy 294 (83%). No page errors.
 - **Bots on the real project.** From the plain preview (so the bots' calls went to Supabase across origins): a room with two bots, both played within 8 seconds, the round closed 0.3 seconds after the host pressed Done, and the next round opened 0.2 seconds after Next. Locally, bots also played through the host losing signal: the room waited, and the bots sent the rounds they owed when the host was back.
+- **Finish round, dots and top plays, locally.** Ann, two bots and Bo on two origins through the local proxy. Ann's best play saved and reached the server before she finished, and a worse one laid out after it didn't replace it. Finish round sent the saved one. Finishing with nothing on the board asked first. With Bo's signal cut, Ann's panel showed him offline after 20 seconds, and the round closed without him. Back with signal and a round behind, he showed amber "on round 2" to Ann, and green once he caught up. His late play moved into round 1's top three, and in round 2 Ann was fourth and listed under the top three. The phone layout fit, and the 1v1 game still has its Pass button.
 - **Not tested yet.** Real phones, and a dozen players.
 
 ## Page text
@@ -103,13 +105,14 @@ As little as possible. The page doesn't warn ahead of time about limits or what 
 - Rooms from other devices in the menu (`my_rooms`), changing the settings after Start, and leaving a room for good.
 - Removing a bot, and bots added after Start. Bots run only on the device that added them.
 - A phone that loses signal in the lobby, before it has seen the game start, can't play until it's back, since it doesn't know the settings.
+- Tapping a play on a round card to see where it went on the board.
 
 ## Decided
 
 1. One mode, a live room. A phone without signal keeps playing and fills in later. (This replaced building separate live and offline versions.)
 2. The best play made of everyday words goes on the board, so a phone without signal can keep dealing racks. (This replaced the best player's play.)
 3. Scores are measured against that play, not the top play of all.
-4. Submissions can be revised until the deadline. The round closes early once everyone is Done.
+4. One button, Finish round. The best legal play you lay out is saved as you go, so there is nothing to submit. (This replaced Submit and Done, which left players unsure whether they had played or were holding the room up.) The round closes early once everyone has finished.
 5. Up to 12 players.
 6. Stats count, in their own section, apart from 1v1.
 7. The mode is called Same Rack, and games last 10 rounds by default.
