@@ -2,7 +2,7 @@
 
 Name: **Same Rack**.
 
-Status: built and tested, on the real Supabase project too. There is one mode, a room on the server that keeps going on each phone without signal, and the host can add bots. The engine, the page and the server functions are done, and the rooms schema is on the Supabase project (applied 2026-11-12). Stats are not built. It shipped in PR #34 (merged 2026-11-12). A second pass after a review (one Finish round button, live dots, the top plays of each round) followed on 2026-11-14, then a third (fresh racks as a setting, 5-round games, removing bots), which needs a schema change on the Supabase project before it merges.
+Status: built and tested, on the real Supabase project too. There is one mode, a room on the server that keeps going on each phone without signal, and the host can add bots. The engine, the page and the server functions are done, and the rooms schema is on the Supabase project (applied 2026-11-12). Stats are not built. It shipped in PR #34 (merged 2026-11-12). A second pass after a review (one Finish round button, live dots, the top plays of each round) followed on 2026-11-14, then a third (fresh racks as a setting, 5-round games, removing bots), whose schema change is on the Supabase project (applied 2026-11-14).
 
 ## How it plays
 
@@ -65,7 +65,7 @@ RLS on, no policies, everything through security-definer functions. `room_seat` 
 - **`room_tick`** closes the open round at its deadline (plus three seconds) or once everyone here and keeping up is done, and opens the next when the reveal ends or everyone here and keeping up is ready. "Here" is seen in the last 20 seconds. "Keeping up" is done with every earlier round. It repeats until nothing changes.
 - **Also:** `create_room` (rate-limited like new games), `join_room`, `start_room` (host only, sets the settings, with `p_fresh` for fresh racks), `leave_room` (a seat leaves the lobby, never the host's, which the host's page uses with a bot's token to remove it), `room_ready`, and `end_room` (a page reports the bag is spent, accepted once the room has closed that round and not before round 12).
 
-**Applying it.** Run the section from `-- ---- Same Rack: rooms` to the end in one transaction, after a check in a rolled-back one. It is on the Supabase project as of 2026-11-12. That version replaced the first one's functions and dropped its `get_room(text, text, integer)`, and the tables were unchanged. The third pass adds `rooms.fresh_racks`, replaces `get_room`, drops the four-argument `start_room` for one with `p_fresh` (default false, so old pages still start rooms), and adds `leave_room`. That migration was checked locally on the schema as it is live, with a room in its lobby.
+**Applying it.** Run the section from `-- ---- Same Rack: rooms` to the end in one transaction, after a check in a rolled-back one. It is on the Supabase project as of 2026-11-12. That version replaced the first one's functions and dropped its `get_room(text, text, integer)`, and the tables were unchanged. The third pass adds `rooms.fresh_racks`, replaces `get_room`, drops the four-argument `start_room` for one with `p_fresh` (default false, so old pages still start rooms), and adds `leave_room`. That migration was checked locally on the schema as it was live, with a room in its lobby, then run on the Supabase project on 2026-11-14 after a rolled-back check.
 
 ## Page (`static/seven-tiles/app.js`, `layouts/seven-tiles/list.html`)
 
