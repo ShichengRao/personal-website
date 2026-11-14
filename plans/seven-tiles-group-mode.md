@@ -2,13 +2,13 @@
 
 Name: **Same Rack**.
 
-Status: built and tested, on the real Supabase project too. There is one mode, a room on the server that keeps going on each phone without signal, and the host can add bots. The engine, the page and the server functions are done, and the rooms schema is on the Supabase project (applied 2026-11-12). Stats are not built. It shipped in PR #34 (merged 2026-11-12). A second pass after a review (one Finish round button, live dots, the top plays of each round) followed on 2026-11-14.
+Status: built and tested, on the real Supabase project too. There is one mode, a room on the server that keeps going on each phone without signal, and the host can add bots. The engine, the page and the server functions are done, and the rooms schema is on the Supabase project (applied 2026-11-12). Stats are not built. It shipped in PR #34 (merged 2026-11-12). A second pass after a review (one Finish round button, live dots, the top plays of each round) followed on 2026-11-14, then a third (fresh racks as a setting, 5-round games, removing bots), which needs a schema change on the Supabase project before it merges.
 
 ## How it plays
 
 - **Starting.** The menu's "Same Rack" card takes your name and either starts a room or joins one by its three words. A room lives at `/seven-tiles/room/<words>`, apart from the two-player games. Starting or joining needs signal once.
-- **Lobby.** The room's words in large type, a copy link, a share button on phones, a QR code, and the players as they join. The host picks the rounds (10, 15 or the whole bag) and the time per round (1, 1.5, 2 or 3 minutes, or no clock), can add bots, and presses Start.
-- **Bots.** The host adds them in the lobby at a level from casual to full strength (20 to 100 on the 1v1 dial). The host's page plays for them. A bot plays a few seconds into a round (at most about half a minute), or at once when everyone else is done, and is ready for the next round straight away, so it never holds the room up. It plays only while the host has the room open, and rounds it missed go in when the host is back.
+- **Lobby.** The room's words in large type, a copy link, a share button on phones, a QR code, and the players as they join. The host picks the rounds (5, 10, 15 or the whole bag), the time per round (1, 1.5, 2 or 3 minutes, or no clock) and the racks (keep leftovers, or fresh each round), can add and remove bots, and presses Start.
+- **Bots.** The host adds them in the lobby at a level from casual to full strength (20 to 100 on the 1v1 dial), and can remove them there. A new bot takes the lowest free number, so removing Bot 1 and adding another gives a new Bot 1. The host's page plays for them. A bot plays a few seconds into a round (at most about half a minute), or at once when everyone else is done, and is ready for the next round straight away, so it never holds the room up. It plays only while the host has the room open, and rounds it missed go in when the host is back.
 - **A round, with signal.** Everyone plays the same rack on their own copy of the board, on the server's clock. The message line shows the clock, a time bar and "3 of 5 done". The best legal play you lay out is saved as you go ("Saved: SHANTY for 32 points.") and sent, so it stands even if your phone drops out. Finish round ends your round with the better of the saved play and the one on the board, and asks first if there is neither. Time running out does the same without asking. The round closes at the deadline or once everyone has finished.
 - **The board play.** Each round the best play made of everyday words goes on the board, worked out by the engine from the common word list. Your own play scores for you and never goes on the board.
 - **Players.** The side panel lists everyone by total, with a dot for how each is playing: green with the room, amber catching up on their own clock ("on round 5"), and hollow when not heard from in 20 seconds ("offline"). The lobby shows the same dots.
@@ -40,6 +40,7 @@ So scores are measured against the best everyday play. It is the same list the 1
 
 - **Scoring.** Each player scores their own play. No play, or a play that turns out to be invalid, scores 0. The highest total wins, and equal totals share the win.
 - **Racks.** The next rack is the tiles the board play left behind, filled from the bag to seven. A rack needs at least two vowels and two consonants in rounds 1 to 15, and at least one of each after that. A blank counts as either, and Y counts as a consonant. A rack that fails this, or that has no legal play, goes back into the bag and seven fresh tiles are drawn (about 9% of rounds). Every shuffle comes from the seed.
+- **Fresh racks.** A room setting. The board play's leftovers go back in the bag too, and every round starts from seven new tiles, under the same rule. Nobody chooses the leftovers, and the top play tends to spend the good consonants and keep vowels and repeats, so with leftovers kept clunky racks pile up. Over 150 ten-round games with the engine's board play, a rack had three of one letter or five vowels 18% of the time with leftovers kept, in runs of up to 8 rounds, and 13% with fresh racks, in runs of up to 4. The best play averaged 32 and 33 points.
 - **End.** After the set number of rounds, or when the bag can no longer make a rack. A full bag lasts 17 to 27 rounds. Players who are behind can still finish their rounds after the room is over.
 - **Players.** Up to 12. Signing in is optional. A player who joins while a round is open can play it, and during a reveal they start with the next round. Their % of best counts from the round they joined.
 
@@ -49,10 +50,10 @@ A "group play" section at the end of the file.
 
 - `newGroup(seed, opts, dict, common)` deals the first rack. Given the common list, `state.best` is the best play made only of everyday words and `state.top` is the best play of all. Without it they are the same.
 - `resolveRound(state, subs, dict, common)` settles a round and deals the next. With `board: 'engine'` (what rooms use) the board play is `state.best` whatever the submissions, so the page passes none and scores plays itself. Each round is kept as `{ rack, redraws, plays, board, best, top }`.
-- `GROUP_VERSION` is raised whenever a change would settle a game differently. A room stores it with the sizes of both word lists, and a page whose copy differs (an old cached version after an update, say) asks for a reload instead of playing on with different boards.
+- `GROUP_VERSION` (2 since fresh racks) is raised whenever a change would settle a game differently. A room stores it with the sizes of both word lists, and a page whose copy differs (an old cached version after an update, say) asks for a reload instead of playing on with different boards.
 - The `'player'` board option (the best submitted play goes on) is still there and tested, but rooms don't use it.
 - Ties between the engine's own plays are settled by the play's squares and letters in plain string order, never `localeCompare`, so every phone agrees whatever its language.
-- Tests in `tests/seven-tiles-group.test.mjs` (part of `npm test`, 65 tests passing) cover determinism, the board-play rules, illegal plays, the rack rule, both endings, locale independence, standings, rack order, and the everyday-words best and top plays.
+- Tests in `tests/seven-tiles-group.test.mjs` (part of `npm test`, 66 tests passing) cover determinism, the board-play rules, illegal plays, the rack rule, fresh racks, both endings, locale independence, standings, rack order, and the everyday-words best and top plays.
 
 ## Server (`plans/seven-tiles-supabase.sql`, "Same Rack: rooms")
 
@@ -62,9 +63,9 @@ RLS on, no policies, everything through security-definer functions. `room_seat` 
 - **`get_room(code, token)`** returns the settings, the clock with the server's time, the players with how many rounds each has finished, the caller's own plays, and everyone's finished plays for each round the room has closed and the caller has finished. Calling it counts as being here.
 - **`submit_play(code, token, round, play, done)`** files a play for any round from the one the caller joined at, the open one or one played offline, until they are done with it. The clock is the pages' to keep.
 - **`room_tick`** closes the open round at its deadline (plus three seconds) or once everyone here and keeping up is done, and opens the next when the reveal ends or everyone here and keeping up is ready. "Here" is seen in the last 20 seconds. "Keeping up" is done with every earlier round. It repeats until nothing changes.
-- **Also:** `create_room` (rate-limited like new games), `join_room`, `start_room` (host only, sets the settings), `room_ready`, and `end_room` (a page reports the bag is spent, accepted once the room has closed that round and not before round 12).
+- **Also:** `create_room` (rate-limited like new games), `join_room`, `start_room` (host only, sets the settings, with `p_fresh` for fresh racks), `leave_room` (a seat leaves the lobby, never the host's, which the host's page uses with a bot's token to remove it), `room_ready`, and `end_room` (a page reports the bag is spent, accepted once the room has closed that round and not before round 12).
 
-**Applying it.** Run the section from `-- ---- Same Rack: rooms` to the end in one transaction, after a check in a rolled-back one. It is on the Supabase project as of 2026-11-12. That version replaced the first one's functions and dropped its `get_room(text, text, integer)`, and the tables were unchanged.
+**Applying it.** Run the section from `-- ---- Same Rack: rooms` to the end in one transaction, after a check in a rolled-back one. It is on the Supabase project as of 2026-11-12. That version replaced the first one's functions and dropped its `get_room(text, text, integer)`, and the tables were unchanged. The third pass adds `rooms.fresh_racks`, replaces `get_room`, drops the four-argument `start_room` for one with `p_fresh` (default false, so old pages still start rooms), and adds `leave_room`. That migration was checked locally on the schema as it is live, with a room in its lobby.
 
 ## Page (`static/seven-tiles/app.js`, `layouts/seven-tiles/list.html`)
 
@@ -103,7 +104,7 @@ As little as possible. The page doesn't warn ahead of time about limits or what 
 
 - Stats, kept separate from 1v1: reports when a game ends, settled when two agree, and a profile section with games, wins, average % of best, best-play rounds, bingos and best word.
 - Rooms from other devices in the menu (`my_rooms`), changing the settings after Start, and leaving a room for good.
-- Removing a bot, and bots added after Start. Bots run only on the device that added them.
+- Removing a bot after Start, and bots added after Start. Bots run only on the device that added them.
 - A phone that loses signal in the lobby, before it has seen the game start, can't play until it's back, since it doesn't know the settings.
 - Tapping a play on a round card to see where it went on the board.
 
@@ -116,3 +117,4 @@ As little as possible. The page doesn't warn ahead of time about limits or what 
 5. Up to 12 players.
 6. Stats count, in their own section, apart from 1v1.
 7. The mode is called Same Rack, and games last 10 rounds by default.
+8. Leftovers carry over by default, as in duplicate. Fresh racks are a setting, not a replacement.

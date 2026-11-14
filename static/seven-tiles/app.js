@@ -1382,7 +1382,7 @@
   //   cur: the round being played, { k, live, ends, move, score, word }.
   //   bots, botDue: the bots this page plays for (the host's), see "bots" below.
   // Saved as { id, kind: 'room', words, token, player, over, round, row, mine, cur: { k, ends }, bots }.
-  const SAME_ROUNDS = [10, 15, 0], SAME_SECONDS = [60, 90, 120, 180, 0];
+  const SAME_ROUNDS = [5, 10, 15, 0], SAME_SECONDS = [60, 90, 120, 180, 0];
   const secondsWords = (t) => (t < 120 ? t + ' seconds' : t / 60 + ' minutes');
   const draftKey = (tiles) => tiles.map((t) => t.r + ',' + t.c + t.l + (t.b ? '*' : '')).sort().join('|');
   const draftMove = () => ({ t: 'play', tiles: pending.map((t) => ({ r: t.r, c: t.c, l: t.l, b: t.b })) });
@@ -1564,8 +1564,9 @@
     G.row = row; G.seconds = row.seconds;
     G.names = [];
     for (const x of row.players) G.names[x.player] = x.name;
-    if (!G.states || (G.states.length === 1 && G.states[0].opts.limit !== row.limit)) {
-      try { G.states = [C.newGroup(G.seed, { limit: row.limit, board: 'engine' }, dict, common)]; }
+    const opts = { limit: row.limit, board: 'engine', racks: row.fresh ? 'fresh' : 'keep' };
+    if (!G.states || G.states[0].opts.limit !== opts.limit || G.states[0].opts.racks !== opts.racks) {
+      try { G.states = [C.newGroup(G.seed, opts, dict, common)]; }
       catch (e) { stopRoomPoll(); setStatus('This room’s game could not be dealt: ' + e.message, 'bad'); return; }
     }
     const others = new Map();
@@ -1832,10 +1833,28 @@
   const isBot = (p) => G.bots.some((b) => b.p === p);
   async function addBot(d) {
     const s = G.session, token = randomToken();
-    const seat = await ask('join_room', { p_code: G.words, p_name: 'Bot ' + (G.bots.length + 1) + ' (' + levelWords(d) + ')', p_token: token }, true);
+    const taken = G.row.players.filter((x) => isBot(x.player)).map((x) => +(x.name.match(/^Bot (\d+)/) || [])[1]);
+    let n = 1;
+    while (taken.includes(n)) n++;
+    const seat = await ask('join_room', { p_code: G.words, p_name: 'Bot ' + n + ' (' + levelWords(d) + ')', p_token: token }, true);
     if (!alive(s)) return;
     G.bots.push({ p: seat.player, token, d, upto: 0, ready: 0, seen: Date.now() });
     persistRoom();
+    pollRoom();
+  }
+  // Takes a bot out of the lobby: it leaves by its own token.
+  const removing = new Set();   // the seats of bots on their way out
+  async function removeBot(p) {
+    const b = G.bots.find((x) => x.p === p), s = G.session;
+    if (!b || removing.has(p)) return;
+    removing.add(p);
+    try { await ask('leave_room', { p_code: G.words, p_token: b.token }, true); }
+    finally { removing.delete(p); }
+    if (!alive(s)) return;
+    G.bots = G.bots.filter((x) => x !== b);
+    if (G.row) G.row.players = G.row.players.filter((x) => x.player !== p);
+    persistRoom();
+    updateLobby();
     pollRoom();
   }
   // a bot's play in round k, the same however often it is worked out
@@ -2082,6 +2101,7 @@
   function showLobby() {
     const link = location.origin + pathFor(G.id), host = G.me === 0, last = store.get('sm.same', {});
     const limit = SAME_ROUNDS.includes(last.limit) ? last.limit : 10, seconds = SAME_SECONDS.includes(last.seconds) && last.seconds ? last.seconds : 90;
+    const racks = last.racks === 'fresh' ? 'fresh' : 'keep';
     const opts = (vals, cur, label) => vals.map((v) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + label(v) + '</option>').join('');
     openOverlay('<div id="sm-room-card" hidden></div><h2>Same Rack</h2>' +
       '<div class="sm-room-words">' + esc(G.words.replace(/-/g, ' ')) + '</div>' +
@@ -2089,7 +2109,8 @@
       '<div class="sm-qr" id="sm-lobby-qrbox" hidden></div>' +
       '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-lobby-count"></div><div class="sm-list sm-lobby" id="sm-lobby-players"></div>' +
       (host ? '<div class="sm-same-opts"><label>Rounds<select id="sm-lobby-rounds">' + opts(SAME_ROUNDS, limit, (n) => (n ? n + ' rounds' : 'The whole bag')) + '</select></label>' +
-              '<label>Time per round<select id="sm-lobby-time">' + opts(SAME_SECONDS, seconds, (t) => (t ? secondsWords(t) : 'No clock')) + '</select></label></div>' +
+              '<label>Time per round<select id="sm-lobby-time">' + opts(SAME_SECONDS, seconds, (t) => (t ? secondsWords(t) : 'No clock')) + '</select></label>' +
+              '<label class="sm-wide">Racks<select id="sm-lobby-racks">' + opts(['keep', 'fresh'], racks, (r) => (r === 'fresh' ? 'Fresh each round' : 'Keep leftovers')) + '</select></label></div>' +
               '<div class="sm-same-opts sm-addbot"><label>Bot<select id="sm-lobby-botlevel">' + opts(BOT_LEVELS, BOT_LEVELS.includes(last.bot) ? last.bot : 40, (d) => levelWords(d).replace(/^./, (c) => c.toUpperCase())) + '</select></label>' +
               '<button id="sm-lobby-addbot">Add a bot</button></div>'
             : '<p id="sm-lobby-wait" style="margin-top:10px">Waiting for ' + esc(nameOf(0)) + ' to start the game.</p>') +
@@ -2116,10 +2137,12 @@
     });
     const start = $('sm-lobby-start');
     if (start) start.addEventListener('click', async () => {
-      const n = +$('sm-lobby-rounds').value, t = +$('sm-lobby-time').value, s = G.session, t0 = Date.now();
-      store.set('sm.same', Object.assign(store.get('sm.same', {}), { limit: n, seconds: t }));
+      const n = +$('sm-lobby-rounds').value, t = +$('sm-lobby-time').value, r = $('sm-lobby-racks').value, s = G.session, t0 = Date.now();
+      store.set('sm.same', Object.assign(store.get('sm.same', {}), { limit: n, seconds: t, racks: r }));
       start.disabled = true; start.textContent = 'Starting…';
-      try { const row = await Net.rpc('start_room', { p_code: G.words, p_token: G.token, p_seconds: t, p_limit: n }); if (alive(s)) integrateRoom(row, t0, Date.now()); }
+      // p_fresh only when chosen, so that starting works against a server without it
+      const args = Object.assign({ p_code: G.words, p_token: G.token, p_seconds: t, p_limit: n }, r === 'fresh' ? { p_fresh: true } : {});
+      try { const row = await Net.rpc('start_room', args); if (alive(s)) integrateRoom(row, t0, Date.now()); }
       catch (e) { if (!alive(s) || !$('sm-lobby-err')) return; $('sm-lobby-err').textContent = 'Could not start: ' + whyFailed(e) + '.'; start.disabled = false; start.textContent = 'Start the game'; }
     });
     updateLobby();
@@ -2127,7 +2150,18 @@
   function updateLobby() {
     const list = $('sm-lobby-players');
     if (!list) return;
-    list.innerHTML = G.row.players.map((x) => { const live = liveness(x.player); return '<div>' + dotHtml(live) + '<span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' + (live === 'off' && x.player !== G.me ? '<small>offline</small>' : '') + '</div>'; }).join('');
+    list.innerHTML = G.row.players.map((x) => {
+      const live = liveness(x.player), bot = G.me === 0 && isBot(x.player);
+      return '<div>' + dotHtml(live) + '<span>' + esc(x.name) + (x.player === G.me ? ' <small>you</small>' : '') + (x.player === 0 ? ' <small>host</small>' : '') + '</span>' +
+        (bot ? '<button class="sm-rm" data-bot="' + x.player + '"' + (removing.has(x.player) ? ' disabled>Removing…' : '>Remove') + '</button>'
+         : live === 'off' && x.player !== G.me ? '<small>offline</small>' : '') + '</div>';
+    }).join('');
+    for (const b of list.querySelectorAll('[data-bot]')) b.addEventListener('click', async () => {
+      const p = +b.dataset.bot;
+      b.disabled = true; b.textContent = 'Removing…';
+      try { await removeBot(p); if ($('sm-lobby-err')) $('sm-lobby-err').textContent = ''; }
+      catch (e) { if ($('sm-lobby-err')) $('sm-lobby-err').textContent = 'Could not remove the bot: ' + whyFailed(e) + '.'; updateLobby(); }
+    });
     $('sm-lobby-count').textContent = 'Players · ' + G.row.players.length;
     if (G.offline && $('sm-lobby-err')) $('sm-lobby-err').textContent = 'No signal.';
   }

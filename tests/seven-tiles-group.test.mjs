@@ -177,9 +177,9 @@ test('racks follow the vowel and consonant rule, and a rack that breaks it is re
 
 test('the game ends after the set rounds, or when the bag cannot make a rack', () => {
   const d = dict();
-  assert.deepEqual(C.groupOptions(), { limit: 10, board: 'player' });
-  assert.deepEqual(C.groupOptions({ limit: -1, board: 'x' }), { limit: 10, board: 'player' });
-  assert.deepEqual(C.groupOptions({ limit: 0, board: 'engine' }), { limit: 0, board: 'engine' });
+  assert.deepEqual(C.groupOptions(), { limit: 10, board: 'player', racks: 'keep' });
+  assert.deepEqual(C.groupOptions({ limit: -1, board: 'x', racks: 'x' }), { limit: 10, board: 'player', racks: 'keep' });
+  assert.deepEqual(C.groupOptions({ limit: 0, board: 'engine', racks: 'fresh' }), { limit: 0, board: 'engine', racks: 'fresh' });
 
   const { s } = playOut(61, { limit: 3 }, d, mixed(d));
   assert.equal(s.rounds.length, 3);
@@ -301,3 +301,23 @@ function playOutWith(seed, opts, d, common) {
   while (!s.over) s = C.resolveRound(s, [], d, common);
   return s;
 }
+
+test('with fresh racks, the leftover tiles go back in the bag and every round starts from seven new ones', () => {
+  const d = dict(), opts = { limit: 0, board: 'engine', racks: 'fresh' };
+  const { s } = playOut(81, opts, d, () => []);
+  assert.equal(s.endReason, 'bag');
+  let fresh = 0;
+  s.rounds.forEach((r, k) => {
+    assert.ok(C.rackMeets(r.rack, C.rackNeed(k + 1)), 'round ' + (k + 1) + ' meets the rack rule');
+    if (k === 0) return;
+    const before = s.rounds[k - 1], left = before.rack.slice();
+    for (const t of before.board.tiles) left.splice(left.indexOf(t.b ? '?' : t.l), 1);
+    if (left.some((t, i) => r.rack[i] !== t)) fresh++;
+  });
+  assert.ok(fresh > s.rounds.length / 2, 'racks do not start from what was left: ' + fresh + ' of ' + (s.rounds.length - 1));
+  assert.deepEqual(playOut(81, opts, d, () => []).s, s, 'the seed decides it');
+  // the same seed keeping its leftovers is a different game from round 2
+  const keep = playOut(81, { limit: 0, board: 'engine' }, d, () => []).s;
+  assert.deepEqual(keep.rounds[0].rack, s.rounds[0].rack);
+  assert.notDeepEqual(keep.rounds[1].rack, s.rounds[1].rack);
+});
