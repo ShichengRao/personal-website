@@ -1,25 +1,69 @@
-{{/* The resume, shown from a Google Doc so edits there reach the page without
-     a deploy. `doc` in content/resume/_index.md is the doc's share link; the
-     PDF download is exported from the same doc. Without a doc, the page offers
-     the PDF in static/files/. */}}
+{{/* The resume, shown from a Google Doc published to the web, so edits there
+     reach the page within minutes and without a deploy. `doc` in
+     content/resume/_index.md is the published link (…/document/d/e/…/pub),
+     which shows neither the doc's own address nor its owner. The page asks
+     /api/resume (netlify/functions/resume.mjs) for the doc's content and shows
+     it inline, so a phone gets it at full width. If that fails, or without
+     JavaScript, it embeds Google's published page instead. A published doc
+     can't be exported as a PDF, so the download is the file in static/files/. */}}
 {{ define "main" }}
-{{ $id := "" }}
-{{ with .Params.doc }}{{ with findRESubmatch `/document/d/([A-Za-z0-9_-]+)` . 1 }}{{ $id = index (index . 0) 1 }}{{ end }}{{ end }}
-{{ $doc := printf "https://docs.google.com/document/d/%s" $id }}
+{{ $doc := "" }}
+{{ with .Params.doc }}{{ with findRE `^https://docs\.google\.com/document/d/e/[A-Za-z0-9_-]+/pub` . 1 }}{{ $doc = index . 0 }}{{ end }}{{ end }}
 <div class="resume ph3 ph4-ns pv4 pv5-ns center">
   <div class="site-actions">
-    {{ if $id }}
-      <a class="site-btn primary" href="{{ $doc }}/export?format=pdf">{{ partial "icon.html" "file-arrow-down" }}Download PDF</a>
-      <a class="site-btn" href="{{ $doc }}/view" target="_blank" rel="noopener">{{ partial "icon.html" "arrow-up-right-from-square" }}Open in Google Docs</a>
+    <a class="site-btn primary" href="{{ .Params.pdf }}" download>{{ partial "icon.html" "file-arrow-down" }}Download PDF</a>
+    {{ with $doc }}
+      <a class="site-btn" href="{{ . }}" target="_blank" rel="noopener">{{ partial "icon.html" "arrow-up-right-from-square" }}Full page</a>
     {{ else }}
-      <a class="site-btn primary" href="{{ .Params.pdf }}" download>{{ partial "icon.html" "file-arrow-down" }}Download PDF</a>
       <a class="site-btn" href="{{ .Params.pdf }}" target="_blank" rel="noopener">{{ partial "icon.html" "arrow-up-right-from-square" }}View PDF</a>
     {{ end }}
   </div>
-  {{ with $id }}
-  <div class="resume-frame">
-    <iframe src="{{ $doc }}/preview" title="Resume of {{ site.Params.author }}"></iframe>
+  {{ with $doc }}
+  <div class="resume-view" id="resume-view">
+    <noscript><div class="resume-frame"><iframe src="{{ . }}?embedded=true" title="Resume of {{ site.Params.author }}"></iframe></div></noscript>
   </div>
+  <script>
+  (function () {
+    var view = document.getElementById("resume-view");
+    function embed() {
+      var frame = document.createElement("div");
+      var iframe = document.createElement("iframe");
+      frame.className = "resume-frame";
+      iframe.src = {{ printf "%s?embedded=true" . }};
+      iframe.title = {{ printf "Resume of %s" site.Params.author }};
+      frame.append(iframe);
+      view.replaceChildren(frame);
+      view.classList.add("is-ready");
+    }
+    fetch("/api/resume").then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function (d) {
+      // a template's content is inert: nothing in it runs or loads until it is placed
+      var t = document.createElement("template");
+      t.innerHTML = d.html;
+      var doc = t.content.querySelector(".doc-content");
+      if (!doc) throw new Error("no content");
+      doc.querySelectorAll("script,style,link,meta,base,iframe,object,embed,form").forEach(function (n) { n.remove(); });
+      [doc].concat(Array.prototype.slice.call(doc.querySelectorAll("*"))).forEach(function (el) {
+        Array.prototype.slice.call(el.attributes).forEach(function (a) {
+          if (/^on/i.test(a.name) || (/^(href|src|xlink:href|action|formaction)$/i.test(a.name) && /^\s*(javascript|data):/i.test(a.value))) el.removeAttribute(a.name);
+        });
+      });
+      // the doc's stylesheet styles bare elements too, so it lives in a shadow root
+      var box = document.createElement("div");
+      box.className = "resume-doc";
+      var root = box.attachShadow({ mode: "open" });
+      var css = document.createElement("style");
+      css.textContent = d.css.replace(/@import[^;]*;/g, "") +
+        ".doc-content{max-width:none!important;padding:0!important;background:none!important;overflow-wrap:break-word}" +
+        "img{max-width:100%;height:auto}table{max-width:100%}";
+      root.append(css, doc);
+      view.replaceChildren(box);
+      view.classList.add("is-ready");
+    }).catch(embed);
+  })();
+  </script>
   {{ end }}
 </div>
 {{ end }}
