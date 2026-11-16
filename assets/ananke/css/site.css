@@ -63,6 +63,6 @@ footer[role="contentinfo"] > div > a{display:inline-block}
 .social-card{display:flex;align-items:center;gap:1rem;min-height:4.5rem;padding:.9rem 1.1rem;
   background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:.5rem;color:#111;text-decoration:none}
 .social-card:hover{border-color:rgba(0,0,0,.35)}
-.social-card .site-icon{width:1.75rem;height:1.75rem;color:#222}
+.social-card .site-icon{width:1.75rem;height:1.75rem;color:var(--brand,#222)}
 .social-card b{display:block;font-weight:600}
 .social-card small{display:block;color:#555;font-size:.875rem;overflow-wrap:anywhere}
