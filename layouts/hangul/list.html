@@ -395,7 +395,26 @@
       grid-template-columns: 1fr;
     }
   }
+
+  /* The page draws its own title and intro, so on a narrow screen the
+     theme's masthead keeps only the navigation and the practice comes first. */
+  @media (max-width: 59.99em) {
+    .hangul-masthead .tc-l {
+      display: none;
+    }
+  }
+
+  /* No keyboard on a touch screen. */
+  @media (hover: none) and (pointer: coarse) {
+    .keys {
+      display: none;
+    }
+  }
 </style>
+{{ end }}
+
+{{ define "header" }}
+<div class="hangul-masthead">{{ partials.Include "site-header.html" . }}</div>
 {{ end }}
 
 {{ define "main" }}

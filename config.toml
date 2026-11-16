@@ -10,6 +10,8 @@ disableKinds = ["taxonomy", "term"]
 [params]
 author = "Shicheng Rao"
 description = "Product Reliability Engineer"
+# assets/ananke/css/site.css: the narrow-screen menu and other site-wide fixes
+custom_css = ["site.css"]
 
 [menu]
 [[menu.main]]
