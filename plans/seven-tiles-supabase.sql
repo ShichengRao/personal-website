@@ -16,7 +16,9 @@
 --
 -- A seat is held by a token (kept in the browser and in the private link) and,
 -- when the player is signed in, by their account too, so the same games open
--- from any device. Signing in is optional: link play still works.
+-- from any device. Signing in is optional: link play still works. Seats are
+-- not locked to a device either: a player opening the link somewhere new says
+-- which player they are (take_seat), and the page trusts them.
 --
 -- Nothing reads or writes the tables directly: RLS is on with no policies, and
 -- every access goes through the security-definer functions below, so a game
@@ -162,35 +164,23 @@ begin
   return false;
 end $$;
 
--- Everything a client needs to rebuild a game. Null when there is no such id.
--- The record (seed and moves) goes to a seat holder, to anyone opening a game
--- that is over or still waiting for its second player (the invite link), and
--- otherwise only when one of the seats' owners lets people watch. Anyone
--- else gets the names and nothing to replay ('private': true). The rematch
--- id is for seat holders only, so a finished game is not a way into a live one.
+-- Everything a client needs to rebuild a game, for anyone with its id: the
+-- link is the way in, to play (see take_seat) or to watch. Null when there is
+-- no such id. The rematch id is for seat holders only.
 drop function if exists get_game(text);
 create or replace function get_game(p_code text, p_token text default null)
 returns jsonb language plpgsql security definer set search_path = public stable as $$
 declare
   g games%rowtype;
   who smallint;
-  is_full boolean;
-  finished boolean;
-  visible boolean;
-  base jsonb;
 begin
   select * into g from games where id = p_code;
   if g.id is null then return null; end if;
   who := seat_of(p_code, p_token);
-  is_full := exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1);
-  finished := exists (select 1 from game_results r where r.game_id = g.id) or coalesce(game_over(g.moves), false);
-  visible := who is not null or finished or not is_full
-    or exists (select 1 from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id and p.public_games);
-  base := jsonb_build_object('id', g.id, 'p1_name', g.p1_name, 'p2_name', g.p2_name, 'full', is_full,
+  return jsonb_build_object('id', g.id, 'p1_name', g.p1_name, 'p2_name', g.p2_name, 'seed', g.seed, 'moves', g.moves,
+    'full', exists (select 1 from game_keys k where k.game_id = g.id and k.player = 1),
     'seat', (select player from game_keys k where k.game_id = g.id and auth.uid() is not null and k.user_id = auth.uid() limit 1),
-    'handles', (select jsonb_object_agg(k.player, p.handle) from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id));
-  if not visible then return (base - 'handles') || jsonb_build_object('private', true); end if;
-  return base || jsonb_build_object('seed', g.seed, 'moves', g.moves)
+    'handles', (select jsonb_object_agg(k.player, p.handle) from game_keys k join profiles p on p.user_id = k.user_id where k.game_id = g.id))
     || case when who is not null and g.next_game is not null then jsonb_build_object('next_game', g.next_game) else '{}'::jsonb end;
 end $$;
 
@@ -278,6 +268,14 @@ begin
   update games set p2_name = trim(p_name), updated_at = now() where id = p_code;
   return jsonb_build_object('player', 1, 'token', p_token);
 end $$;
+
+-- A seat that is already taken, for its player on another device: the page
+-- asks who is opening the game and trusts the answer. The seat's token comes
+-- back, so every device that player uses holds the same seat.
+create or replace function take_seat(p_code text, p_player integer)
+returns jsonb language sql security definer set search_path = public stable as $$
+  select jsonb_build_object('player', player, 'token', token) from game_keys where game_id = p_code and player = p_player;
+$$;
 
 -- Appends a move for the caller's seat. The seat to move is derived from the
 -- server's own move count; p_index is only a concurrency check. The creator
@@ -630,12 +628,14 @@ revoke all on function my_games() from public;
 revoke all on function create_game(text, text, text, text) from public;
 revoke all on function join_game(text, text, text) from public;
 revoke all on function play_move(text, text, integer, jsonb) from public;
+revoke all on function take_seat(text, integer) from public;
 grant execute on function my_seat(text, text) to anon, authenticated;
 grant execute on function get_game(text, text) to anon, authenticated;
 grant execute on function my_games() to anon, authenticated;
 grant execute on function create_game(text, text, text, text) to anon, authenticated;
 grant execute on function join_game(text, text, text) to anon, authenticated;
 grant execute on function play_move(text, text, integer, jsonb) to anon, authenticated;
+grant execute on function take_seat(text, integer) to anon, authenticated;
 revoke all on function ensure_profile(text) from public;
 revoke all on function set_name(text) from public;
 revoke all on function set_visibility(boolean) from public;
