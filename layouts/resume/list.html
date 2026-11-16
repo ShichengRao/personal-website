@@ -1,0 +1,25 @@
+{{/* The resume, shown from a Google Doc so edits there reach the page without
+     a deploy. `doc` in content/resume/_index.md is the doc's share link; the
+     PDF download is exported from the same doc. Without a doc, the page offers
+     the PDF in static/files/. */}}
+{{ define "main" }}
+{{ $id := "" }}
+{{ with .Params.doc }}{{ with findRESubmatch `/document/d/([A-Za-z0-9_-]+)` . 1 }}{{ $id = index (index . 0) 1 }}{{ end }}{{ end }}
+{{ $doc := printf "https://docs.google.com/document/d/%s" $id }}
+<div class="resume ph3 ph4-ns pv4 pv5-ns center">
+  <div class="site-actions">
+    {{ if $id }}
+      <a class="site-btn primary" href="{{ $doc }}/export?format=pdf">{{ partial "icon.html" "file-arrow-down" }}Download PDF</a>
+      <a class="site-btn" href="{{ $doc }}/view" target="_blank" rel="noopener">{{ partial "icon.html" "arrow-up-right-from-square" }}Open in Google Docs</a>
+    {{ else }}
+      <a class="site-btn primary" href="{{ .Params.pdf }}" download>{{ partial "icon.html" "file-arrow-down" }}Download PDF</a>
+      <a class="site-btn" href="{{ .Params.pdf }}" target="_blank" rel="noopener">{{ partial "icon.html" "arrow-up-right-from-square" }}View PDF</a>
+    {{ end }}
+  </div>
+  {{ with $id }}
+  <div class="resume-frame">
+    <iframe src="{{ $doc }}/preview" title="Resume of {{ site.Params.author }}"></iframe>
+  </div>
+  {{ end }}
+</div>
+{{ end }}

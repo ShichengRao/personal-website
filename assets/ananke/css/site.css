@@ -32,3 +32,29 @@
 
 /* The theme hides the footer's only link on phones, which leaves an empty bar. */
 footer[role="contentinfo"] > div > a{display:inline-block}
+
+/* Icons (layouts/partials/icon.html) and buttons, for the Resume and Socials pages. */
+.site-icon{display:inline-flex;flex:none;width:1.15em;height:1.15em}
+.site-icon svg{width:100%;height:100%;fill:currentColor}
+.site-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:.75rem;margin:0 0 1.5rem}
+.site-btn{display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:0 1.1rem;
+  border:1px solid rgba(0,0,0,.15);border-radius:.5rem;background:#fff;color:#111;font-size:1rem;text-decoration:none}
+.site-btn:hover{border-color:rgba(0,0,0,.4)}
+.site-btn.primary{background:#111;border-color:#111;color:#fff}
+.site-btn.primary:hover{background:#333}
+
+/* Resume (layouts/resume/list.html): the doc at the shape of a letter page, so
+   a one-page resume fits without scrolling inside the frame. */
+.resume{max-width:54rem}
+.resume-frame{width:100%;aspect-ratio:17 / 23;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:.5rem;overflow:hidden}
+.resume-frame iframe{display:block;width:100%;height:100%;border:0}
+
+/* Socials (layouts/socials/list.html). */
+.socials{max-width:46rem}
+.social-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.75rem;margin:0;padding:0;list-style:none}
+.social-card{display:flex;align-items:center;gap:1rem;min-height:4.5rem;padding:.9rem 1.1rem;
+  background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:.5rem;color:#111;text-decoration:none}
+.social-card:hover{border-color:rgba(0,0,0,.35)}
+.social-card .site-icon{width:1.75rem;height:1.75rem;color:#222}
+.social-card b{display:block;font-weight:600}
+.social-card small{display:block;color:#555;font-size:.875rem;overflow-wrap:anywhere}

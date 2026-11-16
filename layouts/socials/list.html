@@ -1,0 +1,16 @@
+{{/* Socials: one card per entry in `links` (content/socials/_index.md). `icon`
+     names a file for layouts/partials/icon.html. */}}
+{{ define "main" }}
+<div class="socials ph3 ph4-ns pv4 pv5-ns center">
+  <ul class="social-list">
+    {{ range .Params.links }}
+    <li>
+      <a class="social-card" href="{{ .url }}"{{ if not (strings.HasPrefix .url "mailto:") }} rel="me"{{ end }}>
+        {{ partial "icon.html" .icon }}
+        <span><b>{{ .name }}</b><small>{{ .handle }}</small></span>
+      </a>
+    </li>
+    {{ end }}
+  </ul>
+</div>
+{{ end }}
