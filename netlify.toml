@@ -18,7 +18,7 @@ for = "/*"
 X-Frame-Options = "DENY"
 X-Content-Type-Options = "nosniff"
 Referrer-Policy = "strict-origin-when-cross-origin"
-Strict-Transport-Security = "max-age=31536000"
+Strict-Transport-Security = "max-age=31536000; includeSubDomains"
 # microphone stays enabled for the Hangul practice recorder
 Permissions-Policy = "camera=(), microphone=(self), geolocation=(), payment=()"
 

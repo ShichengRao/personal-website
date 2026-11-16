@@ -73,6 +73,19 @@ stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
   the dated resume filename) are 301-redirected in `netlify.toml`; add a redirect there before
   removing or renaming any public path.
 
+## Domain and email
+
+- DNS for shichengrao.com is in Netlify DNS (Team → DNS in the dashboard).
+- The domain only receives mail. ImprovMX forwards contact@ and the other aliases.
+- DMARC is `p=reject`, so receivers reject any mail sent as @shichengrao.com.
+  Aggregate reports go to dmarc@.
+- Before sending as contact@ from any service, set up DKIM and SPF for that
+  service. Otherwise drop DMARC to `p=none` first.
+- The CAA record lets only Let's Encrypt issue certificates for the domain.
+  Netlify uses Let's Encrypt. Update the record before moving to a host that
+  uses another CA.
+- HSTS covers every subdomain. A new subdomain must serve HTTPS from day one.
+
 ## Seven Tiles
 
 `/seven-tiles/` is a two-player word game with the board, tile values and
