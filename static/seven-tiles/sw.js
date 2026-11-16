@@ -38,7 +38,7 @@ self.addEventListener('fetch', (e) => {
       if (!r || !r.ok) return r;
       const old = cached && CODE.includes(key) ? await c.match(key) : null;
       await c.put(key, r.clone());
-      if (old && (await old.text()) !== (await r.clone().text())) await newVersion(c, e.clientId);
+      if (old && (await old.text()) !== (await r.clone().text())) await newVersion(c);
       return r;
     }).catch(() => null);
     if (cached) { e.waitUntil(fresh); return cached; }
@@ -46,21 +46,21 @@ self.addEventListener('fetch', (e) => {
     return r || new Response('Offline', { status: 503, statusText: 'Offline' });
   }));
 });
-// The page that was served the old game is told once the whole new version is
-// in the cache, so its reload gets the new page and scripts together.
-async function newVersion(c, clientId) {
+// Every open page is running the old game, since the cache they share held it
+// until now. Each is told once the whole new version is in the cache, so a
+// reload gets the new page and scripts together, and each reloads when it can.
+async function newVersion(c) {
   await Promise.all(['/seven-tiles/', ...CODE].map((u) => fetch(u, { cache: 'no-cache' }).then((r) => r.ok && c.put(u, r)).catch(() => {})));
-  const client = clientId && await self.clients.get(clientId);
-  if (client) client.postMessage({ type: 'updated' });
+  for (const client of await self.clients.matchAll({ type: 'window' })) client.postMessage({ type: 'updated' });
 }
 // A home-screen app can stay open for days without loading anything, so it
 // asks for a check when it comes back to the screen.
 self.addEventListener('message', (e) => {
-  if (!e.data || e.data.type !== 'check' || !e.source) return;
+  if (!e.data || e.data.type !== 'check') return;
   e.waitUntil(caches.open(CACHE).then(async (c) => {
     for (const u of CODE) {
       const [old, r] = await Promise.all([c.match(u), fetch(u, { cache: 'no-cache' }).catch(() => null)]);
-      if (old && r && r.ok && (await old.text()) !== (await r.text())) return newVersion(c, e.source.id);
+      if (old && r && r.ok && (await old.text()) !== (await r.text())) return newVersion(c);
     }
   }));
 });

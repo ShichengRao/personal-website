@@ -2493,7 +2493,6 @@
     const holds = row.seat !== null && row.seat !== undefined;   // the account already has a seat here
     let name = store.get('sm.name', '') || (user && user.name) || '';
     if (!holds && !token) {
-      if (onlineOver(id, row)) return { token: null, player: null };
       const pick = await askSeat(row, name);
       if (!pick) return null;
       if (pick.watch) return { token: null, player: null };
@@ -2518,11 +2517,6 @@
       if (/two players/.test(e.message)) return { token: null, player: null };
       throw e;
     }
-  }
-  // A finished game opens for watching: there is nothing left to play.
-  function onlineOver(id, row) {
-    if (!row.seed) return false;
-    try { return C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))).over; } catch (e) { return false; }
   }
   // Who is opening a game this browser holds no seat in: the second player
   // joining, either player on another device, or someone watching.
