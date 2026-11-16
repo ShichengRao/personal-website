@@ -55,11 +55,6 @@ url = "/dont-blunder-again/"
 weight = 8
 
 [[menu.main]]
-name = "The Long Game"
-url = "/long-game/"
-weight = 9
-
-[[menu.main]]
 name = "Seven Tiles"
 url = "/seven-tiles/"
 weight = 10
