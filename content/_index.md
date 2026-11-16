@@ -29,4 +29,4 @@ projects:
 
 📧 [contact@shichengrao.com](mailto:contact@shichengrao.com)
 
-Welcome to my site! You'll find my [Resume](/resume) and [Socials](/socials) here, along with some of the things I've built.
+Welcome to my site! You'll find my [Resume](/resume) and [Socials](/socials) here, along with some of the things I've built. Curious how it all works? Here's [this site in five levels](/five-levels/).

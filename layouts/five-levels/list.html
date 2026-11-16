@@ -1,0 +1,71 @@
+{{/* /five-levels/: the site explained five times, each a level deeper. Each
+     level's topic and question are `levels` in content/five-levels/_index.md,
+     and its answer is a {{< level n >}} block in that file's body
+     (layouts/shortcodes/level.html). */}}
+{{ define "head" }}{{ partial "project/style.html" . }}
+<style>
+.fl-pick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:40px 0 0;padding:0;list-style:none}
+.fl-pick a{display:flex;flex-direction:column;gap:6px;height:100%;padding:16px 16px 14px;background:var(--surface);border:1px solid var(--ring);border-radius:14px;color:var(--ink);text-decoration:none}
+.fl-pick a:hover{border-color:var(--accent)}
+.fl-pick a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fl-pick small{font-size:13px;color:var(--muted)}
+.fl-pick b{font-size:17px;font-weight:650;line-height:1.3}
+@media (max-width:640px){
+ .fl-pick{gap:8px;margin-top:32px}
+ .fl-pick a{align-items:center;padding:12px 4px 10px;text-align:center}
+ .fl-pick small{font-size:14px;font-weight:650;color:var(--ink)}
+ .fl-pick b{display:none}
+}
+.fl-meter{display:inline-flex;align-items:flex-end;gap:3px;height:19px}
+.fl-meter i{display:block;width:5px;border-radius:1.5px;background:var(--grid)}
+.fl-meter i.on{background:var(--accent)}
+.fl-eyebrow{display:flex;align-items:flex-end;gap:10px}
+.fl-level{scroll-margin-top:16px}
+.fl-level h2{margin-bottom:24px}
+.fl-body{color:var(--ink2)}
+.fl-body h3{color:var(--ink);margin:30px 0 8px}
+.fl-body h3:first-child{margin-top:0}
+.fl-body p,.fl-body ul,.fl-body ol{margin:0 0 14px}
+.fl-body ul,.fl-body ol{padding-left:22px}
+.fl-body li{margin:6px 0}
+.fl-body li::marker{color:var(--muted)}
+.fl-body strong{color:var(--ink)}
+.fl-body code{font:13.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);color:var(--ink);padding:1px 5px;border-radius:5px;overflow-wrap:break-word}
+.fl-body pre{font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code) !important;color:var(--ink) !important;border-radius:10px;padding:12px 14px;margin:0 0 14px;overflow-x:auto}
+.fl-body pre code{background:none;padding:0;font-size:inherit;overflow-wrap:normal}
+/* Delta's pipeline: numbered steps with the number in a dot. */
+.fl-body ol{counter-reset:s;list-style:none;padding:0}
+.fl-body ol>li{counter-increment:s;position:relative;padding-left:40px;margin:12px 0}
+.fl-body ol>li::before{content:counter(s);position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:650;font-size:14px;display:flex;align-items:center;justify-content:center}
+.fl-body table{border-collapse:collapse;margin:0 0 14px;font-size:15px}
+.fl-body th,.fl-body td{text-align:left;padding:6px 18px 6px 0;border-bottom:1px solid var(--grid)}
+.fl-body th{color:var(--muted);font-weight:600;font-size:13px}
+.fl-body td{color:var(--ink);font-variant-numeric:tabular-nums}
+/* Echo's spec sheet. */
+.fl-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:1px;margin:0 0 28px;background:var(--ring);border:1px solid var(--ring);border-radius:14px;overflow:hidden}
+.fl-facts div{background:var(--surface);padding:12px 16px}
+.fl-facts dt{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.fl-facts dd{margin:2px 0 0;font-size:15px;line-height:1.45;color:var(--ink)}
+.fl-facts dd code{font-size:13px}
+</style>
+{{ end }}
+{{ define "header" }}{{ partial "project/header.html" . }}{{ end }}
+
+{{ define "main" }}
+<div class="pj">
+<div class="pj-wrap">
+  <header class="pj-hero">
+    <p class="pj-eyebrow">Explain this site</p>
+    <h1>{{ .Title }}</h1>
+    <p class="pj-lede">{{ .Params.lede }}</p>
+    <ol class="fl-pick" aria-label="Levels">
+      {{ range $i, $l := .Params.levels }}
+      {{ $n := add $i 1 }}
+      <li><a href="#level-{{ $n }}">{{ partial "five-levels/meter.html" $n }}<small>Level {{ $n }}</small><b>{{ $l.topic }}</b></a></li>
+      {{ end }}
+    </ol>
+  </header>
+  {{ .Content }}
+</div>
+</div>
+{{ end }}

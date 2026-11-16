@@ -1,0 +1,19 @@
+{{/* One level of /five-levels/. {{< level 1 >}}answer in Markdown{{< /level >}}
+     The topic and question come from `levels` in the page's front matter, by
+     position. A level with `facts` gets them as a table first. */}}
+{{ $n := int (.Get 0) }}
+{{ $levels := .Page.Params.levels }}
+{{ if or (lt $n 1) (gt $n (len $levels)) }}{{ errorf "level %d is not in the page's levels" $n }}{{ end }}
+{{ $lv := index $levels (sub $n 1) }}
+<section class="pj-sec fl-level" id="level-{{ $n }}" aria-labelledby="level-{{ $n }}-q">
+  <p class="pj-eyebrow fl-eyebrow">{{ partial "five-levels/meter.html" $n }}Level {{ $n }} · {{ $lv.topic }}</p>
+  <h2 id="level-{{ $n }}-q">{{ $lv.asks }}</h2>
+  <div class="pj-read fl-body">
+    {{ with $lv.facts }}
+    <dl class="fl-facts">
+      {{ range . }}<div><dt>{{ .k }}</dt><dd>{{ .v | $.Page.RenderString }}</dd></div>{{ end }}
+    </dl>
+    {{ end }}
+    {{ .Inner | .Page.RenderString (dict "display" "block") }}
+  </div>
+</section>
