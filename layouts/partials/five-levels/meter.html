@@ -1,0 +1,6 @@
+{{/* Five bars of rising height, the first n filled, like a signal meter. Takes n. */}}
+<span class="fl-meter" aria-hidden="true">
+  {{- range $i := seq 5 -}}
+  <i class="{{ if le $i $ }}on{{ end }}" style="height:{{ add 4 (mul $i 3) }}px"></i>
+  {{- end -}}
+</span>

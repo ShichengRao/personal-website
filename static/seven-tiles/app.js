@@ -48,7 +48,7 @@
     if (room) return BASE + (LOCAL_HOST ? '?room=' : 'room/') + room;
     return id ? (LOCAL_HOST ? BASE + '?g=' + id : BASE + id) : BASE;
   };
-  const linkFor = (id, token) => location.origin + pathFor(id) + (token ? '#k=' + token : '');
+  const linkFor = (id) => location.origin + pathFor(id);
   function idFromUrl() {
     const q = new URLSearchParams(location.search).get('g');
     if (q) return q.toLowerCase();
@@ -1191,6 +1191,8 @@
       '<button id="sm-m-same"' + noDict + '><b>Same Rack</b><small>a group plays the same racks</small></button>' +
       '<button id="sm-m-online"' + (Net.enabled && navigator.onLine !== false ? '' : ' disabled') + '><b>Play a friend online</b><small>' + (!Net.enabled ? 'not set up on this site yet' : navigator.onLine === false ? 'you are offline' : 'share a link; take turns whenever') + '</small></button>' +
       '</div>';
+    if (Net.enabled) html += '<div class="sm-row" style="flex-wrap:nowrap"><input type="text" id="sm-m-link" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Paste a game link"><button id="sm-m-go" style="flex:none">Open</button></div>' +
+      '<div class="sm-note" id="sm-m-linkerr" style="color:var(--bad);text-align:left"></div>';
     if (list.length) {
       html += '<div class="sm-k" style="text-align:left;margin-top:14px" id="sm-m-yours">Your games</div><div class="sm-games">';
       for (const rec of list) html += gameRowHtml(rec.id, gameLabel(rec));
@@ -1230,8 +1232,40 @@
     $('sm-m-hotseat').addEventListener('click', () => { closeOverlay(); startLocal('hotseat'); });
     $('sm-m-same').addEventListener('click', () => showSameSetup());
     $('sm-m-online').addEventListener('click', () => { closeOverlay(); createOnline(); });
+    const link = $('sm-m-link');
+    if (link) {
+      const go = () => { if (!openPasted(link.value)) { $('sm-m-linkerr').textContent = link.value.trim() ? 'That is not a game link.' : ''; link.focus(); } };
+      $('sm-m-go').addEventListener('click', go);
+      link.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') go(); });
+    }
     const back = $('sm-m-back');
     if (back) back.addEventListener('click', () => { closeOverlay(); setUrl(G.id); });
+  }
+  // A pasted game, room or profile link from any copy of the site, or a game's
+  // three words. A link never opens the home-screen app by itself, so this is
+  // how one gets there.
+  function openPasted(text) {
+    const s = String(text || '').trim();
+    const room = s.match(/\/seven-tiles\/room\/([a-z]+(?:-[a-z]+){2})/i) || s.match(/[?&]room=([a-z]+(?:-[a-z]+){2})/i);
+    const profile = s.match(/\/seven-tiles\/u\/([a-z0-9]+)/i) || s.match(/[?&]u=([a-z0-9]+)/i);
+    const game = s.match(/\/seven-tiles\/([a-z]+(?:-[a-z]+){2})(?![a-z-])/i) || s.match(/[?&]g=([a-z]+(?:-[a-z]+){2})/i);
+    if (room) { closeOverlay(); openRoom(room[1].toLowerCase()); return true; }
+    if (profile) { showProfile(profile[1].toUpperCase()); return true; }
+    if (game) {
+      const id = game[1].toLowerCase(), key = s.match(/#(?:.*&)?k=([0-9a-f]{32,64})(?![0-9a-f])/);
+      if (key) { linkToken = key[1]; linkGame = id; }   // an old private link still opens its seat
+      closeOverlay(); openGame(id); return true;
+    }
+    const words = !/[\/.?#]/.test(s) && normWords(s);
+    if (!words || !words.split('-').every((w) => WORDS.includes(w))) return false;
+    // three words alone: a game, or else a Same Rack room
+    closeOverlay();
+    if (games.get(words)) { openGame(words); return true; }
+    setStatus('Opening ' + words + '…');
+    Net.rpc('get_game', { p_code: words })
+      .then(async (row) => { setStatus(''); if (row || !(await Net.rpc('get_room', { p_code: words }))) openGame(words); else openRoom(words); })
+      .catch(() => { setStatus(''); openGame(words); });
+    return true;
   }
   function showHandoff() {
     openOverlay('<h2>' + esc(nameOf(G.state.turn)) + '’s turn</h2><p>Pass the device over. The rack stays hidden until you tap.</p><button class="primary" id="sm-reveal">Show my rack</button>');
@@ -2442,7 +2476,8 @@
     failToMenu('Could not find a free game id; try again.');
   }
   // Claim or recover a seat: from this browser's record, or from a private
-  // link's token, or by joining the empty second seat.
+  // link's token, or by asking who is opening the game. Seats are not locked to
+  // a device: a player picks theirs up anywhere, and the answer is trusted.
   async function seatFor(id, row) {
     const rec = games.get(id);
     let urlToken = tokenFromUrl(id);
@@ -2454,16 +2489,20 @@
       if (seat === null || seat === undefined) { setStatus('That private link did not open a seat.', 'bad'); urlToken = null; dropLinkToken(); }
     }
     // a valid private link wins over whatever this browser remembered
-    const token = urlToken || (rec && rec.online && rec.online.token) || randomToken();
+    let token = urlToken || (rec && rec.online && rec.online.token) || null;
     const holds = row.seat !== null && row.seat !== undefined;   // the account already has a seat here
-    const known = holds || (rec && rec.online && rec.online.token) || urlToken;
     let name = store.get('sm.name', '') || (user && user.name) || '';
-    if (!known && row.full) return { token: null, player: null };
-    if (!known && !name) {
-      name = await askText('Join ' + (row.p1_name || 'the game'), 'Shown to your opponent.', 'Your name', '');
-      if (!name) return null;
-      store.set('sm.name', name);
+    if (!holds && !token) {
+      const pick = await askSeat(row, name);
+      if (!pick) return null;
+      if (pick.watch) return { token: null, player: null };
+      if (pick.seat !== undefined) {
+        const r = await Net.rpc('take_seat', { p_code: id, p_player: pick.seat });
+        if (!r) throw new Error('that seat is empty');
+        token = r.token;
+      } else { name = pick.name; store.set('sm.name', name); }
     }
+    token = token || randomToken();
     try {
       // the server answers with the seat and the token that seat really holds
       // (an account-held seat may have been created with a token this browser never saw)
@@ -2478,6 +2517,31 @@
       if (/two players/.test(e.message)) return { token: null, player: null };
       throw e;
     }
+  }
+  // Who is opening a game this browser holds no seat in: the second player
+  // joining, either player on another device, or someone watching.
+  // Answers { name } to join, { seat } to take a seat, { watch }, or null.
+  function askSeat(row, name) {
+    return new Promise((resolve) => {
+      const names = [row.p1_name || 'Player 1', row.p2_name || 'Player 2'];
+      const im = (k) => '<button data-seat="' + k + '">I’m ' + esc(names[k]) + '</button>';
+      openOverlay(row.full
+        ? '<h2>' + esc(names[0]) + ' vs ' + esc(names[1]) + '</h2><div class="sm-choices">' + im(0) + im(1) + '<button data-seat="watch">I’m watching</button></div>'
+        : '<h2>Join ' + esc(names[0]) + '</h2><p>Shown to your opponent.</p><input type="text" id="sm-ask" maxlength="24" placeholder="Your name" value="' + esc(name) + '">' +
+          '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-ask-cancel">Cancel</button><button class="primary" id="sm-ask-ok">Join</button></div>' +
+          '<div class="sm-row" style="justify-content:center">' + im(0) + '</div>');
+      let settled = false;
+      cancelAsk = () => { if (settled) return; settled = true; cancelAsk = null; resolve(null); };
+      const done = (v) => { if (settled) return; settled = true; cancelAsk = null; closeOverlay(); resolve(v); };
+      ui.overlay.querySelectorAll('button[data-seat]').forEach((b) => b.addEventListener('click', () => done(b.dataset.seat === 'watch' ? { watch: true } : { seat: +b.dataset.seat })));
+      const inp = $('sm-ask');
+      if (!inp) return;
+      const join = () => { const v = inp.value.trim(); if (v) done({ name: v }); else inp.focus(); };
+      $('sm-ask-ok').addEventListener('click', join);
+      $('sm-ask-cancel').addEventListener('click', () => done(null));
+      inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') join(); if (e.key === 'Escape') done(null); });
+      if (!name) inp.focus();
+    });
   }
   async function openOnline(id) {
     const my = ++navGen;
@@ -2505,7 +2569,7 @@
       try { row = await Net.rpc('get_game', { p_code: id, p_token: seat.token }); } catch (e) { /* keep what we have */ }
       if (my !== navGen) return;
     }
-    if (!row.seed) { failToMenu(row.private ? 'This game is private: its players have not opened it to watchers.' : 'Could not load game ' + id + '.'); return; }
+    if (!row.seed) { failToMenu('Could not load game ' + id + '.'); return; }
     let state;
     try { state = C.replay(C.unpack(id, row.seed), (row.moves || []).map((m) => C.unpack(id, m.d))); } catch (e) { failToMenu('This game’s record is corrupt: ' + e.message); return; }
     leaveGame();
@@ -2514,7 +2578,7 @@
     if (seat.player !== null) { persist(); pushRegister([{ code: id, token: seat.token }]).catch(() => {}); }
     setUrl(id);
     render();
-    setStatus(seat.player === null ? 'Watching: this game already has two players.' : '');
+    setStatus(seat.player === null ? 'Watching.' : '');
     if (G.state.over) { reportResult(); showGameOver(); startPolling(); }
     else { startPolling(); if (G.state.turn === G.me && C.options(G.state).mustPass) commit({ t: 'pass' }); }
   }
@@ -2547,7 +2611,7 @@
     let row;
     try { row = await Net.rpc('get_game', { p_code: G.id, p_token: G.online.token || null }); } catch (e) { return; }
     if (!alive(s) || busy || !row) return;
-    if (!row.moves) { if (row.private && G.me === null) { stopPolling(); setStatus('This game is private now: its players have closed it to watchers.', 'bad'); } return; }
+    if (!row.moves) return;
     integrate(row.moves, [row.p1_name || 'Player 1', row.p2_name || null], row);
   }
   // The same two players again, seats swapped. The server copies both seats,
@@ -2605,11 +2669,10 @@
   function renderOnlinePanel() {
     if (!G || G.kind !== 'online') { ui.online.style.display = 'none'; return; }
     ui.online.style.display = '';
-    const invite = linkFor(G.id), mine = G.online.token ? linkFor(G.id, G.online.token) : null;
+    const invite = linkFor(G.id);
     ui.online.innerHTML = '<div class="sm-k">Online game</div><div>Game <span class="sm-code">' + esc(G.id) + '</span></div>' +
       (G.names[1] ? '<div class="sm-note">' + esc(G.names[0]) + ' vs ' + esc(G.names[1]) + '. This page checks for new moves every few seconds while it is open; come back any time.</div>'
                   : '<div class="sm-note">' + (G.state.moves.length ? 'Waiting for a second player to take their turn.' : 'Play your first word, then') + ' Send them this link:</div><input type="text" readonly value="' + esc(invite) + '" id="sm-link"><div class="sm-row"><button id="sm-copy" data-link="' + esc(invite) + '">Copy invite link</button></div>') +
-      (mine ? '<div class="sm-note" style="margin-top:10px">Your private link opens <i>your</i> seat on another device. Keep it to yourself.</div><div class="sm-row"><button id="sm-copy-mine" data-link="' + esc(mine) + '">Copy private link</button></div>' : '') +
       (G.nextGame && G.state.over ? '<div class="sm-row"><button class="primary" id="sm-rematch">Open the rematch</button></div>' : '') +
       '<div class="sm-row"><button id="sm-refresh">Refresh</button></div>' + pushRowHtml();
     const rm = $('sm-rematch');
@@ -2839,6 +2902,28 @@
     navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => { if (new URL(r.scope).pathname !== BASE) r.unregister(); })).catch(() => {});
   }
   if ('serviceWorker' in navigator && !LOCAL_HOST) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => { /* no offline copy, nothing lost */ });
+  // A new version of the game (sw.js finds it): reload into it at once, or,
+  // with tiles on the board or a name half typed, the next time the page comes
+  // back to the screen. Coming back also asks for a check now and then.
+  let updateReady = false, lastCheck = Date.now();
+  function takeUpdate() {
+    if (!updateReady || pending.length || (document.activeElement && document.activeElement.tagName === 'INPUT')) return;
+    try {   // at most one reload a minute, whatever the worker says
+      if (Date.now() - (+sessionStorage.getItem('sm.reloaded') || 0) < 60000) return;
+      sessionStorage.setItem('sm.reloaded', String(Date.now()));
+    } catch (e) { return; }
+    location.reload();
+  }
+  if ('serviceWorker' in navigator && !LOCAL_HOST) {
+    navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'updated') { updateReady = true; takeUpdate(); } });
+    if (navigator.serviceWorker.startMessages) navigator.serviceWorker.startMessages();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      takeUpdate();
+      const sw = navigator.serviceWorker.controller;
+      if (sw && !updateReady && Date.now() - lastCheck > 10 * 60000) { lastCheck = Date.now(); sw.postMessage({ type: 'check' }); }
+    });
+  }
   ui.newBtn.addEventListener('click', showMenu);
   ui.help.addEventListener('click', showHelp);
   ui.players.forEach((el) => el.addEventListener('click', () => { if (el.dataset.handle) showProfile(el.dataset.handle); }));

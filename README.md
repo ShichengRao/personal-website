@@ -21,12 +21,12 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Don't Blunder Again page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, favicon partial |
+| `layouts/` | Custom templates: site navigation with the narrow-screen Menu button, Resume and Socials pages, homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Don't Blunder Again page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, the Five Levels explainer (`/five-levels/`, its text in `content/five-levels/_index.md`), favicon partial |
 | `assets/` | The Said & Done page's prose (`assets/said-and-done/`) |
 | `static/` | Files copied verbatim into the site: resume PDF, favicons, the Don't Blunder Again data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`), the Said & Done results (`static/said-and-done/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
-| `netlify/functions/` | `push.mjs`: Seven Tiles turn notifications; `evalbar.mts`: the Eval Bar's data in Netlify Blobs |
+| `netlify/functions/` | `push.mjs`: Seven Tiles turn notifications; `evalbar.mts`: the Eval Bar's data in Netlify Blobs; `resume.mjs`: the Resume page's copy of the published Google Doc |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Seven Tiles's online games |
 | `tools/` | `hangul/audio.py`: generates the Hangul practice clips with edge-tts and checks them with Whisper; `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
@@ -72,6 +72,19 @@ stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
 - Old URLs (`/church/`, `/vine/`, `/deskbooks/`, `/livestream/`, `/blunder-drill/`,
   the dated resume filename) are 301-redirected in `netlify.toml`; add a redirect there before
   removing or renaming any public path.
+
+## Domain and email
+
+- DNS for shichengrao.com is in Netlify DNS (Team → DNS in the dashboard).
+- The domain only receives mail. ImprovMX forwards contact@ and the other aliases.
+- DMARC is `p=reject`, so receivers reject any mail sent as @shichengrao.com.
+  Aggregate reports go to dmarc@.
+- Before sending as contact@ from any service, set up DKIM and SPF for that
+  service. Otherwise drop DMARC to `p=none` first.
+- The CAA record lets only Let's Encrypt issue certificates for the domain.
+  Netlify uses Let's Encrypt. Update the record before moving to a host that
+  uses another CA.
+- HSTS covers every subdomain. A new subdomain must serve HTTPS from day one.
 
 ## Seven Tiles
 

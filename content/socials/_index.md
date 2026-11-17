@@ -1,9 +1,38 @@
 ---
 title: "Socials"
-description: "Where to find Shicheng Rao online: LinkedIn, GitHub, YouTube, and Facebook."
+description: "Where to find Shicheng Rao online."
+links:
+  - name: "Email"
+    url: "mailto:contact@shichengrao.com"
+    handle: "contact@shichengrao.com"
+    icon: "envelope"
+  - name: "LinkedIn"
+    url: "https://www.linkedin.com/in/shicheng-samson-rao/"
+    handle: "shicheng-samson-rao"
+    icon: "linkedin"
+    color: "#0A66C2"
+  - name: "GitHub"
+    url: "https://github.com/ShichengRao"
+    handle: "ShichengRao"
+    icon: "github"
+    color: "#181717"
+  - name: "Hugging Face"
+    url: "https://huggingface.co/ShichengRao"
+    handle: "ShichengRao"
+    icon: "hugging-face"
+  - name: "Kaggle"
+    url: "https://www.kaggle.com/shichengrao"
+    handle: "shichengrao"
+    icon: "kaggle"
+    color: "#20BEFF"
+  - name: "YouTube"
+    url: "https://www.youtube.com/@ShichengRao"
+    handle: "@ShichengRao"
+    icon: "youtube"
+    color: "#FF0000"
+  - name: "Facebook"
+    url: "https://www.facebook.com/samson.rao.585/"
+    handle: "Samson Rao"
+    icon: "facebook"
+    color: "#0866FF"
 ---
-
-- [LinkedIn](https://www.linkedin.com/in/shicheng-samson-rao/)
-- [GitHub](https://github.com/ShichengRao)
-- [YouTube](https://www.youtube.com/@ShichengRao)
-- [Facebook](https://www.facebook.com/samson.rao.585/)

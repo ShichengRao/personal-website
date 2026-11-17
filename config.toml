@@ -10,6 +10,8 @@ disableKinds = ["taxonomy", "term"]
 [params]
 author = "Shicheng Rao"
 description = "Product Reliability Engineer"
+# assets/ananke/css/site.css: the narrow-screen menu and other site-wide fixes
+custom_css = ["site.css"]
 
 [menu]
 [[menu.main]]
@@ -51,11 +53,6 @@ weight = 7
 name = "Don't Blunder Again"
 url = "/dont-blunder-again/"
 weight = 8
-
-[[menu.main]]
-name = "The Long Game"
-url = "/long-game/"
-weight = 9
 
 [[menu.main]]
 name = "Seven Tiles"

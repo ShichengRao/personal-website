@@ -1,14 +1,16 @@
 /* Seven Tiles service worker: keeps the page, the scripts and the word lists
    on the device so the game opens instantly and works offline against the bot
-   and pass-and-play. Cached first, refreshed in the background, so a new
-   version shows up on the next open. Online play and sign-in requests go to
-   Supabase and are never cached; the Supabase browser library is, so a
-   cached online game can still be shown offline. */
+   and pass-and-play. Cached first, refreshed in the background; when the
+   refresh brings a new version of the game, the page is told and reloads into
+   it. Online play and sign-in requests go to Supabase and are never cached;
+   the Supabase browser library is, so a cached online game can still be shown
+   offline. */
 const CACHE = 'seven-tiles-v4';
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
 const SHELL = ['/seven-tiles/', '/seven-tiles/core.js', '/seven-tiles/app.js', '/seven-tiles/words.bin',
   '/seven-tiles/common.bin', '/seven-tiles/manifest.webmanifest', '/seven-tiles/icon-192.png', '/seven-tiles/icon-512.png',
   '/seven-tiles/icon-180.png', '/seven-tiles/icon-maskable-512.png', '/seven-tiles/icon.svg'];
+const CODE = ['/seven-tiles/app.js', '/seven-tiles/core.js'];   // a change to either is a new version of the game
 const EXTRAS = [SUPABASE_JS];   // nice to have offline; a failure here must not block installing
 // The theme's stylesheet has a fingerprinted name, so it is cached on first use (see fetch) rather than here.
 
@@ -32,10 +34,34 @@ self.addEventListener('fetch', (e) => {
   const req = ours ? e.request : new Request(e.request.url, { mode: 'cors' });   // a CORS response can be checked and refreshed; an opaque one cannot
   e.respondWith(caches.open(CACHE).then(async (c) => {
     const cached = await c.match(key);
-    const fresh = fetch(req).then((r) => { if (r && r.ok) c.put(key, r.clone()); return r; }).catch(() => null);
-    if (cached) { fresh.catch(() => {}); return cached; }
+    const fresh = fetch(req, ours ? { cache: 'no-cache' } : undefined).then(async (r) => {
+      if (!r || !r.ok) return r;
+      const old = cached && CODE.includes(key) ? await c.match(key) : null;
+      await c.put(key, r.clone());
+      if (old && (await old.text()) !== (await r.clone().text())) await newVersion(c);
+      return r;
+    }).catch(() => null);
+    if (cached) { e.waitUntil(fresh); return cached; }
     const r = await fresh;
     return r || new Response('Offline', { status: 503, statusText: 'Offline' });
+  }));
+});
+// Every open page is running the old game, since the cache they share held it
+// until now. Each is told once the whole new version is in the cache, so a
+// reload gets the new page and scripts together, and each reloads when it can.
+async function newVersion(c) {
+  await Promise.all(['/seven-tiles/', ...CODE].map((u) => fetch(u, { cache: 'no-cache' }).then((r) => r.ok && c.put(u, r)).catch(() => {})));
+  for (const client of await self.clients.matchAll({ type: 'window' })) client.postMessage({ type: 'updated' });
+}
+// A home-screen app can stay open for days without loading anything, so it
+// asks for a check when it comes back to the screen.
+self.addEventListener('message', (e) => {
+  if (!e.data || e.data.type !== 'check') return;
+  e.waitUntil(caches.open(CACHE).then(async (c) => {
+    for (const u of CODE) {
+      const [old, r] = await Promise.all([c.match(u), fetch(u, { cache: 'no-cache' }).catch(() => null)]);
+      if (old && r && r.ok && (await old.text()) !== (await r.text())) return newVersion(c);
+    }
   }));
 });
 

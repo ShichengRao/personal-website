@@ -1,0 +1,52 @@
+{{/* The theme's navigation, plus a Menu button that folds the links away on
+     narrow screens (assets/ananke/css/site.css). Wide screens look as before,
+     and without JavaScript the links stay open. */}}
+<nav class="site-nav pv3 ph3 ph4-ns" role="navigation" aria-label="Site">
+  <div class="flex-l center items-center justify-between">
+    <div class="site-nav-bar">
+      <a href="{{ .Site.Home.RelPermalink }}" class="site-nav-home f3 fw2 hover-white white-90 dib no-underline">
+        {{ with .Site.Params.site_logo }}
+          <img src="{{ urls.RelURL . }}" class="w100 mw5-ns" alt="{{ $.Site.Title }}" />
+        {{ else }}
+          {{ .Site.Title }}
+        {{ end }}
+      </a>
+      <button type="button" class="site-nav-toggle" aria-expanded="false" aria-controls="site-nav-menu">
+        <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path class="open" d="M3 5h14M3 10h14M3 15h14"/><path class="close" d="M5 5l10 10M15 5L5 15"/></svg>
+        Menu
+      </button>
+    </div>
+    <div class="site-nav-menu flex-l items-center" id="site-nav-menu">
+      {{ partials.Include "i18nlist.html" . }}
+      {{ if .Site.Menus.main }}
+        <ul class="{{ compare.Conditional (compare.Eq $.Site.Language.LanguageDirection "rtl") "pr0 ml3" "pl0 mr3" }}">
+          {{ range .Site.Menus.main }}
+          {{/* the entry for this page, or for the section this page sits in */}}
+          {{ $current := or (compare.Eq .URL $.RelPermalink) (and (compare.Ne .URL "/") (strings.HasPrefix $.RelPermalink .URL)) }}
+          <li class="list f5 f4-ns fw4 dib {{ compare.Conditional (compare.Eq $.Site.Language.LanguageDirection "rtl") "pl3" "pr3" }}">
+            <a class="hover-white white-90 no-underline" href="{{ .URL }}" title="{{ lang.Translate "pageTitle" . }}"{{ if $current }} aria-current="page"{{ end }}>
+              {{ .Name }}
+            </a>
+          </li>
+          {{ end }}
+        </ul>
+      {{ end }}
+      {{ partials.IncludeCached "social/follow.html" . }}
+    </div>
+  </div>
+</nav>
+<script>
+(function () {
+  var nav = document.currentScript.previousElementSibling;
+  var btn = nav.querySelector(".site-nav-toggle");
+  function set(open) {
+    nav.classList.toggle("is-open", open);
+    btn.setAttribute("aria-expanded", open);
+  }
+  nav.classList.add("js-nav");
+  btn.addEventListener("click", function () { set(!nav.classList.contains("is-open")); });
+  nav.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && nav.classList.contains("is-open")) { set(false); btn.focus(); }
+  });
+})();
+</script>

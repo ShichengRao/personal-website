@@ -1,0 +1,5 @@
+{{/* An inline icon from the theme's Font Awesome set (themes/ananke/assets/ananke/socials/),
+     or from assets/icons/ for the few it lacks. Takes the file name without .svg. */}}
+{{- with or (resources.Get (printf "icons/%s.svg" .)) (resources.Get (printf "ananke/socials/%s.svg" .)) -}}
+<span class="site-icon" aria-hidden="true">{{ .Content | safeHTML }}</span>
+{{- end -}}

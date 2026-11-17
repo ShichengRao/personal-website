@@ -1,0 +1,68 @@
+/* Site-wide additions to the theme, bundled into its main stylesheet through
+   custom_css in config.toml. The bundle goes through Sass, so no min()/max(). */
+
+/* Navigation (layouts/partials/site-navigation.html). Wide screens keep the
+   theme's row of links. Below 60em, where the theme stacks them under the
+   name, they fold behind a Menu button and open as a grid of large targets. */
+.site-nav-home{white-space:nowrap}
+.site-nav-toggle{display:none}
+@media screen and (min-width:60em){.site-nav-bar{margin-right:1.5rem}}
+@media screen and (max-width:59.99em){
+  .site-nav-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+  .site-nav-toggle{align-items:center;gap:.5rem;min-height:44px;padding:0 .875rem;margin-right:-.25rem;
+    font:inherit;font-size:1rem;color:rgba(255,255,255,.9);background:transparent;
+    border:1px solid rgba(255,255,255,.3);border-radius:8px;cursor:pointer}
+  .site-nav-toggle:hover{border-color:rgba(255,255,255,.6);color:#fff}
+  .site-nav-toggle svg{fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round}
+  .site-nav-toggle .close,.site-nav.is-open .site-nav-toggle .open{display:none}
+  .site-nav.is-open .site-nav-toggle .close{display:inline}
+  .site-nav.js-nav .site-nav-toggle{display:inline-flex}
+  .site-nav.js-nav:not(.is-open) .site-nav-menu{display:none}
+  .site-nav-menu ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(9rem,1fr));column-gap:1rem;margin:.75rem 0 0;padding:0}
+  .site-nav-menu li{display:block;padding:0;font-size:1.0625rem}
+  .site-nav-menu li a{display:block;padding:.625rem 0;border-top:1px solid rgba(255,255,255,.14)}
+  .site-nav-menu a[aria-current="page"]{color:#fff;font-weight:600}
+
+  /* The theme leaves 16rem under every page; on a phone that is most of a
+     screen. A short page still puts the footer at the bottom. */
+  main.pb7{padding-bottom:4rem}
+  body{display:flex;flex-direction:column;min-height:100vh}
+  body > main{flex:1 0 auto}
+}
+
+/* The theme hides the footer's only link on phones, which leaves an empty bar. */
+footer[role="contentinfo"] > div > a{display:inline-block}
+
+/* Icons (layouts/partials/icon.html) and buttons, for the Resume and Socials pages. */
+.site-icon{display:inline-flex;flex:none;width:1.15em;height:1.15em}
+.site-icon svg{width:100%;height:100%;fill:currentColor}
+.site-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:.75rem;margin:0 0 1.5rem}
+.site-btn{display:inline-flex;align-items:center;gap:.5rem;min-height:44px;padding:0 1.1rem;
+  border:1px solid rgba(0,0,0,.15);border-radius:.5rem;background:#fff;color:#111;font-size:1rem;text-decoration:none}
+.site-btn:hover{border-color:rgba(0,0,0,.4)}
+.site-btn.primary{background:#111;border-color:#111;color:#fff}
+.site-btn.primary:hover{background:#333}
+
+/* Resume (layouts/resume/list.html). The doc shows inline as a white page;
+   the fallback embed has the shape of a letter page, so a one-page resume
+   fits without scrolling inside the frame. */
+.resume{max-width:54rem}
+.resume-view:not(.is-ready){min-height:60vh}
+.resume-doc{background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:.5rem;padding:3rem 3.5rem}
+@media screen and (max-width:30em){.resume-doc{padding:1.25rem 1rem}}
+.resume-frame{width:100%;aspect-ratio:17 / 23;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:.5rem;overflow:hidden}
+.resume-frame iframe{display:block;width:100%;height:100%;border:0}
+@media print{
+  .resume > .site-actions,header,footer[role="contentinfo"]{display:none}
+  .resume-doc{border:0;padding:0}
+}
+
+/* Socials (layouts/socials/list.html). */
+.socials{max-width:46rem}
+.social-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.75rem;margin:0;padding:0;list-style:none}
+.social-card{display:flex;align-items:center;gap:1rem;min-height:4.5rem;padding:.9rem 1.1rem;
+  background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:.5rem;color:#111;text-decoration:none}
+.social-card:hover{border-color:rgba(0,0,0,.35)}
+.social-card .site-icon{width:1.75rem;height:1.75rem;color:var(--brand,#222)}
+.social-card b{display:block;font-weight:600}
+.social-card small{display:block;color:#555;font-size:.875rem;overflow-wrap:anywhere}

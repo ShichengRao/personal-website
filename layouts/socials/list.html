@@ -1,0 +1,17 @@
+{{/* Socials: one card per entry in `links` (content/socials/_index.md). `icon`
+     names a file for layouts/partials/icon.html, and `color` is the brand
+     color it is drawn in. An icon with colors of its own leaves `color` out. */}}
+{{ define "main" }}
+<div class="socials ph3 ph4-ns pv4 pv5-ns center">
+  <ul class="social-list">
+    {{ range .Params.links }}
+    <li>
+      <a class="social-card" href="{{ .url }}"{{ if not (strings.HasPrefix .url "mailto:") }} rel="me"{{ end }}{{ with .color }} style="--brand:{{ . | safeCSS }}"{{ end }}>
+        {{ partial "icon.html" .icon }}
+        <span><b>{{ .name }}</b><small>{{ .handle }}</small></span>
+      </a>
+    </li>
+    {{ end }}
+  </ul>
+</div>
+{{ end }}
