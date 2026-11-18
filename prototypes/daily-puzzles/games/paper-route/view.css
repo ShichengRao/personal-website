@@ -1,0 +1,126 @@
+/* Paper Route board. Every selector starts with a pr- class.
+   Red (--error) is only for real rule breaks; hints use amber. */
+
+.pr-host {
+  --pr-hint: #c97a00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pr-host {
+    --pr-hint: #ffbf47;
+  }
+}
+
+.pr-board {
+  position: relative;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.pr-cell {
+  box-shadow: inset -1px -1px 0 var(--line);
+}
+
+.pr-cell.pr-on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.pr-cell.pr-hint {
+  background: color-mix(in srgb, var(--pr-hint) 22%, transparent);
+  box-shadow: inset 0 0 0 3px var(--pr-hint);
+}
+
+.pr-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.pr-walls line {
+  stroke: var(--strong-line);
+  stroke-width: 11;
+  stroke-linecap: round;
+}
+
+.pr-route {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 30;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pr-route.pr-route-bad {
+  stroke: var(--error);
+}
+
+.pr-head {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 7;
+}
+
+.pr-head.pr-head-bad {
+  stroke: var(--error);
+}
+
+.pr-stop circle {
+  fill: var(--panel);
+  stroke: var(--ink);
+  stroke-width: 6;
+}
+
+.pr-stop text {
+  fill: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 38px;
+  font-weight: 650;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.pr-stop.pr-next circle {
+  stroke: var(--accent);
+  stroke-width: 10;
+}
+
+.pr-stop.pr-hit circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.pr-stop.pr-hit text,
+.pr-stop.pr-bad text {
+  fill: var(--panel);
+}
+
+.pr-stop.pr-bad circle {
+  fill: var(--error);
+  stroke: var(--error);
+}
+
+.pr-host.solved .pr-route {
+  stroke: var(--ok);
+}
+
+.pr-host.solved .pr-stop.pr-hit circle {
+  fill: var(--ok);
+  stroke: var(--ok);
+}
+
+.pr-host.solved .pr-cell.pr-on {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.pr-mark line {
+  stroke: var(--pr-hint);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.pr-mark-use line {
+  stroke-dasharray: 16 14;
+}

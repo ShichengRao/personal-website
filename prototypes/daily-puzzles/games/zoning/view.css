@@ -1,0 +1,103 @@
+/* Zoning. Every selector starts with .zoning, the class mount() puts on the board. */
+
+/* Weekend boards are 10 and 11 wide: let cells shrink a little so they fit a phone. */
+.zoning {
+  --cell: clamp(26px, calc((min(100vw, 560px) - 40px) / var(--n, 8)), 56px);
+}
+
+.zoning .zoning-grid {
+  position: relative;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.zoning .zoning-cell {
+  box-shadow: inset -1px -1px 0 var(--line);
+}
+.zoning .zoning-cell.zoning-last-col { box-shadow: inset 0 -1px 0 var(--line); }
+.zoning .zoning-cell.zoning-last-row { box-shadow: inset -1px 0 0 var(--line); }
+.zoning .zoning-cell.zoning-last-col.zoning-last-row { box-shadow: none; }
+
+.zoning .zoning-lot {
+  position: relative;
+  z-index: 1;
+  margin: 3px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.zoning .zoning-ok {
+  background: hsl(var(--hue) 70% 62% / 0.32);
+  border: 2px solid hsl(var(--hue) 45% 45%);
+}
+
+.zoning .zoning-bad {
+  background: rgb(127 127 127 / 0.12);
+  border: 2px dashed var(--error);
+}
+
+/* A wrong lot during its first two seconds, before it turns red. */
+.zoning .zoning-wait {
+  background: rgb(127 127 127 / 0.12);
+  border: 2px dashed var(--muted);
+}
+
+.zoning .zoning-preview {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  margin: 2px;
+  padding: 1px 5px;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.zoning .zoning-preview[hidden] { display: none; }
+
+.zoning .zoning-clue {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--given);
+  font-size: calc(var(--cell) * 0.42);
+  font-weight: 650;
+  line-height: 1;
+  pointer-events: none;
+}
+.zoning .zoning-clue.zoning-wrong { color: var(--error); }
+
+.zoning .zoning-shape {
+  display: block;
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
+}
+.zoning .zoning-shape-S { width: calc(var(--cell) * 0.2); height: calc(var(--cell) * 0.2); }
+.zoning .zoning-shape-W { width: calc(var(--cell) * 0.32); height: calc(var(--cell) * 0.16); }
+.zoning .zoning-shape-T { width: calc(var(--cell) * 0.16); height: calc(var(--cell) * 0.32); }
+
+/* Hint highlights: amber, so they never read as an error (red) or a drag (accent). */
+.zoning .zoning-hint {
+  position: relative;
+  z-index: 2;
+  margin: 1px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.zoning .zoning-hint-on {
+  background: rgb(255 191 0 / 0.38);
+  box-shadow: inset 0 0 0 2px rgb(214 150 0);
+}
+.zoning .zoning-hint-out {
+  background: repeating-linear-gradient(45deg, rgb(255 191 0 / 0.2) 0 6px, transparent 6px 12px);
+  box-shadow: inset 0 0 0 3px rgb(214 150 0);
+}

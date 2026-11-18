@@ -1,0 +1,88 @@
+/* Seating Chart. Every selector starts with .sc-board. */
+
+.sc-board {
+  /* a little smaller than the shared minimum so 11×11 fits a phone */
+  --cell: clamp(28px, calc((min(100vw, 600px) - 40px) / var(--n, 8)), 56px);
+  --sc-thin: rgba(0, 0, 0, 0.14);
+  --sc-sat: 62%;
+  --sc-x: #5d5d63;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sc-board {
+    --sc-thin: rgba(255, 255, 255, 0.12);
+    --sc-sat: 30%;
+    --sc-x: #b4b4bc;
+  }
+}
+
+.sc-board .sc-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--sc-h) var(--sc-sat) var(--sc-lit));
+  border-top: 1px solid var(--sc-thin);
+  border-left: 1px solid var(--sc-thin);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sc-board .sc-cell {
+    background: hsl(var(--sc-h) var(--sc-sat) var(--sc-dim));
+  }
+}
+
+.sc-board .sc-cell.sc-r0 { border-top: 0; }
+.sc-board .sc-cell.sc-c0 { border-left: 0; }
+.sc-board .sc-cell.sc-t { border-top: 3px solid var(--strong-line); }
+.sc-board .sc-cell.sc-l { border-left: 3px solid var(--strong-line); }
+
+.sc-board .sc-guest {
+  display: block;
+  width: 56%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.sc-board .sc-cross {
+  color: var(--sc-x);
+  font-size: calc(var(--cell) * 0.5);
+  line-height: 1;
+  font-weight: 500;
+}
+
+/* rule breaks */
+.sc-board .sc-bad .sc-guest {
+  background: var(--error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 35%, transparent);
+}
+
+/* hints: an outline for the reason, a pulsing ring for the cells to act on,
+   faint guests for what a what-if would force */
+.sc-board .sc-hint-area {
+  outline: 2px dashed var(--accent);
+  outline-offset: -5px;
+}
+
+.sc-board .sc-hint-target {
+  box-shadow: inset 0 0 0 3px var(--accent);
+  animation: sc-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes sc-pulse {
+  from { box-shadow: inset 0 0 0 2px var(--accent); }
+  to { box-shadow: inset 0 0 0 5px var(--accent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-board .sc-hint-target { animation: none; }
+}
+
+.sc-board .sc-faint { opacity: 0.3; }
+
+.sc-board.sc-solved .sc-guest { background: var(--ok); }

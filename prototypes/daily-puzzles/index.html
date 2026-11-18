@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daily Puzzles prototype</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav id="games" class="tabs"></nav>
+    <div class="row">
+      <label>Week <select id="week"></select></label>
+      <nav id="days" class="tabs days"></nav>
+    </div>
+  </header>
+
+  <main>
+    <section id="play">
+      <div class="status">
+        <span id="title"></span>
+        <span id="timer">0:00</span>
+      </div>
+      <div id="board"></div>
+      <p id="hint-text" hidden></p>
+      <div class="row controls">
+        <button id="undo" type="button" title="Ctrl/Cmd+Z">Undo</button>
+        <button id="hint" type="button">Hint</button>
+        <button id="reset" type="button">Reset</button>
+        <button id="reveal" type="button">Show solution</button>
+        <label class="toggle"><input id="show-stats" type="checkbox"> Generator stats</label>
+      </div>
+      <pre id="stats" hidden></pre>
+    </section>
+
+    <aside>
+      <h2>Rules</h2>
+      <ul id="rules"></ul>
+
+      <h2>Feedback</h2>
+      <label>How hard did it feel?
+        <select id="felt">
+          <option value="">–</option>
+          <option value="1">1 · trivial</option>
+          <option value="2">2 · easy</option>
+          <option value="3">3 · medium</option>
+          <option value="4">4 · hard</option>
+          <option value="5">5 · brutal</option>
+        </select>
+      </label>
+      <textarea id="note" rows="5" placeholder="Notes on this puzzle"></textarea>
+      <button id="copy" type="button">Copy all feedback</button>
+      <pre id="copied" hidden></pre>
+    </aside>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

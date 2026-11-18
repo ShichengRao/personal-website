@@ -1,0 +1,118 @@
+/* Even Keel board. Every selector starts with .ek. */
+
+.ek {
+  /* --cell is redeclared here because the shared one on :root is computed
+     before --n is set on the board, so it always assumes 8 columns. */
+  --cell: clamp(24px, calc((min(100vw, 600px) - 44px) / var(--n, 6)), 60px);
+  --ek-a: #0f9488; /* teal disc */
+  --ek-b: #a3245e; /* plum ring */
+  --ek-given-bg: rgba(128, 128, 128, 0.17);
+  --ek-bad-bg: rgba(214, 51, 108, 0.2);
+}
+
+/* Beside the rules panel, leave it room. */
+@media (min-width: 761px) {
+  .ek { --cell: clamp(24px, calc((min(100vw - 300px, 600px) - 44px) / var(--n, 6)), 60px); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .ek {
+    --ek-a: #2bb5a7;
+    --ek-b: #d2508f;
+    --ek-given-bg: rgba(160, 160, 170, 0.18);
+    --ek-bad-bg: rgba(255, 107, 154, 0.22);
+  }
+}
+
+.ek .ek-grid {
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ek .ek-cell {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.ek .ek-cell.ek-right { border-right: 0; }
+.ek .ek-cell.ek-bottom { border-bottom: 0; }
+
+.ek .ek-cell.ek-given {
+  background: var(--ek-given-bg);
+  cursor: default;
+}
+
+.ek .ek-cell.ek-bad { background: var(--ek-bad-bg); }
+
+.ek .ek-disc {
+  width: 64%;
+  height: 64%;
+  border-radius: 50%;
+  transform: scale(0);
+  transition: transform 90ms ease-out;
+}
+
+.ek .ek-a .ek-disc {
+  background: var(--ek-a);
+  transform: scale(1);
+}
+
+.ek .ek-b .ek-disc {
+  background: radial-gradient(circle closest-side, transparent 0 40%, var(--ek-b) 43%);
+  transform: scale(1);
+}
+
+.ek .ek-given .ek-disc { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--strong-line); }
+.ek .ek-bad .ek-disc { box-shadow: 0 0 0 2.5px var(--error); }
+
+.ek .ek-sign {
+  position: absolute;
+  z-index: 1;
+  width: max(15px, calc(var(--cell) * 0.34));
+  height: max(15px, calc(var(--cell) * 0.34));
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--strong-line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+  font: 700 max(11px, calc(var(--cell) * 0.25)) / 1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  pointer-events: none;
+}
+
+.ek .ek-sign.ek-bad {
+  border-color: var(--error);
+  color: var(--panel);
+  background: var(--error);
+}
+
+/* Hints: the cell to fill pulses, the cells behind the reason get a dashed outline. */
+.ek .ek-cell.ek-hint {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 999px rgba(47, 111, 222, 0.14);
+  animation: ek-pulse 1s ease-in-out infinite alternate;
+}
+
+.ek .ek-cell.ek-hint-why {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+@keyframes ek-pulse {
+  from { outline-color: var(--accent); }
+  to { outline-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ek .ek-disc { transition: none; }
+  .ek .ek-cell.ek-hint { animation: none; }
+}
