@@ -1,4 +1,4 @@
-// Sudoku 6×6: digits 1–6 in a 6×6 grid of 2-row × 3-column boxes.
+// 6×6 Sudoku: digits 1–6 in a 6×6 grid of 2-row × 3-column boxes.
 //
 // Puzzle JSON: { size: 6, box: [2, 3], givens, solution, grade, tries }
 //   givens    36 digits row by row, 0 for an empty cell

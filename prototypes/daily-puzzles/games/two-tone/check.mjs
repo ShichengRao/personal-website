@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Independent check of data/even-keel.json:
+// Independent check of data/two-tone.json:
 //   1. the stored solution follows every rule and matches every clue
 //   2. the clues allow exactly one solution
 // The solution counter is plain backtracking over whole rows. It shares no
 // code with the grader in generate.js.
 //
-//   node games/even-keel/check.mjs [path/to/even-keel.json]
+//   node games/two-tone/check.mjs [path/to/two-tone.json]
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -146,7 +146,7 @@ export function countSolutions(p, cap = 2) {
 
 function main() {
   const here = fileURLToPath(new URL('.', import.meta.url));
-  const path = process.argv[2] ?? `${here}../../data/even-keel.json`;
+  const path = process.argv[2] ?? `${here}../../data/two-tone.json`;
   const data = JSON.parse(readFileSync(path, 'utf8'));
   const names = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   let failures = 0;

@@ -1,4 +1,4 @@
-// Even Keel board. Pieces are stored as 0 (empty), 1 (A, teal disc) and
+// Two Tone board. Pieces are stored as 0 (empty), 1 (A, teal disc) and
 // 2 (B, plum ring). Tap or click a cell to cycle empty → A → B → empty,
 // right-click to cycle backwards, and drag to paint the same value across
 // more cells. Red marks only real rule breaks between placed pieces: three
@@ -38,21 +38,21 @@ export function mount(el, puzzle, { onSolved } = {}) {
   el.classList.remove('solved');
 
   const root = document.createElement('div');
-  root.className = 'ek';
+  root.className = 'tt';
   const grid = document.createElement('div');
-  grid.className = 'grid ek-grid';
+  grid.className = 'grid tt-grid';
   root.append(grid);
 
   const cells = [];
   for (let i = 0; i < n * n; i++) {
     const cell = document.createElement('div');
-    cell.className = 'ek-cell';
-    if (i % n === n - 1) cell.classList.add('ek-right');
-    if (i >= n * (n - 1)) cell.classList.add('ek-bottom');
-    if (given[i]) cell.classList.add('ek-given');
+    cell.className = 'tt-cell';
+    if (i % n === n - 1) cell.classList.add('tt-right');
+    if (i >= n * (n - 1)) cell.classList.add('tt-bottom');
+    if (given[i]) cell.classList.add('tt-given');
     cell.dataset.i = String(i);
     const disc = document.createElement('span');
-    disc.className = 'ek-disc';
+    disc.className = 'tt-disc';
     cell.append(disc);
     grid.append(cell);
     cells.push(cell);
@@ -63,7 +63,7 @@ export function mount(el, puzzle, { onSolved } = {}) {
   const addSign = (ch, a, b, x, y, dir) => {
     if (ch !== '=' && ch !== 'x') return;
     const s = document.createElement('span');
-    s.className = `ek-sign ek-${dir}`;
+    s.className = `tt-sign tt-${dir}`;
     s.textContent = ch === '=' ? '=' : '×';
     s.style.left = `calc(var(--cell) * ${x})`;
     s.style.top = `calc(var(--cell) * ${y})`;
@@ -116,13 +116,13 @@ export function mount(el, puzzle, { onSolved } = {}) {
       const va = val[s.a];
       const vb = val[s.b];
       const broken = !!va && !!vb && (va === vb) !== s.same && mark([s.a, s.b]);
-      s.el.classList.toggle('ek-bad', broken);
+      s.el.classList.toggle('tt-bad', broken);
     }
     for (let i = 0; i < n * n; i++) {
       const c = cells[i];
-      c.classList.toggle('ek-a', val[i] === 1);
-      c.classList.toggle('ek-b', val[i] === 2);
-      c.classList.toggle('ek-bad', !!bad[i]);
+      c.classList.toggle('tt-a', val[i] === 1);
+      c.classList.toggle('tt-b', val[i] === 2);
+      c.classList.toggle('tt-bad', !!bad[i]);
     }
   }
 
@@ -140,15 +140,15 @@ export function mount(el, puzzle, { onSolved } = {}) {
   // ---- hints
 
   const clearHint = () => {
-    for (const c of cells) c.classList.remove('ek-hint', 'ek-hint-why');
+    for (const c of cells) c.classList.remove('tt-hint', 'tt-hint-why');
   };
 
   const showHint = (targets, why) => {
     clearHint();
-    for (const i of why) cells[i].classList.add('ek-hint-why');
+    for (const i of why) cells[i].classList.add('tt-hint-why');
     for (const i of targets) {
-      cells[i].classList.remove('ek-hint-why');
-      cells[i].classList.add('ek-hint');
+      cells[i].classList.remove('tt-hint-why');
+      cells[i].classList.add('tt-hint');
     }
   };
 
@@ -280,7 +280,7 @@ export function mount(el, puzzle, { onSolved } = {}) {
 
   const cellAt = (x, y) => {
     const hit = document.elementFromPoint(x, y);
-    const cell = hit?.closest?.('.ek-cell');
+    const cell = hit?.closest?.('.tt-cell');
     return cell && grid.contains(cell) ? Number(cell.dataset.i) : -1;
   };
 
@@ -302,7 +302,7 @@ export function mount(el, puzzle, { onSolved } = {}) {
   const onDown = (e) => {
     if (locked || pointer !== null) return;
     if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
-    const cell = e.target.closest?.('.ek-cell');
+    const cell = e.target.closest?.('.tt-cell');
     if (!cell || !grid.contains(cell)) return;
     e.preventDefault();
     clearHint();

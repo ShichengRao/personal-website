@@ -1,24 +1,24 @@
-/* Even Keel board. Every selector starts with .ek. */
+/* Two Tone board. Every selector starts with .tt. */
 
-#board[data-game="even-keel"] { --cell-min: 38px; --cell-max: 64px; }
+#board[data-game="two-tone"] { --cell-min: 38px; --cell-max: 64px; }
 
-.ek {
-  --ek-a: #0f9488; /* teal disc */
-  --ek-b: #a3245e; /* plum ring */
-  --ek-given-bg: rgba(128, 128, 128, 0.17);
-  --ek-bad-bg: rgba(214, 51, 108, 0.2);
+.tt {
+  --tt-a: #0f9488; /* teal disc */
+  --tt-b: #a3245e; /* plum ring */
+  --tt-given-bg: rgba(128, 128, 128, 0.17);
+  --tt-bad-bg: rgba(214, 51, 108, 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
-  .ek {
-    --ek-a: #2bb5a7;
-    --ek-b: #d2508f;
-    --ek-given-bg: rgba(160, 160, 170, 0.18);
-    --ek-bad-bg: rgba(255, 107, 154, 0.22);
+  .tt {
+    --tt-a: #2bb5a7;
+    --tt-b: #d2508f;
+    --tt-given-bg: rgba(160, 160, 170, 0.18);
+    --tt-bad-bg: rgba(255, 107, 154, 0.22);
   }
 }
 
-.ek .ek-grid {
+.tt .tt-grid {
   position: relative;
   touch-action: none;
   user-select: none;
@@ -27,7 +27,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.ek .ek-cell {
+.tt .tt-cell {
   display: grid;
   place-items: center;
   border-right: 1px solid var(--line);
@@ -35,17 +35,17 @@
   cursor: pointer;
 }
 
-.ek .ek-cell.ek-right { border-right: 0; }
-.ek .ek-cell.ek-bottom { border-bottom: 0; }
+.tt .tt-cell.tt-right { border-right: 0; }
+.tt .tt-cell.tt-bottom { border-bottom: 0; }
 
-.ek .ek-cell.ek-given {
-  background: var(--ek-given-bg);
+.tt .tt-cell.tt-given {
+  background: var(--tt-given-bg);
   cursor: default;
 }
 
-.ek .ek-cell.ek-bad { background: var(--ek-bad-bg); }
+.tt .tt-cell.tt-bad { background: var(--tt-bad-bg); }
 
-.ek .ek-disc {
+.tt .tt-disc {
   width: 64%;
   height: 64%;
   border-radius: 50%;
@@ -53,20 +53,20 @@
   transition: transform 90ms ease-out;
 }
 
-.ek .ek-a .ek-disc {
-  background: var(--ek-a);
+.tt .tt-a .tt-disc {
+  background: var(--tt-a);
   transform: scale(1);
 }
 
-.ek .ek-b .ek-disc {
-  background: radial-gradient(circle closest-side, transparent 0 40%, var(--ek-b) 43%);
+.tt .tt-b .tt-disc {
+  background: radial-gradient(circle closest-side, transparent 0 40%, var(--tt-b) 43%);
   transform: scale(1);
 }
 
-.ek .ek-given .ek-disc { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--strong-line); }
-.ek .ek-bad .ek-disc { box-shadow: 0 0 0 2.5px var(--error); }
+.tt .tt-given .tt-disc { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--strong-line); }
+.tt .tt-bad .tt-disc { box-shadow: 0 0 0 2.5px var(--error); }
 
-.ek .ek-sign {
+.tt .tt-sign {
   position: absolute;
   z-index: 1;
   width: max(15px, calc(var(--cell) * 0.34));
@@ -82,31 +82,31 @@
   pointer-events: none;
 }
 
-.ek .ek-sign.ek-bad {
+.tt .tt-sign.tt-bad {
   box-shadow: 0 0 0 1.5px var(--error);
   color: var(--panel);
   background: var(--error);
 }
 
 /* Hints: the cell to fill pulses, the cells behind the reason get a dashed outline. */
-.ek .ek-cell.ek-hint {
+.tt .tt-cell.tt-hint {
   outline: 3px solid var(--accent);
   outline-offset: -3px;
   box-shadow: inset 0 0 0 999px rgba(47, 111, 222, 0.14);
-  animation: ek-pulse 1s ease-in-out infinite alternate;
+  animation: tt-pulse 1s ease-in-out infinite alternate;
 }
 
-.ek .ek-cell.ek-hint-why {
+.tt .tt-cell.tt-hint-why {
   outline: 2px dashed var(--accent);
   outline-offset: -3px;
 }
 
-@keyframes ek-pulse {
+@keyframes tt-pulse {
   from { outline-color: var(--accent); }
   to { outline-color: transparent; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ek .ek-disc { transition: none; }
-  .ek .ek-cell.ek-hint { animation: none; }
+  .tt .tt-disc { transition: none; }
+  .tt .tt-cell.tt-hint { animation: none; }
 }

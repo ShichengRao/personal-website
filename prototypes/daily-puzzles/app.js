@@ -32,7 +32,7 @@ const store = {
 // A small drawing of each game for the picker, in currentColor.
 const ICONS = {
   'seating-chart': '<rect x="3" y="3" width="16" height="16" rx="2.5"/><path d="M8.33 3v16M13.67 3v16M3 8.33h16M3 13.67h16" opacity=".45"/><circle cx="11" cy="11" r="2.4" fill="currentColor" stroke="none"/>',
-  'even-keel': '<circle cx="7" cy="11" r="4.2" fill="currentColor" stroke="none"/><circle cx="15.6" cy="11" r="3.4" stroke-width="2.2"/>',
+  'two-tone': '<circle cx="7" cy="11" r="4.2" fill="currentColor" stroke="none"/><circle cx="15.6" cy="11" r="3.4" stroke-width="2.2"/>',
   'paper-route': '<path d="M5 18v-7h6v6h6V5" stroke-width="2.2"/><circle cx="5" cy="18" r="2.2" fill="currentColor" stroke="none"/>',
   zoning: '<rect x="3" y="3" width="9.5" height="6.5" rx="1.5"/><rect x="3" y="12" width="9.5" height="7" rx="1.5"/><rect x="15" y="3" width="4" height="16" rx="1.5"/>',
   sudoku6: '<rect x="3" y="3" width="16" height="16" rx="2.5"/><path d="M11 3v16M3 8.33h16M3 13.67h16" opacity=".45"/><text x="7" y="7.4" font-size="5.2" font-weight="800" text-anchor="middle" fill="currentColor" stroke="none">6</text>',
@@ -432,6 +432,19 @@ window.addEventListener('hashchange', () => {
   readHash();
   render();
 });
+
+// Even Keel is now Two Tone. Move its saved records and old links over.
+try {
+  for (const k of Object.keys(localStorage)) {
+    if (!k.includes(':even-keel:')) continue;
+    const to = k.replace(':even-keel:', ':two-tone:');
+    if (localStorage.getItem(to) === null) localStorage.setItem(to, localStorage.getItem(k));
+    localStorage.removeItem(k);
+  }
+} catch { /* storage unavailable */ }
+if (location.hash.startsWith('#even-keel')) {
+  history.replaceState(null, '', location.hash.replace('even-keel', 'two-tone'));
+}
 
 readHash();
 go({});

@@ -1,4 +1,4 @@
-/* Sudoku 6×6. Six cells across leaves room for bigger, easier-to-tap cells. */
+/* 6×6 Sudoku. Six cells across leaves room for bigger, easier-to-tap cells. */
 #board[data-game="sudoku6"] { --cell-min: 42px; --cell-max: 64px; }
 
 .s6 {

@@ -1,4 +1,4 @@
-// Sudoku 6×6 board: tap a cell, then type 1–6 or use the pad under the grid.
+// 6×6 Sudoku board: tap a cell, then type 1–6 or use the pad under the grid.
 
 import { hintSteps } from './generate.js';
 import { makeGrace } from '../../lib/grace.js';

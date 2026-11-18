@@ -1,4 +1,4 @@
-// Even Keel: a binary grid puzzle (Takuzu family) with = and × edge signs.
+// Two Tone: a binary grid puzzle (Takuzu family) with = and × edge signs.
 //
 // Rules: fill an N×N grid (N even) with pieces A and B so that every row and
 // column holds N/2 of each, no three equal pieces sit in a row horizontally or

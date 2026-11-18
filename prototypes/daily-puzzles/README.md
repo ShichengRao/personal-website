@@ -6,10 +6,10 @@ This is a local prototype. It sits outside Hugo's folders, so it isn't deployed.
 | Game | Genre | Difficulty settings |
 |---|---|---|
 | Seating Chart | Star Battle | `DAYS` in `games/seating-chart/generate.js` |
-| Even Keel | Takuzu with = and × signs | `DAY_PLAN` in `games/even-keel/generate.js` |
+| Two Tone | Takuzu with = and × signs | `DAY_PLAN` in `games/two-tone/generate.js` |
 | Paper Route | Numbered path through every cell | `DAY_PLAN` in `games/paper-route/generate.js` |
 | Zoning | Shikaku | `DAY_SETTINGS` in `games/zoning/generate.js` |
-| Sudoku 6×6 | Sudoku, 2×3 boxes | `WEEK` in `games/sudoku6/generate.js` |
+| 6×6 Sudoku | Sudoku, 2×3 boxes | `WEEK` in `games/sudoku6/generate.js` |
 
 ## Play
 
@@ -20,7 +20,7 @@ python3 -m http.server 8765 -d prototypes/daily-puzzles
 Open http://localhost:8765. Each board stays hidden until you press Play.
 The clock runs from Play to solve and pauses while the tab is hidden. Reset clears the board but keeps the clock running.
 Red marks a rule break between placed pieces once it has stood untouched for two seconds (`lib/grace.js`), so tapping through one piece on the way to another never flashes red.
-In Sudoku 6×6, a row, column or box flashes bold and green when your digit completes it correctly.
+In 6×6 Sudoku, a row, column or box flashes bold and green when your digit completes it correctly.
 Undo (or Ctrl/Cmd+Z) takes back one tap, drag or stroke.
 Hint points out a mistake first, if there is one. Otherwise it highlights the next logical step and explains it.
 Only your first attempt at a puzzle is recorded: the solve time or how long you played before showing the solution, plus how many hints you used.
