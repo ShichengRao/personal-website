@@ -1,5 +1,7 @@
 /* Paper Route board. Every selector starts with a pr- class.
-   Red (--error) is only for real rule breaks; hints use amber. */
+   Red (--error) is only for real rule breaks. Hints use amber. */
+
+#board[data-game="paper-route"] { --cell-min: 30px; --cell-max: 58px; }
 
 .pr-host {
   --pr-hint: #c97a00;

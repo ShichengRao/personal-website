@@ -1,9 +1,6 @@
 /* Zoning. Every selector starts with .zoning, the class mount() puts on the board. */
 
-/* Weekend boards are 10 and 11 wide: let cells shrink a little so they fit a phone. */
-.zoning {
-  --cell: clamp(26px, calc((min(100vw, 560px) - 40px) / var(--n, 8)), 56px);
-}
+#board[data-game="zoning"] { --cell-min: 32px; --cell-max: 58px; }
 
 .zoning .zoning-grid {
   position: relative;
@@ -27,8 +24,8 @@
 }
 
 .zoning .zoning-ok {
-  background: hsl(var(--hue) 70% 62% / 0.32);
-  border: 2px solid hsl(var(--hue) 45% 45%);
+  background: oklch(0.8 0.1 var(--hue) / 0.42);
+  border: 2px solid oklch(0.58 0.11 var(--hue));
 }
 
 .zoning .zoning-bad {

@@ -29,6 +29,20 @@ const store = {
   },
 };
 
+// A small drawing of each game for the picker, in currentColor.
+const ICONS = {
+  'seating-chart': '<rect x="3" y="3" width="16" height="16" rx="2.5"/><path d="M8.33 3v16M13.67 3v16M3 8.33h16M3 13.67h16" opacity=".45"/><circle cx="11" cy="11" r="2.4" fill="currentColor" stroke="none"/>',
+  'even-keel': '<circle cx="7" cy="11" r="4.2" fill="currentColor" stroke="none"/><circle cx="15.6" cy="11" r="3.4" stroke-width="2.2"/>',
+  'paper-route': '<path d="M5 18v-7h6v6h6V5" stroke-width="2.2"/><circle cx="5" cy="18" r="2.2" fill="currentColor" stroke="none"/>',
+  zoning: '<rect x="3" y="3" width="9.5" height="6.5" rx="1.5"/><rect x="3" y="12" width="9.5" height="7" rx="1.5"/><rect x="15" y="3" width="4" height="16" rx="1.5"/>',
+  sudoku6: '<rect x="3" y="3" width="16" height="16" rx="2.5"/><path d="M11 3v16M3 8.33h16M3 13.67h16" opacity=".45"/><text x="7" y="7.4" font-size="5.2" font-weight="800" text-anchor="middle" fill="currentColor" stroke="none">6</text>',
+};
+const icon = (id) => {
+  const span = document.createElement('span');
+  span.innerHTML = `<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] ?? ''}</svg>`;
+  return span.firstChild;
+};
+
 const data = new Map();
 const state = { game: GAMES[0].id, week: 1, day: 1 };
 let current = null; // { set, puzzle, view }
@@ -46,6 +60,11 @@ const fmt = (ms) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
+function setTimer(text, tone = '') {
+  $('timer').textContent = text;
+  $('timer').className = tone ? `timer ${tone}` : 'timer';
+}
+
 // ---- clock -------------------------------------------------------------
 
 const clock = {
@@ -58,6 +77,7 @@ const clock = {
   start() {
     this.banked = 0;
     this.since = performance.now();
+    setTimer('0:00');
     clearInterval(this.ticker);
     this.ticker = setInterval(() => this.show(), 250);
     this.show();
@@ -121,7 +141,7 @@ function renderTabs(set) {
     ...GAMES.map((g) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = g.name;
+      b.append(icon(g.id), g.name);
       b.title = g.genre;
       b.className = g.id === state.game ? 'on' : '';
       b.onclick = () => go({ game: g.id });
@@ -129,12 +149,18 @@ function renderTabs(set) {
     }),
   );
 
+  // Keep the chosen game in view when the picker scrolls sideways on a phone.
+  const on = $('games').querySelector('.on');
+  const strip = $('games');
+  if (on && (on.offsetLeft < strip.scrollLeft || on.offsetLeft + on.offsetWidth > strip.scrollLeft + strip.clientWidth)) {
+    strip.scrollLeft = on.offsetLeft - 4;
+  }
+
   const weeks = set.weeks ?? 1;
   if (state.week > weeks) state.week = 1;
-  $('week').replaceChildren(
-    ...Array.from({ length: weeks }, (_, i) => new Option(String(i + 1), String(i + 1))),
-  );
-  $('week').value = String(state.week);
+  $('week-label').textContent = `Week ${state.week}`;
+  $('week-prev').disabled = state.week <= 1;
+  $('week-next').disabled = state.week >= weeks;
 
   $('days').replaceChildren(
     ...DAYS.map((d) => {
@@ -142,7 +168,19 @@ function renderTabs(set) {
       b.type = 'button';
       const p = set.puzzles?.find((q) => q.week === state.week && q.day === d.day);
       const solved = p && store.get(key('solved', p));
-      b.textContent = solved ? `${d.short} ✓` : d.short;
+      const ticks = document.createElement('span');
+      ticks.className = 'ticks';
+      ticks.setAttribute('aria-hidden', 'true');
+      for (let k = 0; k < d.day; k++) ticks.append(document.createElement('i'));
+      b.append(d.short, ticks);
+      if (solved) {
+        const done = document.createElement('span');
+        done.className = 'done';
+        done.textContent = '✓';
+        done.setAttribute('aria-label', 'solved');
+        b.append(done);
+      }
+      b.title = d.name;
       b.className = d.day === state.day ? 'on' : '';
       b.onclick = () => go({ day: d.day });
       return b;
@@ -198,7 +236,8 @@ function showCover() {
 
   const solved = store.get(key('solved'));
   const revealed = store.get(key('revealed'));
-  $('timer').textContent = solved ? `Solved in ${fmt(Number(solved))}` : '0:00';
+  if (solved) setTimer(`Solved in ${fmt(Number(solved))}`, 'ok');
+  else setTimer('0:00');
 
   const cover = document.createElement('div');
   cover.className = 'cover';
@@ -230,7 +269,7 @@ function startPlay() {
       phase = 'done';
       setControls();
       const ms = clock.stop();
-      $('timer').textContent = `Solved in ${fmt(ms)}`;
+      setTimer(`Solved in ${fmt(ms)}`, 'ok');
       if (firstTry) store.set(key('solved'), String(Math.round(ms)));
       hideHint();
       renderTabs(current.set);
@@ -246,7 +285,6 @@ async function render() {
   clock.stop();
   phase = 'idle';
   setControls();
-  $('stats').hidden = !$('show-stats').checked;
 
   let set;
   try {
@@ -254,13 +292,16 @@ async function render() {
   } catch (err) {
     renderTabs({ weeks: 1 });
     $('title').textContent = game.name;
+    $('subtitle').textContent = '';
     $('board').textContent = err.message;
     return;
   }
   renderTabs(set);
 
   const puzzle = set.puzzles.find((p) => p.week === state.week && p.day === state.day);
-  $('title').textContent = `${game.name} · ${DAYS[state.day - 1].name}, week ${state.week}`;
+  $('title').textContent = game.name;
+  $('subtitle').textContent = `${DAYS[state.day - 1].name} · week ${state.week}`;
+  $('board').dataset.game = game.id;
   if (!puzzle) {
     $('board').textContent = 'No puzzle generated for this day.';
     return;
@@ -277,7 +318,7 @@ async function render() {
   );
   $('stats').textContent = describe(puzzle);
   current = { set, puzzle, view };
-  $('felt').value = store.get(key('felt')) ?? '';
+  renderRating();
   $('note').value = store.get(key('note')) ?? '';
   showCover();
 }
@@ -316,7 +357,8 @@ async function feedbackText() {
   return lines.join('\n') || 'No feedback yet.';
 }
 
-$('week').onchange = (e) => go({ week: Number(e.target.value) });
+$('week-prev').onclick = () => go({ week: state.week - 1 });
+$('week-next').onclick = () => go({ week: state.week + 1 });
 $('undo').onclick = undo;
 $('hint').onclick = () => {
   if (phase !== 'playing' || !handle?.hint) return;
@@ -350,12 +392,30 @@ $('reveal').onclick = () => {
   if (!store.get(key('solved')) && !store.get(key('revealed'))) {
     store.set(key('revealed'), String(Math.round(ms)));
   }
-  $('timer').textContent = `Solution shown after ${fmt(ms)}`;
+  setTimer(`Solution shown after ${fmt(ms)}`);
 };
-$('show-stats').onchange = (e) => {
-  $('stats').hidden = !e.target.checked;
-};
-$('felt').onchange = (e) => store.set(key('felt'), e.target.value);
+// How hard it felt, 1 to 5. Pressing the chosen number again clears it.
+const FELT = ['trivial', 'easy', 'medium', 'hard', 'brutal'];
+function renderRating() {
+  const felt = current ? store.get(key('felt')) : null;
+  $('felt').replaceChildren(
+    ...FELT.map((word, k) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = String(k + 1);
+      b.title = word;
+      b.setAttribute('aria-label', `${k + 1}, ${word}`);
+      b.setAttribute('aria-pressed', String(felt === String(k + 1)));
+      b.className = felt === String(k + 1) ? 'on' : '';
+      b.onclick = () => {
+        if (!current) return;
+        store.set(key('felt'), felt === String(k + 1) ? '' : String(k + 1));
+        renderRating();
+      };
+      return b;
+    }),
+  );
+}
 $('note').oninput = (e) => store.set(key('note'), e.target.value);
 $('copy').onclick = async () => {
   const text = await feedbackText();

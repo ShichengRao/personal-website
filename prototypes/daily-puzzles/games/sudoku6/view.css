@@ -1,6 +1,7 @@
 /* Sudoku 6×6. Six cells across leaves room for bigger, easier-to-tap cells. */
+#board[data-game="sudoku6"] { --cell-min: 42px; --cell-max: 64px; }
+
 .s6 {
-  --cell: clamp(40px, calc((min(100vw, 520px) - 48px) / 6), 62px);
   --s6-same: color-mix(in srgb, var(--accent) 20%, var(--panel));
   --s6-sel: color-mix(in srgb, var(--accent) 32%, var(--panel));
   --s6-bad: color-mix(in srgb, var(--error) 16%, var(--panel));
@@ -69,10 +70,14 @@
   margin-top: 12px;
 }
 .s6 .s6-pad button {
-  min-height: 46px;
+  min-height: 48px;
   padding: 0;
+  border-color: transparent;
+  background: var(--sunk);
   touch-action: manipulation;
 }
+.s6 .s6-pad button:hover:not(:disabled) { border-color: var(--line); }
+.s6 .s6-pad button.on { border-color: var(--accent); background: var(--accent-soft); }
 .s6 .s6-digit { font-size: 22px; font-weight: 600; color: var(--entry); }
 .s6 .s6-digit.done { opacity: 0.4; }
 .s6 .s6-wide { grid-column: span 3; font-size: 16px; }

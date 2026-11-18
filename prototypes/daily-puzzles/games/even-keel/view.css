@@ -1,18 +1,12 @@
 /* Even Keel board. Every selector starts with .ek. */
 
+#board[data-game="even-keel"] { --cell-min: 38px; --cell-max: 64px; }
+
 .ek {
-  /* --cell is redeclared here because the shared one on :root is computed
-     before --n is set on the board, so it always assumes 8 columns. */
-  --cell: clamp(24px, calc((min(100vw, 600px) - 44px) / var(--n, 6)), 60px);
   --ek-a: #0f9488; /* teal disc */
   --ek-b: #a3245e; /* plum ring */
   --ek-given-bg: rgba(128, 128, 128, 0.17);
   --ek-bad-bg: rgba(214, 51, 108, 0.2);
-}
-
-/* Beside the rules panel, leave it room. */
-@media (min-width: 761px) {
-  .ek { --cell: clamp(24px, calc((min(100vw - 300px, 600px) - 44px) / var(--n, 6)), 60px); }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -80,16 +74,16 @@
   transform: translate(-50%, -50%);
   display: grid;
   place-items: center;
-  border: 1.5px solid var(--strong-line);
   border-radius: 50%;
   background: var(--panel);
+  box-shadow: 0 0 0 1.5px var(--line);
   color: var(--ink);
-  font: 700 max(11px, calc(var(--cell) * 0.25)) / 1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 max(12px, calc(var(--cell) * 0.27)) / 1 system-ui, -apple-system, "Segoe UI", sans-serif;
   pointer-events: none;
 }
 
 .ek .ek-sign.ek-bad {
-  border-color: var(--error);
+  box-shadow: 0 0 0 1.5px var(--error);
   color: var(--panel);
   background: var(--error);
 }

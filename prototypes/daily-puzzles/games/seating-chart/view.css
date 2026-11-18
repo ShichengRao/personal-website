@@ -1,10 +1,10 @@
 /* Seating Chart. Every selector starts with .sc-board. */
 
+#board[data-game="seating-chart"] { --cell-min: 30px; --cell-max: 56px; }
+
 .sc-board {
-  /* a little smaller than the shared minimum so 11×11 fits a phone */
-  --cell: clamp(28px, calc((min(100vw, 600px) - 40px) / var(--n, 8)), 56px);
   --sc-thin: rgba(0, 0, 0, 0.14);
-  --sc-sat: 62%;
+  --sc-chroma: 0.085;
   --sc-x: #5d5d63;
   touch-action: none;
   user-select: none;
@@ -13,11 +13,16 @@
   cursor: pointer;
 }
 
+/* In dark mode the tables stay light, a little dimmer, and the board keeps
+   light-mode ink so guests, outlines and hints read on the pale colours. */
 @media (prefers-color-scheme: dark) {
   .sc-board {
-    --sc-thin: rgba(255, 255, 255, 0.12);
-    --sc-sat: 30%;
-    --sc-x: #b4b4bc;
+    --sc-chroma: 0.07;
+    --ink: #1e2227;
+    --strong-line: #24272c;
+    --accent: #3f4db8;
+    --error: #d6336c;
+    --ok: #2b8a3e;
   }
 }
 
@@ -25,14 +30,14 @@
   position: relative;
   display: grid;
   place-items: center;
-  background: hsl(var(--sc-h) var(--sc-sat) var(--sc-lit));
+  background: oklch(var(--sc-lit) var(--sc-chroma) var(--sc-h));
   border-top: 1px solid var(--sc-thin);
   border-left: 1px solid var(--sc-thin);
 }
 
 @media (prefers-color-scheme: dark) {
   .sc-board .sc-cell {
-    background: hsl(var(--sc-h) var(--sc-sat) var(--sc-dim));
+    background: oklch(var(--sc-dim) var(--sc-chroma) var(--sc-h));
   }
 }
 

@@ -3,7 +3,7 @@
 
 import { hint as findHint } from './generate.js';
 import { makeGrace } from '../../lib/grace.js';
-import { safeHue } from '../../lib/hue.js';
+import { spreadHues } from '../../lib/hue.js';
 
 export const rules = [
   'Seat one guest in every row, every column and every table.',
@@ -39,6 +39,15 @@ export function mount(el, puzzle, { onSolved } = {}) {
   board.setAttribute('role', 'grid');
   board.setAttribute('aria-label', `Seating chart, ${n} by ${n}`);
 
+  // Tables that touch get hues far apart.
+  const adj = Array.from({ length: Math.max(...reg) + 1 }, () => new Set());
+  for (let i = 0; i < size; i++) {
+    for (const j of [i % n < n - 1 ? i + 1 : -1, i + n < size ? i + n : -1]) {
+      if (j >= 0 && reg[j] !== reg[i]) { adj[reg[i]].add(reg[j]); adj[reg[j]].add(reg[i]); }
+    }
+  }
+  const hues = spreadHues(adj);
+
   const cells = [];
   const base = [];
   for (let i = 0; i < size; i++) {
@@ -54,10 +63,9 @@ export function mount(el, puzzle, { onSolved } = {}) {
 
     const cell = document.createElement('div');
     cell.className = base[i];
-    // golden-angle hues keep tables apart; alternate lightness too
-    cell.style.setProperty('--sc-h', String(safeHue(g)));
-    cell.style.setProperty('--sc-lit', g % 2 ? '84%' : '90%');
-    cell.style.setProperty('--sc-dim', g % 2 ? '27%' : '33%');
+    cell.style.setProperty('--sc-h', String(hues[g]));
+    cell.style.setProperty('--sc-lit', g % 2 ? '0.85' : '0.9');
+    cell.style.setProperty('--sc-dim', g % 2 ? '0.74' : '0.8');
     cell.setAttribute('role', 'gridcell');
     const glyph = document.createElement('span');
     cell.append(glyph);
