@@ -119,6 +119,9 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; 
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 22px;
   font-weight: 750;
   letter-spacing: -0.02em;

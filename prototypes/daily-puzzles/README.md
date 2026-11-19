@@ -28,6 +28,18 @@ Records are tied to the puzzle itself, so a regenerated day starts fresh.
 The feedback box and the 1–5 rating are saved in the browser.
 "Copy all feedback" lists each puzzle's size, the grader's score and hardest step, your time, your rating and your note.
 
+## Icon
+
+`icon.svg` is the rounded icon for browsers and desktop installs. `icon-square.svg` is full-bleed for iPhones, which round it themselves. `icon-maskable.svg` keeps the pieces inside Android's safe zone.
+After changing them, render the PNGs again:
+
+```bash
+rsvg-convert -w 512 -h 512 icon.svg -o icon-512.png
+rsvg-convert -w 192 -h 192 icon.svg -o icon-192.png
+rsvg-convert -w 180 -h 180 icon-square.svg -o icon-180.png
+rsvg-convert -w 512 -h 512 icon-maskable.svg -o icon-maskable-512.png
+```
+
 ## Regenerate
 
 From this folder:
