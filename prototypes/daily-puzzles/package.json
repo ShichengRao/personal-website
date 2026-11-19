@@ -1,0 +1,9 @@
+{
+  "name": "daily-puzzles-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "serve": "python3 -m http.server 8765"
+  }
+}

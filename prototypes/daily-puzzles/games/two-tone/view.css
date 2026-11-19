@@ -1,0 +1,112 @@
+/* Two Tone board. Every selector starts with .tt. */
+
+#board[data-game="two-tone"] { --cell-min: 38px; --cell-max: 64px; }
+
+.tt {
+  --tt-a: #0f9488; /* teal disc */
+  --tt-b: #a3245e; /* plum ring */
+  --tt-given-bg: rgba(128, 128, 128, 0.17);
+  --tt-bad-bg: rgba(214, 51, 108, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tt {
+    --tt-a: #2bb5a7;
+    --tt-b: #d2508f;
+    --tt-given-bg: rgba(160, 160, 170, 0.18);
+    --tt-bad-bg: rgba(255, 107, 154, 0.22);
+  }
+}
+
+.tt .tt-grid {
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tt .tt-cell {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.tt .tt-cell.tt-right { border-right: 0; }
+.tt .tt-cell.tt-bottom { border-bottom: 0; }
+
+.tt .tt-cell.tt-given {
+  background: var(--tt-given-bg);
+  cursor: default;
+}
+
+.tt .tt-cell.tt-bad { background: var(--tt-bad-bg); }
+
+.tt .tt-disc {
+  width: 64%;
+  height: 64%;
+  border-radius: 50%;
+  transform: scale(0);
+  transition: transform 90ms ease-out;
+}
+
+.tt .tt-a .tt-disc {
+  background: var(--tt-a);
+  transform: scale(1);
+}
+
+.tt .tt-b .tt-disc {
+  background: radial-gradient(circle closest-side, transparent 0 40%, var(--tt-b) 43%);
+  transform: scale(1);
+}
+
+.tt .tt-given .tt-disc { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--strong-line); }
+.tt .tt-bad .tt-disc { box-shadow: 0 0 0 2.5px var(--error); }
+
+.tt .tt-sign {
+  position: absolute;
+  z-index: 1;
+  width: max(15px, calc(var(--cell) * 0.34));
+  height: max(15px, calc(var(--cell) * 0.34));
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  font: 700 max(12px, calc(var(--cell) * 0.27)) / 1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  pointer-events: none;
+}
+
+.tt .tt-sign.tt-bad {
+  box-shadow: 0 0 0 1.5px var(--error);
+  color: var(--panel);
+  background: var(--error);
+}
+
+/* Hints: the cell to fill pulses, the cells behind the reason get a dashed outline. */
+.tt .tt-cell.tt-hint {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 999px rgba(47, 111, 222, 0.14);
+  animation: tt-pulse 1s ease-in-out infinite alternate;
+}
+
+.tt .tt-cell.tt-hint-why {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+@keyframes tt-pulse {
+  from { outline-color: var(--accent); }
+  to { outline-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt .tt-disc { transition: none; }
+  .tt .tt-cell.tt-hint { animation: none; }
+}

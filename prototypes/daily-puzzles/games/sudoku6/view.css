@@ -1,0 +1,84 @@
+/* 6×6 Sudoku. Six cells across leaves room for bigger, easier-to-tap cells. */
+#board[data-game="sudoku6"] { --cell-min: 42px; --cell-max: 64px; }
+
+.s6 {
+  --s6-same: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  --s6-sel: color-mix(in srgb, var(--accent) 32%, var(--panel));
+  --s6-bad: color-mix(in srgb, var(--error) 16%, var(--panel));
+  --s6-hint: #c77c1e;
+  --s6-hint-area: color-mix(in srgb, var(--s6-hint) 10%, var(--panel));
+  --s6-hint-goal: color-mix(in srgb, var(--s6-hint) 30%, var(--panel));
+}
+
+.s6 .s6-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cell) * 0.56);
+  line-height: 1;
+  color: var(--entry);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.s6 .s6-cell.lx { border-right: 1px solid var(--line); }
+.s6 .s6-cell.ly { border-bottom: 1px solid var(--line); }
+.s6 .s6-cell.bx { border-right: 2px solid var(--strong-line); }
+.s6 .s6-cell.by { border-bottom: 2px solid var(--strong-line); }
+
+.s6 .s6-cell.given { color: var(--given); font-weight: 650; }
+.s6 .s6-cell.shown { color: var(--muted); font-style: italic; }
+
+.s6 .s6-cell.same { background: var(--s6-same); }
+.s6 .s6-cell.sel { background: var(--s6-sel); }
+.s6 .s6-cell.hint-area { background: var(--s6-hint-area); }
+.s6 .s6-cell.hint-key { box-shadow: inset 0 0 0 3px var(--s6-hint); }
+.s6 .s6-cell.hint-goal { background: var(--s6-hint-goal); }
+.s6 .s6-cell.hint-goal.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+.s6 .s6-cell.bad { color: var(--error); }
+.s6 .s6-cell.bad:not(.sel) { background: var(--s6-bad); }
+
+/* A row, column or box just completed correctly: its digits go bold and
+   green for a moment, then settle back. */
+.s6 .s6-cell.s6-flash { animation: s6-flash 700ms ease-out both; }
+@keyframes s6-flash {
+  35% {
+    font-weight: 850;
+    color: var(--ok);
+    box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--ok) 16%, transparent);
+  }
+}
+
+.s6 .s6-notes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  width: 100%;
+  height: 100%;
+  padding: 3px 4px;
+  font-size: calc(var(--cell) * 0.24);
+  color: var(--muted);
+  font-weight: 500;
+}
+.s6 .s6-notes span { display: flex; align-items: center; justify-content: center; }
+
+.s6 .s6-pad {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  width: calc(var(--cell) * var(--n) + 4px);
+  margin-top: 12px;
+}
+.s6 .s6-pad button {
+  min-height: 48px;
+  padding: 0;
+  border-color: transparent;
+  background: var(--sunk);
+  touch-action: manipulation;
+}
+.s6 .s6-pad button:hover:not(:disabled) { border-color: var(--line); }
+.s6 .s6-pad button.on { border-color: var(--accent); background: var(--accent-soft); }
+.s6 .s6-digit { font-size: 22px; font-weight: 600; color: var(--entry); }
+.s6 .s6-digit.done { opacity: 0.4; }
+.s6 .s6-wide { grid-column: span 3; font-size: 16px; }
+.s6.s6-notes-mode .s6-digit { font-size: 15px; color: var(--muted); }
