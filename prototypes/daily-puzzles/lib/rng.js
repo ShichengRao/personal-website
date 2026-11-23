@@ -1,5 +1,5 @@
 // Seeded randomness. Generators must draw only from the rng they are handed,
-// so the same (game, week, day) always produces the same puzzle.
+// so the same game and date always produce the same puzzle (lib/daily.js).
 
 export function hashString(s) {
   let h = 2166136261 >>> 0;

@@ -151,7 +151,7 @@ function main() {
   const names = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   let failures = 0;
   for (const p of data.puzzles) {
-    const label = `w${p.week} ${names[p.day] ?? p.day}`;
+    const label = `${p.date} ${names[p.day] ?? p.day}`;
     let line;
     try {
       const errs = ruleErrors(p);

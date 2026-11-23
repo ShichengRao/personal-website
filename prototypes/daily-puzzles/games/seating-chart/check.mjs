@@ -99,7 +99,7 @@ function countSolutions(n, reg, limit = 2) {
 
 let failures = 0;
 for (const p of set.puzzles) {
-  const label = `w${p.week} ${DAY[p.day] ?? p.day} ${p.size}×${p.size}`;
+  const label = `${p.date} ${DAY[p.day] ?? p.day} ${p.size}×${p.size}`;
   const t0 = performance.now();
   let problem = checkShape(p);
   let count = null;

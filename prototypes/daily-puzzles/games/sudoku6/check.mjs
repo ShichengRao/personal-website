@@ -70,7 +70,7 @@ function countSolutions(givens, limit) {
 
 let failures = 0;
 for (const p of set.puzzles) {
-  const label = `w${p.week} ${DAYS[p.day - 1] ?? p.day}`;
+  const label = `${p.date} ${DAYS[p.day - 1] ?? p.day}`;
   const problems = [];
   const givens = parse(p.givens, true);
   const solution = parse(p.solution, false);

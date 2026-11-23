@@ -119,7 +119,7 @@ function countSolutions(N, clues, limit = 2) {
 
 let failures = 0;
 for (const p of set.puzzles) {
-  const tag = `w${p.week} ${DAY[p.day]} ${p.size}x${p.size}`;
+  const tag = `${p.date} ${DAY[p.day]} ${p.size}x${p.size}`;
   const t0 = performance.now();
   let problem = null;
   let lots = 0;

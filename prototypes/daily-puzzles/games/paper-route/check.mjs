@@ -61,7 +61,7 @@ function ruleProblems(p) {
 
 let failures = 0;
 for (const p of set.puzzles) {
-  const label = `w${p.week} ${DAYS[p.day - 1]?.short ?? p.day} ${p.size}x${p.size}`;
+  const label = `${p.date} ${DAYS[p.day - 1]?.short ?? p.day} ${p.size}x${p.size}`;
   const problems = ruleProblems(p);
   let count = '?';
   let ms = 0;

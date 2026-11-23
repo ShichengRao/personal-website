@@ -173,7 +173,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; 
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
-.week span { min-width: 66px; text-align: center; }
+.week span { min-width: 104px; text-align: center; }
 .step {
   width: 32px;
   min-height: 32px;
@@ -204,6 +204,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; 
   font-size: 14px;
 }
 .days button.on { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.days button.today:not(.on) { border-color: var(--accent); color: var(--accent); }
 
 /* Difficulty climbs through the week: one to seven ticks. */
 .days .ticks { display: flex; gap: 2px; height: 4px; }
@@ -328,6 +329,34 @@ aside { display: grid; gap: 16px; }
   background: var(--panel);
   font-size: 14px;
 }
+/* While the worker makes the puzzle. It fades in late, so a quick puzzle never shows it. */
+.cover.making { animation: appear 200ms 150ms both; }
+.bar {
+  width: min(180px, 60%);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: slide 1.2s ease-in-out infinite;
+}
+@keyframes slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@keyframes appear {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar i { animation-duration: 3s; }
+}
+
 .play {
   min-height: 48px;
   padding: 0 34px;
