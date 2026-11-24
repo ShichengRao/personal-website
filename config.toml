@@ -40,6 +40,11 @@ url = "/hangul/"
 weight = 5
 
 [[menu.main]]
+name = "Biblia"
+url = "/biblia/"
+weight = 5
+
+[[menu.main]]
 name = "Vine"
 url = "https://vine-learning-app.vercel.app/vine-app"
 weight = 6

@@ -1,0 +1,93 @@
+/* Seating Chart. Every selector starts with .sc-board. */
+
+#board[data-game="seating-chart"] { --cell-min: 30px; --cell-max: 56px; }
+
+.sc-board {
+  --sc-thin: rgba(0, 0, 0, 0.14);
+  --sc-chroma: 0.085;
+  --sc-x: #5d5d63;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+}
+
+/* In dark mode the tables stay light, a little dimmer, and the board keeps
+   light-mode ink so guests, outlines and hints read on the pale colours. */
+@media (prefers-color-scheme: dark) {
+  .sc-board {
+    --sc-chroma: 0.07;
+    --ink: #1e2227;
+    --strong-line: #24272c;
+    --accent: #3f4db8;
+    --error: #d6336c;
+    --ok: #2b8a3e;
+  }
+}
+
+.sc-board .sc-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: oklch(var(--sc-lit) var(--sc-chroma) var(--sc-h));
+  border-top: 1px solid var(--sc-thin);
+  border-left: 1px solid var(--sc-thin);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sc-board .sc-cell {
+    background: oklch(var(--sc-dim) var(--sc-chroma) var(--sc-h));
+  }
+}
+
+.sc-board .sc-cell.sc-r0 { border-top: 0; }
+.sc-board .sc-cell.sc-c0 { border-left: 0; }
+.sc-board .sc-cell.sc-t { border-top: 3px solid var(--strong-line); }
+.sc-board .sc-cell.sc-l { border-left: 3px solid var(--strong-line); }
+
+.sc-board .sc-guest {
+  display: block;
+  width: 56%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.sc-board .sc-cross {
+  color: var(--sc-x);
+  font-size: calc(var(--cell) * 0.5);
+  line-height: 1;
+  font-weight: 500;
+}
+
+/* rule breaks */
+.sc-board .sc-bad .sc-guest {
+  background: var(--error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 35%, transparent);
+}
+
+/* hints: an outline for the reason, a pulsing ring for the cells to act on,
+   faint guests for what a what-if would force */
+.sc-board .sc-hint-area {
+  outline: 2px dashed var(--accent);
+  outline-offset: -5px;
+}
+
+.sc-board .sc-hint-target {
+  box-shadow: inset 0 0 0 3px var(--accent);
+  animation: sc-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes sc-pulse {
+  from { box-shadow: inset 0 0 0 2px var(--accent); }
+  to { box-shadow: inset 0 0 0 5px var(--accent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-board .sc-hint-target { animation: none; }
+}
+
+.sc-board .sc-faint { opacity: 0.3; }
+
+.sc-board.sc-solved .sc-guest { background: var(--ok); }

@@ -1,0 +1,1316 @@
+{{/* Biblia: the Bible in plain Spanish, where tapping a word shows its English
+     meaning. Text and meanings are built by tools/biblia/ into static/biblia/:
+     es/<BOOK>.json (the Spanish), en/<BOOK>.json (the English, per verse) and
+     dict/<n>.json (meanings, split by a hash of the word; shardOf below must
+     match tools/biblia/glossary.mjs). The book list is data/biblia.json. */}}
+{{ define "head" }}
+<style>
+  #biblia-app, #biblia-app * {
+    box-sizing: border-box;
+  }
+
+  #biblia-app {
+    min-height: calc(100vh - 6rem);
+    padding: clamp(1rem, 3vw, 2rem);
+    background: #f6f4ef;
+    color: #1f2421;
+    --ink: #1f2421;
+    --muted: #626d66;
+    --line: #d9d4c8;
+    --paper: #ffffff;
+    --green: #2f6f58;
+    --green-soft: #e1efe8;
+    --gold-soft: #f6e7c1;
+  }
+
+  #biblia-app button,
+  #biblia-app select,
+  #biblia-app input {
+    font: inherit;
+    color: inherit;
+  }
+
+  .bib-wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+
+  .bib-top h1 {
+    margin: 0;
+    font-size: clamp(2rem, 6vw, 4rem);
+    line-height: 1;
+    letter-spacing: 0;
+  }
+
+  .bib-sub {
+    margin: 0.5rem 0 1rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .bib-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .bib-nav select,
+  .bib-nav input,
+  #biblia-app .btn {
+    min-height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 0.5rem 0.75rem;
+  }
+
+  #biblia-app .btn {
+    cursor: pointer;
+    font-weight: 800;
+  }
+
+  #biblia-app .btn:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+
+  #book {
+    min-width: 11rem;
+  }
+
+  .bib-goto {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  .bib-goto input {
+    width: 10rem;
+  }
+
+  .bib-goto-error {
+    flex-basis: 100%;
+    margin: 0;
+    color: #a64253;
+    text-align: right;
+  }
+
+  .bib-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .bib-panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    box-shadow: 0 12px 28px rgba(31, 36, 33, 0.08);
+  }
+
+  .bib-reader {
+    padding: clamp(1rem, 4vw, 2.5rem);
+  }
+
+  .bib-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .bib-reader h2 {
+    margin: 0;
+    font-size: 1.6rem;
+  }
+
+  /* the chapter's recording; it stays in view while it plays */
+  .bib-listen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1rem;
+  }
+
+  .bib-listen.playing {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: 0 calc(-1 * clamp(1rem, 4vw, 2.5rem)) 1rem;
+    padding: 0.5rem clamp(1rem, 4vw, 2.5rem);
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  .bib-listen audio {
+    flex: 1;
+    min-width: 12rem;
+    height: 40px;
+  }
+
+  .bib-listen select {
+    min-height: 40px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 0.4rem 0.5rem;
+  }
+
+  .bib-audio-note {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .bib-text {
+    max-width: 42rem;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.2rem;
+    line-height: 1.75;
+  }
+
+  .bib-text p {
+    margin: 0 0 0.6rem;
+  }
+
+  .bib-text .b-q1,
+  .bib-text .b-q2 {
+    margin-bottom: 0.2rem;
+    padding-left: 1.5em;
+    text-indent: -1em;
+  }
+
+  .bib-text .b-q2 {
+    padding-left: 2.5em;
+  }
+
+  .bib-text .b-d {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 0.95em;
+  }
+
+  .bib-text .b-qa,
+  .bib-text .b-sp {
+    margin-top: 1rem;
+    color: var(--muted);
+    font-variant: small-caps;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .bib-text .w {
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .bib-text .w:hover {
+    background: #efe9da;
+  }
+
+  .bib-text .w.saved {
+    text-decoration: underline dotted var(--green);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .bib-text .w.swapped {
+    color: var(--green);
+    font-style: italic;
+  }
+
+  .bib-text .w.active {
+    background: var(--gold-soft);
+  }
+
+  .bib-text .vn {
+    margin: 0 0.15em 0 0.1em;
+    padding: 0 0.2em;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-family: system-ui, sans-serif;
+    font-size: 0.65em;
+    font-weight: 800;
+    vertical-align: super;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .bib-text .vn:hover,
+  .bib-text .vn.on {
+    color: var(--green);
+  }
+
+  .bib-text .v.hearing {
+    background: var(--green-soft);
+    border-radius: 3px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  .bib-text .en-play {
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--green);
+    border-radius: 999px;
+    background: var(--paper);
+    color: var(--green);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .bib-text .flash {
+    animation: bib-flash 2.4s ease-out;
+  }
+
+  @keyframes bib-flash {
+    from { background: var(--gold-soft); }
+    to { background: transparent; }
+  }
+
+  .bib-text .en {
+    margin: 0.2rem 0 0.8rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--green);
+    border-radius: 4px;
+    background: var(--green-soft);
+    font-family: system-ui, sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    text-indent: 0;
+  }
+
+  .bib-status {
+    color: var(--muted);
+    font-family: system-ui, sans-serif;
+    font-size: 1rem;
+  }
+
+  .bib-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .bib-words {
+    position: sticky;
+    top: 1rem;
+    padding: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+  }
+
+  .bib-words h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+  }
+
+  .bib-words h2 span {
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .bib-words ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .bib-words li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    border-top: 1px solid var(--line);
+  }
+
+  .bib-words .wl-go {
+    padding: 0.5rem 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .bib-words .wl-go b {
+    margin-right: 0.35rem;
+  }
+
+  .bib-words .wl-go small {
+    display: block;
+    color: var(--muted);
+  }
+
+  .bib-words .wl-x {
+    padding: 0.5rem;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .bib-empty {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .bib-pop {
+    position: absolute;
+    z-index: 50;
+    width: min(360px, calc(100vw - 16px));
+    max-height: 60vh;
+    overflow: auto;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--paper);
+    box-shadow: 0 16px 40px rgba(31, 36, 33, 0.18);
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+
+  .bib-pop[hidden] {
+    display: none;
+  }
+
+  .bib-pop.sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 55vh;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: calc(0.9rem + env(safe-area-inset-bottom));
+  }
+
+  .pop-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .pop-word {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.35rem;
+  }
+
+  .pop-x {
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .rd {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .rd-head b {
+    font-size: 1.05rem;
+  }
+
+  .rd-head i {
+    margin-left: 0.4rem;
+    color: var(--muted);
+  }
+
+  .rd-form {
+    margin-top: 0.15rem;
+    color: var(--green);
+    font-weight: 700;
+  }
+
+  .rd ol {
+    margin: 0.3rem 0 0;
+    padding-left: 1.25rem;
+  }
+
+  .pop-none {
+    margin: 0.5rem 0 0;
+    color: var(--muted);
+  }
+
+  .bib-credits {
+    margin-top: 1.5rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .bib-credits a {
+    color: inherit;
+  }
+
+  @media (max-width: 860px) {
+    .bib-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .bib-words {
+      position: static;
+      max-height: none;
+    }
+
+    .bib-goto {
+      margin-left: 0;
+    }
+
+    .bib-goto-error {
+      text-align: left;
+    }
+  }
+
+  @media (max-width: 520px) {
+    #book {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .bib-goto {
+      flex-basis: 100%;
+    }
+
+    .bib-goto input {
+      flex: 1;
+      width: auto;
+    }
+  }
+
+  /* The page draws its own title, so on a narrow screen the theme's masthead
+     keeps only the navigation and the reading comes first. */
+  @media (max-width: 59.99em) {
+    .biblia-masthead .tc-l {
+      display: none;
+    }
+  }
+</style>
+{{ end }}
+
+{{ define "header" }}
+<div class="biblia-masthead">{{ partials.Include "site-header.html" . }}</div>
+{{ end }}
+
+{{ define "main" }}
+<main id="biblia-app">
+  <div class="bib-wrap">
+    <header class="bib-top">
+      <h1>Biblia</h1>
+      <p class="bib-sub">La Biblia en Español Sencillo. Tap a word to switch it to English, or a verse number for the whole verse in English.</p>
+    </header>
+
+    <nav class="bib-nav" aria-label="Book and chapter">
+      <select id="book" aria-label="Book"></select>
+      <select id="chapter" aria-label="Chapter"></select>
+      <button type="button" class="btn" id="prev" aria-label="Previous chapter">‹</button>
+      <button type="button" class="btn" id="next" aria-label="Next chapter">›</button>
+      <form class="bib-goto" id="goto">
+        <input id="goto-input" type="text" placeholder="Juan 3:16" aria-label="Go to a passage" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button type="submit" class="btn">Go</button>
+      </form>
+      <p class="bib-goto-error" id="goto-error" role="status" hidden></p>
+    </nav>
+
+    <section class="bib-grid">
+      <article class="bib-panel bib-reader">
+        <div class="bib-head">
+          <h2 id="title"></h2>
+        </div>
+        <div class="bib-listen" id="listen">
+          <audio id="audio" controls preload="none" aria-label="Recording of this chapter"></audio>
+          <select id="speed" aria-label="Playback speed">
+            <option value="0.75">0.75×</option>
+            <option value="0.9">0.9×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.1">1.1×</option>
+            <option value="1.25">1.25×</option>
+          </select>
+          <p class="bib-audio-note" id="audio-note" role="status" hidden></p>
+        </div>
+        <div class="bib-text" id="text" lang="es" aria-live="polite"></div>
+        <div class="bib-pager">
+          <button type="button" class="btn" id="prev-bottom"></button>
+          <button type="button" class="btn" id="next-bottom"></button>
+        </div>
+      </article>
+
+      <aside class="bib-panel bib-words" aria-labelledby="words-title">
+        <h2 id="words-title">Your words <span id="words-count"></span></h2>
+        <ol id="words"></ol>
+      </aside>
+    </section>
+
+    <footer class="bib-credits">
+      Spanish: <a href="https://ebible.org/find/details.php?id=spabes">La Biblia en Español Sencillo</a>, public domain.
+      English: <a href="https://ebible.org/find/details.php?id=engwebp">World English Bible</a>, public domain.
+      Meanings from <a href="https://en.wiktionary.org/">Wiktionary</a> via <a href="https://kaikki.org/dictionary/Spanish/">kaikki.org</a>,
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.
+      Audio: <a href="https://audiobiblia.org/spabes_ab/spabes.htm">AudioBiblia.org</a>, public domain.
+    </footer>
+  </div>
+
+  <div class="bib-pop" id="pop" role="dialog" aria-labelledby="pop-word" hidden></div>
+</main>
+
+<script>
+(() => {
+  const DATA = {{ site.Data.biblia | jsonify | safeJS }};
+  const CONTEXT = {{ site.Data.bibliacontext | jsonify | safeJS }};
+  const BASE = {{ "biblia/" | relURL }};
+  const POS_KEY = "biblia_position_v1";
+  const WORDS_KEY = "biblia_words_v1";
+  const SHARDS = 32;
+  const POS_NAMES = {
+    adj: "adjective", adv: "adverb", prep: "preposition", conj: "conjunction", pron: "pronoun",
+    det: "determiner", intj: "interjection", num: "number", name: "name", verb: "verb", noun: "noun",
+    article: "article", contraction: "contraction", phrase: "phrase", word: "word", particle: "particle"
+  };
+
+  const books = DATA.books;
+  const bookIndex = new Map(books.map((b, i) => [b.id, i]));
+  const book = (id) => books[bookIndex.get(id)];
+
+  const els = {
+    book: document.getElementById("book"),
+    chapter: document.getElementById("chapter"),
+    prev: document.getElementById("prev"),
+    next: document.getElementById("next"),
+    prevBottom: document.getElementById("prev-bottom"),
+    nextBottom: document.getElementById("next-bottom"),
+    goto: document.getElementById("goto"),
+    gotoInput: document.getElementById("goto-input"),
+    gotoError: document.getElementById("goto-error"),
+    title: document.getElementById("title"),
+    text: document.getElementById("text"),
+    words: document.getElementById("words"),
+    wordsCount: document.getElementById("words-count"),
+    pop: document.getElementById("pop"),
+    listen: document.getElementById("listen"),
+    audio: document.getElementById("audio"),
+    speed: document.getElementById("speed"),
+    audioNote: document.getElementById("audio-note")
+  };
+
+  // times: this chapter's verse start times in the recording; startVerse: where play should begin
+  const state = { book: null, chapter: 1, token: 0, active: null, times: null, startVerse: null, hearing: null };
+  let saved = loadJson(WORDS_KEY, []);
+
+  // ---- data
+
+  const cache = new Map();
+  function getJson(path) {
+    if (!cache.has(path)) {
+      const p = fetch(BASE + path).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      });
+      p.catch(() => cache.delete(path));
+      cache.set(path, p);
+    }
+    return cache.get(path);
+  }
+
+  function shardOf(word) {
+    let h = 0;
+    for (const ch of word.toLowerCase()) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    return h % SHARDS;
+  }
+
+  function loadJson(key, fallback) {
+    try {
+      const v = JSON.parse(localStorage.getItem(key));
+      return v ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function saveJson(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
+  }
+
+  // ---- navigation
+
+  const refText = (id, c, v) => `${book(id).es} ${c}${v ? `:${v}` : ""}`;
+
+  function neighbor(id, c, step) {
+    let i = bookIndex.get(id);
+    c += step;
+    if (c < 1) {
+      if (i === 0) return null;
+      i--;
+      c = books[i].chapters;
+    } else if (c > books[i].chapters) {
+      if (i === books.length - 1) return null;
+      i++;
+      c = 1;
+    }
+    return { id: books[i].id, c };
+  }
+
+  function fillBooks() {
+    const groups = [["Antiguo Testamento", 0, 39], ["Nuevo Testamento", 39, 66]];
+    for (const [label, from, to] of groups) {
+      const g = document.createElement("optgroup");
+      g.label = label;
+      for (const b of books.slice(from, to)) g.append(new Option(b.es, b.id));
+      els.book.append(g);
+    }
+  }
+
+  function fillChapters(id) {
+    els.chapter.replaceChildren();
+    for (let c = 1; c <= book(id).chapters; c++) els.chapter.append(new Option(`Capítulo ${c}`, c));
+  }
+
+  function setPager(button, target, arrow) {
+    button.disabled = !target;
+    button.textContent = target ? (arrow === "‹" ? `‹ ${refText(target.id, target.c)}` : `${refText(target.id, target.c)} ›`) : arrow;
+  }
+
+  async function show(id, c, v, scroll) {
+    const token = ++state.token;
+    closePop();
+    setRecording(id, c);
+    if (state.book !== id) fillChapters(id);
+    state.book = id;
+    state.chapter = c;
+    els.book.value = id;
+    els.chapter.value = String(c);
+    els.title.textContent = refText(id, c);
+    const prev = neighbor(id, c, -1);
+    const next = neighbor(id, c, 1);
+    els.prev.disabled = !prev;
+    els.next.disabled = !next;
+    setPager(els.prevBottom, prev, "‹");
+    setPager(els.nextBottom, next, "›");
+    history.replaceState(null, "", `#${id}.${c}${v ? `.${v}` : ""}`);
+    saveJson(POS_KEY, { id, c });
+    state.times = null;
+    state.startVerse = null;
+    state.hearing = null;
+    const timings = getJson(`audio/${id}.json`).catch(() => null);
+
+    let chapters;
+    try {
+      chapters = await getJson(`es/${id}.json`);
+    } catch {
+      if (token !== state.token) return;
+      status("This book didn't load. Check your connection and try again.");
+      return;
+    }
+    if (token !== state.token) return;
+    els.text.replaceChildren(renderChapter(chapters[c - 1]));
+    markSaved();
+    if (v) {
+      const target = els.text.querySelector(`.v[data-v="${v}"]`);
+      if (target) {
+        target.closest("p").scrollIntoView({ block: "center" });
+        els.text.querySelectorAll(`.v[data-v="${v}"]`).forEach((s) => s.classList.add("flash"));
+      }
+    } else if (scroll && els.title.getBoundingClientRect().top < 0) {
+      els.title.scrollIntoView();
+    }
+    if (next && next.id !== id) getJson(`es/${next.id}.json`).catch(() => {});
+    const times = (await timings)?.[c - 1] ?? null;
+    if (token !== state.token) return;
+    state.times = times;
+    if (v && times?.[v - 1] != null) {
+      // "Juan 3:16" then play starts at verse 16, or jumps there if this chapter is already playing
+      if (els.audio.paused) state.startVerse = v;
+      else listenFrom(v);
+    }
+    hear();
+  }
+
+  function status(message) {
+    const p = document.createElement("p");
+    p.className = "bib-status";
+    p.textContent = message;
+    els.text.replaceChildren(p);
+  }
+
+  function renderChapter(blocks) {
+    const frag = document.createDocumentFragment();
+    let verse = null;
+    for (const [style, ...items] of blocks) {
+      const p = document.createElement("p");
+      p.className = `b-${style}`;
+      const inVerse = style === "p" || style === "q1" || style === "q2";
+      let span = null;
+      for (const item of items) {
+        if (typeof item === "number") {
+          verse = item;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "vn";
+          btn.dataset.v = item;
+          btn.textContent = item;
+          btn.setAttribute("aria-label", `Verse ${item} in English`);
+          btn.setAttribute("aria-expanded", "false");
+          p.append(btn);
+          span = null;
+          continue;
+        }
+        if (!span) {
+          span = document.createElement("span");
+          if (inVerse && verse) {
+            span.className = "v";
+            span.dataset.v = verse;
+          }
+          p.append(span);
+        }
+        appendWords(span, item);
+        span.append(" ");
+      }
+      frag.append(p);
+    }
+    return frag;
+  }
+
+  function appendWords(el, text) {
+    const parts = text.split(/(\p{L}+)/u);
+    for (let i = 0; i < parts.length; i++) {
+      if (!parts[i]) continue;
+      if (i % 2) {
+        const w = document.createElement("span");
+        w.className = "w";
+        w.textContent = parts[i];
+        el.append(w);
+      } else {
+        el.append(parts[i]);
+      }
+    }
+  }
+
+  // ---- reference box: "Juan 3:16", "1 cor 13", "sal 23", "Revelations 1:1", "Primera de Juan 4"
+  // (tests/biblia.test.mjs runs the code between the ref-parser marks)
+  // ref-parser:start
+
+  const fold = (s) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/\./g, " ").replace(/\s+/g, " ").trim();
+  const bookKeys = books.map((b) => ({ id: b.id, names: [fold(b.es), fold(b.en)].map((n) => n.replace(/ /g, "")), abbr: [...b.abbr, b.id.toLowerCase()] }));
+  const ORDINALS = [
+    [/^(3rd|3ra|3a|third|tercera|tercero|tercer|iii)\b\s*/, "3 "],
+    [/^(2nd|2da|2a|second|segunda|segundo|ii)\b\s*/, "2 "],
+    [/^(1st|1ra|1a|first|primera|primero|primer|i)\b\s*/, "1 "]
+  ];
+  // words around a book's name: "Gospel of John", "St. Matthew", "Carta a los Romanos", "Evangelio según San Juan"
+  const FILLER = /^(the |book of (the )?|gospel (of |according to )|(st|saint|san) |evangelio (de|segun) |libro de (los |las )?|(letter|epistle) (of paul )?(to|of) (the )?|(carta|epistola) (de san pablo )?(a|de) (los |las )?)+/;
+
+  // Damerau-Levenshtein distance: letters added, dropped, changed or swapped
+  function distance(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => (i ? (j ? 0 : i) : j)));
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+    return d[a.length][b.length];
+  }
+
+  function findBook(key) {
+    // Spanish or English name, an abbreviation, or the start of a name; "revelations" as "revelation"
+    for (const k2 of new Set([key, key.replace(/s$/, "")])) {
+      for (const k of bookKeys) if (k.names.includes(k2) || k.abbr.includes(k2)) return k.id;
+      for (const k of bookKeys) if (k.names.some((n) => n.startsWith(k2))) return k.id;
+    }
+    // a misspelling (Phillipians, Habbakuk, Zachariah): the closest name with the same number in front
+    const letters = key.replace(/^\d/, "").length;
+    const allowed = letters < 5 ? 0 : letters < 8 ? 1 : 2;
+    let best = null;
+    for (const k of bookKeys) {
+      for (const n of k.names) {
+        if ((/^\d/.test(n) ? n[0] : "") !== (/^\d/.test(key) ? key[0] : "")) continue;
+        const d = distance(key, n);
+        if (d <= allowed && (!best || d < best.d)) best = { id: k.id, d };
+      }
+    }
+    return best ? best.id : null;
+  }
+
+  function parseRef(input) {
+    let s = fold(input).replace(FILLER, "");
+    for (const [re, n] of ORDINALS) s = s.replace(re, n);
+    s = s.replace(/^([1-3]) ?(de )?(.*)$/, (_, n, de, rest) => `${n} ${rest.replace(FILLER, "")}`); // "1 de Juan", "1 Letter to the Corinthians"
+    const m = s.match(/^([1-3])?\s*([a-z][a-z ]*?)\s*(?:(\d+)(?:\s*[:,. ]\s*(\d+))?)?(?:\s*-\s*\d+)?$/);
+    if (!m) return { error: `Try a book and chapter, like Juan 3:16.` };
+    const key = m[2].replace(/ /g, "");
+    const id = findBook((m[1] || "") + key);
+    if (!id) {
+      // "Corinthians 13": there's a 1 and a 2
+      const options = m[1] ? [] : [...new Set(["1", "2", "3"].map((n) => findBook(n + key)).filter(Boolean))];
+      if (options.length > 1) return { error: `Which one: ${options.map((o) => book(o).es).join(" or ")}?` };
+      return { error: `No book called “${input.replace(/\s*\d.*$/, "").trim() || input}”.` };
+    }
+    // one-chapter books are cited by verse alone: Judas 3, Jude 3
+    if (book(id).chapters === 1 && m[3] && !m[4]) return { id, c: 1, v: Number(m[3]) };
+    const c = m[3] ? Number(m[3]) : 1;
+    if (c < 1 || c > book(id).chapters) return { error: `${book(id).es} has ${book(id).chapters} chapter${book(id).chapters === 1 ? "" : "s"}.` };
+    return { id, c, v: m[4] ? Number(m[4]) : null };
+  }
+
+  // ref-parser:end
+
+  els.goto.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const value = els.gotoInput.value.trim();
+    if (!value) return;
+    const ref = parseRef(value);
+    if (ref.error) {
+      els.gotoError.textContent = ref.error;
+      els.gotoError.hidden = false;
+      return;
+    }
+    els.gotoError.hidden = true;
+    els.gotoInput.value = "";
+    els.gotoInput.blur();
+    show(ref.id, ref.c, ref.v, true);
+  });
+  els.gotoInput.addEventListener("input", () => (els.gotoError.hidden = true));
+
+  // ---- English for a verse
+
+  async function toggleEnglish(btn) {
+    const v = Number(btn.dataset.v);
+    const open = els.text.querySelector(`.en[data-v="${v}"]`);
+    if (open) {
+      open.remove();
+      btn.classList.remove("on");
+      btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const token = state.token;
+    let text;
+    try {
+      const en = await getJson(`en/${state.book}.json`);
+      text = en[state.chapter - 1]?.[v - 1] || "The English text has no such verse here.";
+    } catch {
+      text = "The English didn't load. Check your connection and try again.";
+    }
+    if (token !== state.token || els.text.querySelector(`.en[data-v="${v}"]`)) return;
+    const spans = els.text.querySelectorAll(`.v[data-v="${v}"]`);
+    let after = (spans[spans.length - 1] || btn).closest("p");
+    while (after.nextElementSibling?.classList.contains("en")) after = after.nextElementSibling;
+    const p = document.createElement("p");
+    p.className = "en";
+    p.lang = "en";
+    p.dataset.v = v;
+    p.textContent = text;
+    if (state.times?.[v - 1] != null) {
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "en-play";
+      play.textContent = "▶ Listen from here";
+      play.addEventListener("click", () => listenFrom(v));
+      p.append(" ", play);
+    }
+    after.after(p);
+    btn.classList.add("on");
+    btn.setAttribute("aria-expanded", "true");
+  }
+
+  // ---- word meanings
+
+  const spanishOf = (el) => el.dataset.es || el.textContent;
+
+  async function lookUp(word) {
+    const shard = await getJson(`dict/${shardOf(word)}.json`);
+    if (Object.hasOwn(shard, word)) return shard[word];
+    return Object.hasOwn(shard, word.toLowerCase()) ? shard[word.toLowerCase()] : null;
+  }
+
+  async function openWord(el) {
+    if (state.active) state.active.classList.remove("active");
+    state.active = el;
+    el.classList.add("active");
+    const word = el.textContent;
+    const verse = el.closest(".v")?.dataset.v;
+    renderPop(word, undefined);
+    placePop(el);
+    let readings;
+    try {
+      readings = await lookUp(word);
+    } catch {
+      readings = "error";
+    }
+    if (state.active !== el) return;
+    renderPop(word, readings);
+    placePop(el);
+    if (!Array.isArray(readings)) return;
+    saveWord(word, readings[0], verse);
+    swapToEnglish(el, readings[0], verse);
+  }
+
+  // ---- the word in English, in its place in the text
+
+  // english-choice:start
+  // The English to show for a word: its usual English, or the one the words around it
+  // call for (los judíos: "Jews", con él: "him", se levantó: "got up"), or failing that
+  // whichever of its other English the verse's English uses (fue: "went" or "was").
+  const PARTICIPLE = /(ado|ada|ido|ida|ído|ída|to|ta|cho|cha|so|sa)s?$/;
+
+  function chooseEnglish(reading, prev, next, nextReading, verseEnglish) {
+    const [, , , , english, variants, alts] = reading;
+    let e = english;
+    for (const [other, when] of variants || []) {
+      const [kind, words] = when.split(":");
+      const fits =
+        when === "after:det" ? CONTEXT.det.includes(prev)
+        : when === "after:art" ? CONTEXT.art.includes(prev)
+        : when === "after:prep" ? CONTEXT.prep.includes(prev)
+        : when === "before:verb" ? !!nextReading && nextReading[1] === "verb" && !/participle/.test(nextReading[2])
+        : when === "!pp" ? !(next && PARTICIPLE.test(next))
+        : kind === "after" && words.split("|").includes(prev);
+      if (fits) {
+        e = other;
+        break;
+      }
+    }
+    if (verseEnglish && e) {
+      const text = ` ${verseEnglish.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ")} `;
+      // in the verse: the whole English, or for a phrase ("go away") its first word if that says something
+      const has = (c) => {
+        const words = c.toLowerCase().split(" ");
+        return text.includes(` ${words.join(" ")} `) || (words.length > 1 && !CONTEXT.stop.includes(words[0]) && text.includes(` ${words[0]} `));
+      };
+      if (!has(e)) e = [english, ...(alts || [])].find(has) || e;
+    }
+    return e;
+  }
+  // english-choice:end
+
+  async function swapToEnglish(el, reading, verse) {
+    const words = [...els.text.querySelectorAll(".w")];
+    const i = words.indexOf(el);
+    const prev = words[i - 1] && spanishOf(words[i - 1]).toLowerCase();
+    const next = words[i + 1] && spanishOf(words[i + 1]).toLowerCase();
+    const token = state.token;
+    const [nextReading, verseEnglish] = await Promise.all([
+      (reading[5] || []).some(([, when]) => when === "before:verb") && next ? lookUp(next).then((r) => r && r[0]).catch(() => null) : null,
+      verse ? getJson(`en/${state.book}.json`).then((en) => en[state.chapter - 1]?.[verse - 1]).catch(() => null) : null,
+    ]);
+    if (token !== state.token || el.dataset.es) return;
+    const english = chooseEnglish(reading, prev, next, nextReading, verseEnglish);
+    if (!english) return;
+    const word = el.textContent;
+    el.dataset.es = word;
+    el.lang = "en";
+    el.textContent = word[0] !== word[0].toLowerCase() ? english[0].toUpperCase() + english.slice(1) : english;
+    el.classList.add("swapped");
+    if (state.active === el) placePop(el);
+  }
+
+  function swapBack(el) {
+    el.textContent = el.dataset.es;
+    delete el.dataset.es;
+    el.removeAttribute("lang");
+    el.classList.remove("swapped");
+  }
+
+  function renderPop(word, readings) {
+    const pop = els.pop;
+    pop.replaceChildren();
+    const top = document.createElement("div");
+    top.className = "pop-top";
+    const w = document.createElement("span");
+    w.className = "pop-word";
+    w.id = "pop-word";
+    w.lang = "es";
+    w.textContent = word;
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "pop-x";
+    x.setAttribute("aria-label", "Close");
+    x.textContent = "×";
+    x.addEventListener("click", closePop);
+    top.append(w, x);
+    pop.append(top);
+    if (readings === undefined) return;
+    if (!Array.isArray(readings)) {
+      const p = document.createElement("p");
+      p.className = "pop-none";
+      p.textContent = readings === "error" ? "The dictionary didn't load. Check your connection and try again." : "Not in the dictionary.";
+      pop.append(p);
+      return;
+    }
+    for (const [head, pos, form, meanings] of readings) {
+      const r = document.createElement("div");
+      r.className = "rd";
+      const h = document.createElement("div");
+      h.className = "rd-head";
+      const b = document.createElement("b");
+      b.lang = "es";
+      b.textContent = head;
+      const i = document.createElement("i");
+      i.textContent = pos.split(" · ").map((p) => POS_NAMES[p] || p).join(", ");
+      h.append(b, i);
+      r.append(h);
+      if (form) {
+        const f = document.createElement("div");
+        f.className = "rd-form";
+        f.textContent = form;
+        r.append(f);
+      }
+      const ol = document.createElement("ol");
+      for (const m of meanings) {
+        const li = document.createElement("li");
+        li.textContent = m;
+        ol.append(li);
+      }
+      r.append(ol);
+      pop.append(r);
+    }
+  }
+
+  const narrow = matchMedia("(max-width: 640px)");
+
+  function placePop(el) {
+    const pop = els.pop;
+    pop.hidden = false;
+    if (narrow.matches) {
+      pop.classList.add("sheet");
+      pop.style.left = pop.style.top = "";
+      const cover = pop.getBoundingClientRect().top;
+      const r = el.getBoundingClientRect();
+      if (r.bottom > cover - 12) window.scrollBy({ top: r.bottom - cover + 48 });
+      return;
+    }
+    pop.classList.remove("sheet");
+    const r = el.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    const left = Math.min(Math.max(8, r.left - 12), innerWidth - w - 8);
+    let top = r.bottom + 8;
+    if (top + h > innerHeight - 8 && r.top - h - 8 > 8) top = r.top - h - 8;
+    pop.style.left = `${left + scrollX}px`;
+    pop.style.top = `${top + scrollY}px`;
+  }
+
+  function closePop() {
+    els.pop.hidden = true;
+    if (state.active) state.active.classList.remove("active");
+    state.active = null;
+  }
+
+  els.text.addEventListener("click", (e) => {
+    const vn = e.target.closest(".vn");
+    if (vn) return toggleEnglish(vn);
+    const w = e.target.closest(".w");
+    if (!w) return;
+    // tapping an underlined or English word undoes it: back to Spanish, off the list
+    if (w.dataset.es || w.classList.contains("saved")) {
+      closePop();
+      return forget(spanishOf(w).toLowerCase());
+    }
+    return w === state.active ? closePop() : openWord(w);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (els.pop.hidden || els.pop.contains(e.target) || e.target.closest("#text .w")) return;
+    closePop();
+  });
+
+  // ---- your words
+
+  function saveWord(word, reading, verse) {
+    const [head, pos, , meanings] = reading;
+    const key = head.toLowerCase();
+    const form = word.toLowerCase();
+    const ref = { id: state.book, c: state.chapter, v: verse ? Number(verse) : null };
+    let item = saved.find((s) => s.key === key);
+    if (!item) {
+      item = { key, head, pos, meaning: meanings[0], forms: [] };
+      saved.push(item);
+    }
+    if (!item.forms.includes(form)) item.forms.push(form);
+    item.ref = ref;
+    item.t = Date.now();
+    saved.sort((a, b) => b.t - a.t);
+    saveJson(WORDS_KEY, saved);
+    renderWords();
+    markSaved();
+  }
+
+  // a word off the list: its underline goes, and any of its forms in English go back to Spanish
+  function forget(form) {
+    const item = saved.find((s) => s.forms.includes(form));
+    const forms = new Set(item ? item.forms : [form]);
+    if (item) {
+      saved = saved.filter((s) => s !== item);
+      saveJson(WORDS_KEY, saved);
+      renderWords();
+    }
+    for (const w of els.text.querySelectorAll(".w")) if (w.dataset.es && forms.has(w.dataset.es.toLowerCase())) swapBack(w);
+    markSaved();
+  }
+
+  function renderWords() {
+    els.wordsCount.textContent = saved.length ? `(${saved.length})` : "";
+    els.words.replaceChildren();
+    if (!saved.length) {
+      const p = document.createElement("li");
+      p.className = "bib-empty";
+      p.textContent = "Words you tap show up here.";
+      els.words.append(p);
+      return;
+    }
+    for (const item of saved) {
+      const li = document.createElement("li");
+      const go = document.createElement("button");
+      go.type = "button";
+      go.className = "wl-go";
+      const b = document.createElement("b");
+      b.lang = "es";
+      b.textContent = item.head;
+      const small = document.createElement("small");
+      const where = item.ref && book(item.ref.id) ? refText(item.ref.id, item.ref.c, item.ref.v) : "";
+      small.textContent = where;
+      go.append(b, item.meaning, small);
+      go.addEventListener("click", () => item.ref && show(item.ref.id, item.ref.c, item.ref.v, true));
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "wl-x";
+      x.setAttribute("aria-label", `Remove ${item.head}`);
+      x.textContent = "×";
+      x.addEventListener("click", () => forget(item.forms[0]));
+      li.append(go, x);
+      els.words.append(li);
+    }
+  }
+
+  function markSaved() {
+    const forms = new Set(saved.flatMap((s) => s.forms));
+    for (const w of els.text.querySelectorAll(".w")) w.classList.toggle("saved", forms.has(spanishOf(w).toLowerCase()));
+  }
+
+  // ---- listening: AudioBiblia.org's recording of this text, one MP3 a chapter, played from their site
+
+  const SPEED_KEY = "biblia_speed_v1";
+  const recordingUrl = (id, c) => `https://audiobiblia.org/spabes_ab/${id}${String(c).padStart(id === "PSA" ? 3 : 2, "0")}.mp3`;
+
+  function setRecording(id, c) {
+    const url = recordingUrl(id, c);
+    if (els.audio.src === url) return;
+    els.audio.pause();
+    els.audio.src = url;
+    els.audioNote.hidden = true;
+    els.listen.classList.remove("playing"); // a new src drops the pending pause event
+  }
+
+  const speed = () => Number(els.speed.value);
+  els.speed.value = String(loadJson(SPEED_KEY, 1));
+  if (!els.speed.value) els.speed.value = "1";
+  els.speed.addEventListener("change", () => {
+    els.audio.playbackRate = els.audio.defaultPlaybackRate = speed();
+    saveJson(SPEED_KEY, speed());
+  });
+  els.audio.addEventListener("loadedmetadata", () => (els.audio.playbackRate = els.audio.defaultPlaybackRate = speed()));
+  els.audio.addEventListener("play", () => {
+    els.audio.playbackRate = speed();
+    els.listen.classList.add("playing");
+    const start = state.startVerse && state.times?.[state.startVerse - 1];
+    if (start != null && els.audio.currentTime < 1) seekTo(start / 100);
+    state.startVerse = null;
+  });
+  els.audio.addEventListener("pause", () => els.listen.classList.remove("playing"));
+  els.audio.addEventListener("ended", () => {
+    els.listen.classList.remove("playing");
+    state.hearing = null;
+    els.text.querySelectorAll(".v.hearing").forEach((s) => s.classList.remove("hearing"));
+  });
+
+  function seekTo(seconds) {
+    if (els.audio.readyState >= 1) els.audio.currentTime = seconds;
+    else els.audio.addEventListener("loadedmetadata", () => (els.audio.currentTime = seconds), { once: true });
+  }
+
+  function listenFrom(v) {
+    const t = state.times?.[v - 1];
+    if (t == null) return;
+    state.startVerse = null;
+    seekTo(t / 100);
+    els.audio.play().catch(() => {});
+  }
+
+  // the verse being read: highlighted, and kept in view while playing
+  function hear() {
+    const times = state.times;
+    if (!times || !els.audio.src) return;
+    const now = els.audio.currentTime * 100 + 15;
+    let v = null;
+    if (els.audio.currentTime > 0) for (let i = 0; i < times.length; i++) if (times[i] != null && times[i] <= now) v = i + 1;
+    if (v === state.hearing) return;
+    state.hearing = v;
+    els.text.querySelectorAll(".v.hearing").forEach((s) => s.classList.remove("hearing"));
+    if (!v) return;
+    const spans = els.text.querySelectorAll(`.v[data-v="${v}"]`);
+    spans.forEach((s) => s.classList.add("hearing"));
+    if (els.audio.paused || !spans.length) return;
+    const r = spans[0].getBoundingClientRect();
+    if (r.top < els.listen.getBoundingClientRect().bottom || r.bottom > innerHeight) spans[0].closest("p").scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  els.audio.addEventListener("timeupdate", hear);
+  els.audio.addEventListener("seeked", hear);
+  els.audio.addEventListener("error", () => {
+    if (!els.audio.src) return;
+    els.listen.classList.remove("playing");
+    els.audioNote.textContent = "The recording didn't load. Check your connection and try again.";
+    els.audioNote.hidden = false;
+  });
+
+  // ---- controls
+
+  const go = (target) => target && show(target.id, target.c, null, true);
+  els.book.addEventListener("change", () => show(els.book.value, 1, null, true));
+  els.chapter.addEventListener("change", () => show(state.book, Number(els.chapter.value), null, true));
+  els.prev.addEventListener("click", () => go(neighbor(state.book, state.chapter, -1)));
+  els.next.addEventListener("click", () => go(neighbor(state.book, state.chapter, 1)));
+  els.prevBottom.addEventListener("click", () => go(neighbor(state.book, state.chapter, -1)));
+  els.nextBottom.addEventListener("click", () => go(neighbor(state.book, state.chapter, 1)));
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") return closePop();
+    if (e.target.closest("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "ArrowLeft") go(neighbor(state.book, state.chapter, -1));
+    if (e.key === "ArrowRight") go(neighbor(state.book, state.chapter, 1));
+  });
+
+  function fromHash() {
+    const m = location.hash.slice(1).match(/^([1-3A-Z]{3})\.(\d+)(?:\.(\d+))?$/);
+    if (!m || !bookIndex.has(m[1])) return null;
+    const c = Math.min(Math.max(1, Number(m[2])), book(m[1]).chapters);
+    return { id: m[1], c, v: m[3] ? Number(m[3]) : null };
+  }
+
+  window.addEventListener("hashchange", () => {
+    const ref = fromHash();
+    if (ref) show(ref.id, ref.c, ref.v, true);
+  });
+
+  fillBooks();
+  renderWords();
+  const last = loadJson(POS_KEY, null);
+  const start = fromHash() || (last && bookIndex.has(last.id) && last.c <= book(last.id).chapters ? { id: last.id, c: last.c, v: null } : { id: "JHN", c: 1, v: null });
+  show(start.id, start.c, start.v, false);
+})();
+</script>
+{{ end }}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daily Puzzles prototype</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png" sizes="180x180">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-title" content="Puzzles">
+  <meta name="theme-color" content="#f3f1eb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#131416" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <h1 class="brand"><img src="icon.svg" alt="" width="30" height="30">Daily puzzles</h1>
+      <nav id="games" class="games" aria-label="Game"></nav>
+    </header>
+
+    <div class="when">
+      <div class="week" role="group" aria-label="Week">
+        <button id="week-prev" class="step" type="button" aria-label="Previous week">‹</button>
+        <span id="week-label">Week 1</span>
+        <button id="week-next" class="step" type="button" aria-label="Next week">›</button>
+      </div>
+      <nav id="days" class="days" aria-label="Day"></nav>
+    </div>
+
+    <main>
+      <section id="play" class="card">
+        <div class="status">
+          <div>
+            <h2 id="title"></h2>
+            <p id="subtitle"></p>
+          </div>
+          <span id="timer" class="timer">0:00</span>
+        </div>
+        <div class="stage"><div id="board"></div></div>
+        <p id="hint-text" hidden></p>
+        <div class="controls">
+          <button id="undo" type="button" title="Ctrl/Cmd+Z">Undo</button>
+          <button id="hint" type="button">Hint</button>
+          <button id="reset" class="quiet" type="button">Reset</button>
+          <button id="reveal" class="quiet" type="button">Show solution</button>
+        </div>
+      </section>
+
+      <aside>
+        <section class="card">
+          <h2>How to play</h2>
+          <ul id="rules"></ul>
+        </section>
+
+        <section class="card">
+          <h2>Feedback</h2>
+          <p class="label" id="felt-label">How hard did it feel?</p>
+          <div id="felt" class="rating" role="group" aria-labelledby="felt-label"></div>
+          <div class="rating-ends" aria-hidden="true"><span>trivial</span><span>brutal</span></div>
+          <textarea id="note" rows="4" placeholder="Notes on this puzzle"></textarea>
+          <button id="copy" type="button">Copy all feedback</button>
+          <pre id="copied" hidden></pre>
+        </section>
+
+        <details class="card stats">
+          <summary>Generator stats</summary>
+          <pre id="stats"></pre>
+        </details>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

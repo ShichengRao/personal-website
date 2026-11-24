@@ -21,15 +21,15 @@ install is needed to build or serve the site.
 | Path | Purpose |
 | --- | --- |
 | `content/` | Page content and front matter (homepage project cards live in `content/_index.md`) |
-| `layouts/` | Custom templates: site navigation with the narrow-screen Menu button, Resume and Socials pages, homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Don't Blunder Again page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, the Five Levels explainer (`/five-levels/`, its text in `content/five-levels/_index.md`), favicon partial |
+| `layouts/` | Custom templates: site navigation with the narrow-screen Menu button, Resume and Socials pages, homepage projects grid, the Hangul practice app (its word list is `data/hangul.json`), the Biblia reader (its book list is `data/biblia.json`), the Don't Blunder Again page, the Long Game hub and game pages, the Seven Tiles page, the Said & Done page, the Five Levels explainer (`/five-levels/`, its text in `content/five-levels/_index.md`), favicon partial |
 | `assets/` | The Said & Done page's prose (`assets/said-and-done/`) |
-| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Don't Blunder Again data, the Hangul practice audio (`static/hangul/audio/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`), the Said & Done results (`static/said-and-done/`) |
+| `static/` | Files copied verbatim into the site: resume PDF, favicons, the Don't Blunder Again data, the Hangul practice audio (`static/hangul/audio/`), the Biblia text and word meanings (`static/biblia/`), the Long Game scripts (`static/games/`), the Seven Tiles engine and its packed word lists (`static/seven-tiles/`), the Eval Bar page (`static/evalbar/`), the Said & Done results (`static/said-and-done/`) |
 | `config.toml` | Site config, nav menu, SEO settings |
 | `netlify.toml` | Build command, pinned Hugo version, redirects, security headers |
 | `netlify/functions/` | `push.mjs`: Seven Tiles turn notifications; `evalbar.mts`: the Eval Bar's data in Netlify Blobs; `resume.mjs`: the Resume page's copy of the published Google Doc |
 | `themes/ananke/` | Theme submodule — don't edit; override in `layouts/` instead |
 | `plans/` | Product notes for side projects, and the Supabase schema for Seven Tiles's online games |
-| `tools/` | `hangul/audio.py`: generates the Hangul practice clips with edge-tts and checks them with Whisper; `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
+| `tools/` | `hangul/audio.py`: generates the Hangul practice clips with edge-tts and checks them with Whisper; `biblia/text.mjs`, `biblia/glossary.mjs` (with `biblia/english.mjs`) and `biblia/audio.mjs`: build the Biblia page's text, word meanings and English, and verse times in the recording (see below); `lexicon.mjs`: builds Seven Tiles's packed word lists (sources in `tools/lexicon/`); `seven-tiles-lab.mjs`: self-play across the cores to measure the Seven Tiles bot (arena between two bot profiles, leave-value fitting, a benchmark); `seven-tiles-vs-magpie.mjs`: how often our top play is MAGPIE's, given a local MAGPIE build with our board, tiles and word list |
 | `tests/` | Node tests (`npm test`): repo smoke check, game scripts parse, Crux walls solve and the rules hold, replays round-trip, Seven Tiles scoring, endings and move generation, the Said & Done package. New test files must be added to the `test` script in `package.json` |
 
 `public/` and `resources/` are Hugo build output and are not tracked.
@@ -61,6 +61,48 @@ Load / Paste controls; Copy produces a pasteable `LGR1:` string (gzip + base64,
 roughly 10 KB per minute of play). Each game carries a `VERSION`; bump it when
 tuning changes enough that old replays would no longer match. A replay can also be
 stepped headlessly: `watch(rec)` on the game's handle, then `loop.step()`.
+
+## Biblia
+
+`/biblia/` is the Bible in plain Spanish (La Biblia en Español Sencillo), where
+tapping a word shows its English meaning and tapping a verse number shows the
+verse in English (World English Bible). Both texts are public domain, from
+eBible.org. The meanings come from English Wiktionary's Spanish entries as
+extracted by kaikki.org, which are CC BY-SA 4.0, so the page credits them. The
+player under each chapter's title streams AudioBiblia.org's public-domain
+recording of the same text (one MP3 a chapter, from their site), highlights the
+verse being read and can start from any verse.
+
+Everything the page reads is built ahead of time into `static/biblia/`. To rebuild
+it, download `spabes_usfm.zip` and `engwebp_vpl.zip` from eBible.org and
+`kaikki.org-dictionary-Spanish.jsonl` (about 1 GB) from kaikki.org, then:
+
+```sh
+node tools/biblia/text.mjs <spabes_usfm folder> <engwebp_vpl.txt>
+node tools/biblia/glossary.mjs <kaikki.org-dictionary-Spanish.jsonl>
+node tools/biblia/audio.mjs <folder of the chapter MP3s>
+```
+
+`audio.mjs` needs ffmpeg and every chapter's MP3 from
+`https://audiobiblia.org/spabes_ab/<BOOK><chapter>.mp3` (`JHN03.mp3`, `PSA023.mp3`,
+about 1.6 GB in all). The recording pauses after every sentence, so it matches
+sentences to the stretches of speech between pauses and checks each against its
+length. A chapter that doesn't line up well (Song of Songs, a few lists of names)
+gets no times, and its recording plays without highlighting.
+
+`glossary.mjs` ranks each word's possible readings by how often their headwords
+come up in the text, so `era` reads as a form of `ser` before the noun. Names
+Wiktionary lacks are matched to the English name in the same verses. Words whose
+first Wiktionary sense is wrong for the Bible (`misericordia`, `carros`) have
+meanings written by hand at the top of the script.
+
+Tapping a word also swaps it for English in the same shape (`bendijo` → "blessed",
+`pastores` → "shepherds"), built by `tools/biblia/english.mjs` from the form's
+tense, person and number. Each word also carries the other English it could be
+and, from its neighbours, which to use (`los judíos` → "Jews", `con él` → "him",
+`se levantó` → "got up"). The page then prefers whichever of those the verse's
+English actually uses (`fue` → "went" or "was"). That choice is `chooseEnglish`
+in the page, which the tests run as written.
 
 ## CI and deployment
 
