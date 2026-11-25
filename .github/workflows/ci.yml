@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+# CI only reads the repo, so the token can't write even if the repo default changes
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+          # later steps (npm install scripts, the Hugo action) don't need the token
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -19,7 +25,8 @@ jobs:
       # the turn-notification function and its tests need web-push
       - run: npm ci
       - run: npm test
-      - uses: peaceiris/actions-hugo@v3
+      # third-party, so pinned to a commit: a moved tag can't change what runs
+      - uses: peaceiris/actions-hugo@d1c81a15d4e6dca7086a17b9c2565cb70fd576bf # v3.3.0
         with:
           # Keep in sync with HUGO_VERSION in netlify.toml
           hugo-version: '0.150.0'
