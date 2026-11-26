@@ -25,7 +25,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
   };
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const randomSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1);
   const randomToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
@@ -966,7 +966,7 @@
     ui.nav.hidden = !R;
     let html = '';
     s.history.forEach((e, i) => {
-      const what = e.t === 'play' ? esc(e.word) + (e.bingo ? ' <small style="color:var(--good)">bingo</small>' : '') : e.t === 'swap' ? 'swap ×' + e.n : e.t;
+      const what = e.t === 'play' ? esc(e.word) + (e.bingo ? ' <small style="color:var(--good)">bingo</small>' : '') : e.t === 'swap' ? 'swap ×' + e.n : esc(e.t);
       const grade = R && R.summary ? (R.summary.rows.find((r) => r.k === i + 1) || {}).grade : null;
       html += '<li data-k="' + (i + 1) + '"' + (R && R.k === i + 1 ? ' class="cur"' : '') + '><span><span class="n">' + (i + 1) + '.</span><span class="who">' + esc(nameOf(e.p)) + '</span>' + what + '</span>' +
         '<b>' + (e.t === 'play' ? '+' + e.score : '') + (grade === 'miss' ? ' <span style="color:var(--bad)">?</span>' : grade === 'brilliant' ? ' <span style="color:var(--good)">‼</span>' : grade === 'best' ? ' <span style="color:var(--good)">★</span>' : '') + '</b></li>';
@@ -1104,7 +1104,7 @@
   }
   function askText(title, body, placeholder, initial) {
     return new Promise((resolve) => {
-      openOverlay('<h2>' + esc(title) + '</h2><p>' + body + '</p><input type="text" id="sm-ask" maxlength="24" placeholder="' + esc(placeholder) + '" value="' + esc(initial || '') + '">' +
+      openOverlay('<h2>' + esc(title) + '</h2><p>' + esc(body) + '</p><input type="text" id="sm-ask" maxlength="24" placeholder="' + esc(placeholder) + '" value="' + esc(initial || '') + '">' +
         '<div class="sm-row" style="justify-content:center;margin-top:12px"><button id="sm-ask-cancel">Cancel</button><button class="primary" id="sm-ask-ok">Continue</button></div>');
       const inp = $('sm-ask');
       inp.focus(); inp.select();
@@ -1274,7 +1274,7 @@
   // the loaded list's name, linked where its licence asks for a link, and its credit line
   function lexiconCredit() {
     if (!lexicon) return 'plays are checked against the word list once it has loaded.';
-    const name = lexicon.link ? '<a href="' + esc(lexicon.link) + '" target="_blank" rel="noopener">' + esc(lexicon.name) + '</a>' : esc(lexicon.name);
+    const name = /^https:\/\//.test(lexicon.link || '') ? '<a href="' + esc(lexicon.link) + '" target="_blank" rel="noopener">' + esc(lexicon.name) + '</a>' : esc(lexicon.name);
     if (lexicon.attribution) return 'plays are checked against the ' + name + '. ' + esc(lexicon.attribution);
     return 'plays are checked against ' + (lexicon.note ? esc(lexicon.note).replace(esc(lexicon.name), name) : name + '.');
   }
@@ -1601,6 +1601,9 @@
       if (t1 - t0 <= G.rtt) { G.rtt = t1 - t0; G.offset = row.now - (t0 + t1) / 2; }   // the quickest answer gives the truest clock
     }
     G.offline = !!offline;
+    // these numbers are written into the page as markup, so they must be numbers
+    for (const k of ['round', 'closed', 'limit', 'seconds']) if (row[k] != null) row[k] = Number(row[k]);
+    for (const x of row.players) for (const k of ['player', 'joined', 'finished']) if (x[k] != null) x[k] = Number(x[k]);
     G.row = row; G.seconds = row.seconds;
     G.names = [];
     for (const x of row.players) G.names[x.player] = x.name;
@@ -2848,11 +2851,14 @@
     if (pub) pub.addEventListener('change', async () => { try { await Net.rpc('set_visibility', { p_public: pub.checked }); } catch (e) { setStatus(e.message, 'bad'); pub.checked = !pub.checked; } });
     on('sm-pr-add', async () => { const code = ($('sm-pr-code').value || '').trim(); if (!code) return; try { const f = await Net.rpc('add_friend', { p_handle: code }); setStatus('Added ' + f.name + '.', 'good'); } catch (e) { setStatus(e.message, 'bad'); } showProfile(handle); });
   }
-  // The QR code library, fetched on first use.
+  // The QR code library, fetched on first use. Pinned by hash, and the package's own file rather than
+  // jsDelivr's generated .min.js, whose bytes jsDelivr may change.
   function withQr(done, failed) {
     if (window.qrcode) { done(); return; }
     const sc = document.createElement('script');
-    sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+    sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+    sc.integrity = 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k';
+    sc.crossOrigin = 'anonymous';
     sc.onload = done; sc.onerror = failed;
     document.head.appendChild(sc);
   }

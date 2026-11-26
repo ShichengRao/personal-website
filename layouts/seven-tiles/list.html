@@ -265,7 +265,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Seven Tiles">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- An exact version with its hash, so the browser refuses any other file at this address. The
+     file is the one in the npm package, not jsDelivr's .min.js, which jsDelivr builds itself and may
+     rebuild. sw.js caches the same file, and a test keeps the two in step. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2/dist/umd/supabase.js" integrity="sha384-A97u3Qnt9GZHURO9YJZRe7VQgGUeFzcv6I1oIGnUTxQrCxnpQMwR0/G8F2zt9abZ" crossorigin="anonymous"></script>
 <script>
 /* Online play needs a Supabase project (see plans/seven-tiles-supabase.sql).
    Leave both blank and the page offers the bot and pass-and-play only. */

@@ -5,8 +5,10 @@
    it. Online play and sign-in requests go to Supabase and are never cached;
    the Supabase browser library is, so a cached online game can still be shown
    offline. */
-const CACHE = 'seven-tiles-v4';
-const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+const CACHE = 'seven-tiles-v5';
+const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2/dist/umd/supabase.js';
+const SUPABASE_SRI = 'sha384-A97u3Qnt9GZHURO9YJZRe7VQgGUeFzcv6I1oIGnUTxQrCxnpQMwR0/G8F2zt9abZ';   // the same as the page's script tag
+const INTEGRITY = { [SUPABASE_JS]: SUPABASE_SRI };   // so the cache only ever holds the checked file
 const SHELL = ['/seven-tiles/', '/seven-tiles/core.js', '/seven-tiles/app.js', '/seven-tiles/words.bin',
   '/seven-tiles/common.bin', '/seven-tiles/manifest.webmanifest', '/seven-tiles/icon-192.png', '/seven-tiles/icon-512.png',
   '/seven-tiles/icon-180.png', '/seven-tiles/icon-maskable-512.png', '/seven-tiles/icon.svg'];
@@ -17,7 +19,7 @@ const EXTRAS = [SUPABASE_JS];   // nice to have offline; a failure here must not
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(async (c) => {
     await c.addAll(SHELL);
-    await Promise.all(EXTRAS.map((u) => fetch(new Request(u, { mode: u.startsWith('http') ? 'cors' : 'same-origin' })).then((r) => { if (r.ok) return c.put(u, r); }).catch(() => {})));
+    await Promise.all(EXTRAS.map((u) => fetch(new Request(u, { mode: u.startsWith('http') ? 'cors' : 'same-origin', integrity: INTEGRITY[u] || '' })).then((r) => { if (r.ok) return c.put(u, r); }).catch(() => {})));
   }).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
@@ -31,7 +33,7 @@ self.addEventListener('fetch', (e) => {
   // page; a real file under the folder (words.bin, index.xml, the scripts) is itself
   const pageLike = e.request.mode === 'navigate' && url.pathname.startsWith('/seven-tiles/') && !/\.[a-z0-9]+$/i.test(url.pathname);
   const key = !ours ? e.request.url : pageLike ? '/seven-tiles/' : url.pathname;
-  const req = ours ? e.request : new Request(e.request.url, { mode: 'cors' });   // a CORS response can be checked and refreshed; an opaque one cannot
+  const req = ours ? e.request : new Request(e.request.url, { mode: 'cors', integrity: INTEGRITY[e.request.url] || '' });   // a CORS response can be checked and refreshed; an opaque one cannot
   e.respondWith(caches.open(CACHE).then(async (c) => {
     const cached = await c.match(key);
     const fresh = fetch(req, ours ? { cache: 'no-cache' } : undefined).then(async (r) => {

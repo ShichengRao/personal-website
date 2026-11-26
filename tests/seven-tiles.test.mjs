@@ -654,3 +654,22 @@ test('the difficulty dial: legal at every level, full strength at 100, weaker by
   assert.equal(C.lossAt(100), 0);
   assert.deepEqual(C.LEVELS, { easy: 15, medium: 35, hard: 100 });
 });
+
+test('scripts from the CDN are an exact version with a hash, and the worker caches the page’s file', () => {
+  const page = readFileSync(join(root, 'layouts', 'seven-tiles', 'list.html'), 'utf8');
+  const sw = readFileSync(join(dir, 'sw.js'), 'utf8');
+  const app = readFileSync(join(dir, 'app.js'), 'utf8');
+  const tags = [...page.matchAll(/<script\b[^>]*\bsrc="https?:[^"]*"[^>]*>/g)].map((m) => m[0]);
+  assert.ok(tags.length > 0);
+  for (const tag of tags) {
+    assert.match(tag, /@\d+\.\d+\.\d+\//, 'an exact version: ' + tag);
+    assert.match(tag, /integrity="sha384-[A-Za-z0-9+/]+={0,2}"/, tag);
+    assert.match(tag, /crossorigin="anonymous"/, tag);
+    // jsDelivr builds .min.js files itself when a package has none, and may rebuild them
+    assert.doesNotMatch(tag, /\.min\.js"/, tag);
+  }
+  const sb = tags.find((t) => t.includes('supabase-js'));
+  assert.ok(sw.includes("const SUPABASE_JS = '" + sb.match(/src="([^"]+)"/)[1] + "';"), 'sw.js caches the same file');
+  assert.ok(sw.includes("const SUPABASE_SRI = '" + sb.match(/integrity="([^"]+)"/)[1] + "';"), 'sw.js checks the same hash');
+  assert.match(app, /sc\.src = 'https:\/\/cdn\.jsdelivr\.net\/npm\/qrcode-generator@\d+\.\d+\.\d+\/qrcode\.js';\s*sc\.integrity = 'sha384-[A-Za-z0-9+/]+={0,2}';\s*sc\.crossOrigin = 'anonymous';/);
+});
